@@ -26,6 +26,13 @@ protected:
     bool AcceptUnit(Unit* unit) override;
 };
 
+// Both of the "new rpg" scan values are read every tick by the NewRpg actions, and each read used
+// to run a full 150-yard Cell::VisitObjects sweep because CalculatedValue only caches when
+// checkInterval >= 2. A 2 second cache is ample: these are questgiver/vendor NPCs and quest
+// gameobjects, which do not move, and every consumer re-resolves the GUID and re-validates the
+// object before acting on it.
+constexpr uint32 NEW_RPG_SCAN_INTERVAL_SECONDS = 2;
+
 class PossibleNewRpgTargetsValue : public NearestUnitsValue
 {
 public:
@@ -44,7 +51,9 @@ class PossibleNewRpgGameObjectsValue : public ObjectGuidListCalculatedValue
 {
 public:
     PossibleNewRpgGameObjectsValue(PlayerbotAI* botAI, float range = 150.0f, bool ignoreLos = true)
-        : ObjectGuidListCalculatedValue(botAI, "possible new rpg game objects"), range(range), ignoreLos(ignoreLos)
+        : ObjectGuidListCalculatedValue(botAI, "possible new rpg game objects", NEW_RPG_SCAN_INTERVAL_SECONDS),
+          range(range),
+          ignoreLos(ignoreLos)
     {
         if (allowedGOFlags.empty())
         {

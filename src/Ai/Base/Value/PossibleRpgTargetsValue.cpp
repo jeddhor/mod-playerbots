@@ -93,7 +93,8 @@ std::vector<uint32> PossibleNewRpgTargetsValue::allowedNpcFlags;
 static const std::unordered_set<uint32> rpgRangeOverrideAreaIds = { 3526 /* Ammen Vale */, 2117 /* Deathknell */ };
 
 PossibleNewRpgTargetsValue::PossibleNewRpgTargetsValue(PlayerbotAI* botAI, float range)
-    : NearestUnitsValue(botAI, "possible new rpg targets", range, true), defaultRange(range)
+    : NearestUnitsValue(botAI, "possible new rpg targets", range, true, NEW_RPG_SCAN_INTERVAL_SECONDS),
+      defaultRange(range)
 {
     if (allowedNpcFlags.empty())
     {
