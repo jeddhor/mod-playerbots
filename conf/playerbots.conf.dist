@@ -1417,6 +1417,19 @@ AiPlayerbot.RpgStatusProbWeight.TravelFlight = 15
 AiPlayerbot.RpgStatusProbWeight.Rest = 5
 AiPlayerbot.RpgStatusProbWeight.OutdoorPvp = 10
 
+#
+#    AiPlayerbot.Quest.MaxDropsPerPass
+#        Description: How many quests a bot may drop in a single quest-log tidy-up when its log is
+#                     nearly full. The bot scores every logged quest (progress made, ready to hand
+#                     in, level fit, whether it has usable POI data, whether it is in the current
+#                     zone) and drops the lowest scorers first. Quests that are ready to turn in are
+#                     never dropped.
+#                     Raising this makes bots shed quests faster but throws away partial progress.
+#        Default:     1
+#
+
+AiPlayerbot.Quest.MaxDropsPerPass = 1
+
 # Bots' minimum and maximum level when teleporting in and out of a zone, according to the new RPG strategy
 # Format: AiPlayerbot.ZoneBracket.zoneID = minLevel,maxLevel
 #

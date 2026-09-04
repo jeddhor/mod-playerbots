@@ -57,6 +57,10 @@ protected:
     bool AcceptQuest(Quest const* quest, ObjectGuid guid);
     bool TurnInQuest(Quest const* quest, ObjectGuid guid);
     bool OrganizeQuestLog();
+    /// How much this bot wants to keep `questId`. Higher is better; the quest-log tidy-up drops
+    /// the lowest scorers. A null `quest` (template missing from the DB) scores lowest of all.
+    float ScoreQuestForKeeping(uint32 questId, Quest const* quest);
+    void DropQuest(uint16 slot, uint32 questId, Quest const* quest);
 
 protected:
     bool GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete = false);
