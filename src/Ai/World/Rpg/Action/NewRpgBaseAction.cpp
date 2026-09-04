@@ -37,6 +37,13 @@
 #include "TravelMgr.h"
 #include "G3D/Vector2.h"
 
+QuestStatusData const* NewRpgBaseAction::GetQuestStatusData(uint32 questId) const
+{
+    QuestStatusMap const& statusMap = bot->getQuestStatusMap();
+    auto itr = statusMap.find(questId);
+    return itr != statusMap.end() ? &itr->second : nullptr;
+}
+
 bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
 {
     if (dest == WorldPosition())
@@ -834,7 +841,11 @@ bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector
         return false;
     }
 
-    const QuestStatusData& q_status = bot->getQuestStatusMap().at(questId);
+    QuestStatusData const* statusData = GetQuestStatusData(questId);
+    if (!statusData)
+        return false;
+
+    QuestStatusData const& q_status = *statusData;
 
     if (toComplete && q_status.Status == QUEST_STATUS_COMPLETE)
     {

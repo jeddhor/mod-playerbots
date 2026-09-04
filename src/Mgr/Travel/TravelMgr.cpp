@@ -3930,10 +3930,9 @@ std::vector<WorldPosition> TravelMgr::getNextPoint(WorldPosition center, std::ve
     if (retVec.empty() && points.size() > 0)
         retVec.push_back(points[0]);
 
-    if (!retVec.empty())
-        return retVec;
-
-    assert(!"No valid point found.");
+    if (retVec.empty())
+        LOG_DEBUG("playerbots", "[Travel] No valid point found when sampling {} of {} weighted points.", amount,
+                  points.size());
 
     return retVec;
 }
