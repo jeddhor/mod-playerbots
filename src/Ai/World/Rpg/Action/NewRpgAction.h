@@ -67,6 +67,12 @@ protected:
     const int32 statusRestDuration = 30 * IN_MILLISECONDS ;
     const int32 statusDoQuestDuration = 30 * MINUTE  * IN_MILLISECONDS ;
     const int32 statusOutDoorPvPDuration = HOUR * IN_MILLISECONDS ;
+    // GO_GRIND, GO_CAMP and TRAVEL_FLIGHT used to leave their status only on arrival, so a bot
+    // that could never reach its destination (or whose flight master despawned) stayed in that
+    // status forever. Every other status already had a cap; these are theirs.
+    const int32 statusGoGrindDuration = 10 * MINUTE * IN_MILLISECONDS;
+    const int32 statusGoCampDuration = 10 * MINUTE * IN_MILLISECONDS;
+    const int32 statusTravelFlightDuration = 15 * MINUTE * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
