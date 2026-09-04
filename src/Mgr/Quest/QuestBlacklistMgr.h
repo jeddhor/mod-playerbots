@@ -8,8 +8,11 @@
 #define PLAYERBOTS_QUESTBLACKLISTMGR_H
 
 #include "Define.h"
+#include <atomic>
+#include <memory>
 #include <shared_mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 /**
  * Realm-wide record of which quests the NewRpg system keeps failing to progress.
@@ -60,8 +63,23 @@ private:
         uint32 successCount{0};
     };
 
+    using BlacklistSet = std::unordered_set<uint32>;
+
+    /// Recompute the read-side snapshot. Must be called with `_mutex` held for writing.
+    void RebuildBlacklistSet();
+
+    // `_records` is the bookkeeping copy and is only ever touched on the (rare) write path.
     std::shared_mutex _mutex;
     std::unordered_map<uint32, Record> _records;
+
+    // The read path is a lock-free snapshot instead of a shared_lock.
+    //
+    // IsBlacklisted() is called for all 25 quest-log slots inside both
+    // CheckRpgStatusAvailable(RPG_DO_QUEST) and RandomChangeStatus's DO_QUEST branch, so with a
+    // few hundred bots every idle tick funnelled thousands of shared_lock acquisitions through one
+    // global mutex. Writes are rare (a quest failing or being turned in), so copy-on-write costs
+    // nothing that matters and readers become an atomic load plus a hash lookup.
+    std::atomic<std::shared_ptr<BlacklistSet const>> _blacklisted;
 };
 
 #define sQuestBlacklistMgr QuestBlacklistMgr::instance()
