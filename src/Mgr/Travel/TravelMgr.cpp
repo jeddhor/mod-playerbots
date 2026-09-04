@@ -10,7 +10,7 @@
 #include "ChatHelper.h"
 #include "Corpse.h"
 #include "Creature.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapCollisionData.h"
@@ -4551,7 +4551,7 @@ std::vector<WorldLocation> TravelMgr::GetCityLocations(Player* bot)
     auto const& bankers = selectedCapital->bankers;
     // `bankers` came straight out of the capital definition and was indexed without an emptiness
     // check: a capital with no bankers configured read out of bounds.
-    uint32 const* selectedBankerEntry = RandomElement(bankers);
+    uint16 const* selectedBankerEntry = RandomElement(bankers);
     if (!selectedBankerEntry)
         return fallbackLocations;
     auto locIt = bankerEntryToLocation.find(*selectedBankerEntry);

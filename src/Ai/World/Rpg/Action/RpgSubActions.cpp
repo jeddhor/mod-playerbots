@@ -11,7 +11,7 @@
 #include "Formations.h"
 #include "GossipDef.h"
 #include "GuildCreateActions.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "LastMovementValue.h"
 #include "MovementActions.h"
 #include "PlayerbotTextMgr.h"

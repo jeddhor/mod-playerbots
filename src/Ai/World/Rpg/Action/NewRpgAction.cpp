@@ -9,7 +9,7 @@
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
 #include "GossipDef.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "IVMapMgr.h"
 #include "NewRpgInfo.h"
 #include "NewRpgStrategy.h"

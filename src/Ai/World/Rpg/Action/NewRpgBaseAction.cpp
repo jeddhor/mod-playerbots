@@ -11,7 +11,7 @@
 #include "GameObject.h"
 #include "GossipDef.h"
 #include "GridTerrainData.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "IVMapMgr.h"
 #include "NewRpgInfo.h"
 #include "NewRpgStrategy.h"

@@ -5,7 +5,7 @@
  */
 
 #include "NewRpgOutdoorPvP.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "OutdoorPvP.h"
 #include "OutdoorPvPMgr.h"
 

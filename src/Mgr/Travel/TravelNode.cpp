@@ -6,7 +6,7 @@
 
 #include "TravelNode.h"
 #include "BudgetValues.h"
-#include "Helpers.h"
+#include "RandomUtils.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "RaceMgr.h"

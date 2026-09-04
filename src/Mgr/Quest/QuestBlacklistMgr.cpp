@@ -6,8 +6,10 @@
 
 #include "QuestBlacklistMgr.h"
 #include "DatabaseEnv.h"
+#include "Field.h"
 #include "Log.h"
 #include "PlayerbotAIConfig.h"
+#include "QueryResult.h"
 #include "Timer.h"
 
 void QuestBlacklistMgr::Load()
