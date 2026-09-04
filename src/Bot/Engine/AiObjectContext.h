@@ -39,26 +39,38 @@ public:
     virtual std::set<std::string> GetSiblingStrategy(std::string const name);
     virtual Trigger* GetTrigger(std::string const name);
     virtual Action* GetAction(std::string const name);
-    virtual UntypedValue* GetUntypedValue(std::string const name);
+    virtual UntypedValue* GetUntypedValue(std::string const& name);
 
+    // These run on the hot path: AI_VALUE / AI_VALUE2 expand to GetValue and there are ~2500 call
+    // sites, ~1500 of them the qualified (AI_VALUE2) form. Take the name by reference rather than
+    // by value - the by-value parameters used to copy the string once per layer on the way down to
+    // GetUntypedValue.
     template <class T>
-    Value<T>* GetValue(std::string const name)
+    Value<T>* GetValue(std::string const& name)
     {
         return dynamic_cast<Value<T>*>(GetUntypedValue(name));
     }
 
     template <class T>
-    Value<T>* GetValue(std::string const name, std::string const param)
+    Value<T>* GetValue(std::string const& name, std::string const& param)
     {
-        return GetValue<T>((std::string(name) + "::" + param));
+        // Build the "name::param" key in one buffer. The old `std::string(name) + "::" + param`
+        // materialised three temporaries per call.
+        std::string qualified;
+        qualified.reserve(name.size() + 2 + param.size());
+        qualified += name;
+        qualified += "::";
+        qualified += param;
+        return GetValue<T>(qualified);
     }
 
     template <class T>
-    Value<T>* GetValue(std::string const name, int32 param)
+    Value<T>* GetValue(std::string const& name, int32 param)
     {
-        std::ostringstream out;
-        out << param;
-        return GetValue<T>(name, out.str());
+        // std::to_string, not an ostringstream. Constructing an ostringstream per call drags in
+        // locale setup, a sentry and its own allocation - all to format one integer, ~1500 times
+        // over per tick across the bot population.
+        return GetValue<T>(name, std::to_string(param));
     }
 
     std::set<std::string> GetValues();

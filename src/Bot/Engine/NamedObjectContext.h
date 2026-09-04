@@ -203,13 +203,17 @@ public:
 
     T* GetContextObject(const std::string& name, PlayerbotAI* botAI)
     {
-        if (created.find(name) == created.end())
-        {
-            if (T* object = create(name, botAI))
-                return created[name] = object;
-        }
+        // One hash lookup on the hit path, not three. This is the tail of every AI_VALUE and
+        // AI_VALUE2 read, and the old find() + operator[] + operator[] hashed the same string up
+        // to three times per call.
+        //
+        // A null result is still cached, exactly as before: create() returning nullptr for an
+        // unknown name stores a null entry so repeated lookups do not retry construction.
+        auto itr = created.find(name);
+        if (itr != created.end())
+            return itr->second;
 
-        return created[name];
+        return created.emplace(name, create(name, botAI)).first->second;
     }
 
     std::set<std::string> GetSiblings(const std::string& name)
