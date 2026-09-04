@@ -44,6 +44,7 @@ protected:
     /// for a quest that is not in the bot's log. Returns nullptr instead so callers can bail out.
     QuestStatusData const* GetQuestStatusData(uint32 questId) const;
     ObjectGuid ChooseNpcOrGameObjectToInteract(bool questgiverOnly = false, float distanceLimit = 0.0f);
+    WorldObject* FindNearestQuestGiver(GuidVector const& candidates, float distanceLimit);
     bool HasQuestToAcceptOrReward(WorldObject* object);
     bool InteractWithNpcOrGameObjectForQuest(ObjectGuid guid);
     bool CanInteractWithQuestGiver(Object* questGiver);

@@ -770,6 +770,36 @@ bool NewRpgBaseAction::SearchQuestGiverAndAcceptOrReward()
     return false;
 }
 
+/// Returns the nearest object in `candidates` this bot can accept or hand in a quest at.
+///
+/// Both `possible new rpg targets` and `possible new rpg game objects` are produced already sorted
+/// by distance - see PossibleNewRpgTargetsValue::Calculate and
+/// PossibleNewRpgGameObjectsValue::Calculate - so the first match IS the nearest match and the scan
+/// can stop there. That early exit is not just an optimisation: HasQuestToAcceptOrReward calls
+/// Player::PrepareQuestMenu, which does DB-backed relation lookups and mutates PlayerTalkClass, so
+/// scanning a whole city's worth of candidates every tick is not affordable.
+///
+/// If either value ever stops sorting by distance, this function silently degrades to "first
+/// acceptable" rather than "nearest acceptable".
+WorldObject* NewRpgBaseAction::FindNearestQuestGiver(GuidVector const& candidates, float distanceLimit)
+{
+    for (ObjectGuid const& guid : candidates)
+    {
+        WorldObject* object = ObjectAccessor::GetWorldObject(*bot, guid);
+
+        if (!object || !object->IsInWorld())
+            continue;
+
+        if (distanceLimit && bot->GetDistance(object) > distanceLimit)
+            continue;
+
+        if (CanInteractWithQuestGiver(object) && HasQuestToAcceptOrReward(object))
+            return object;
+    }
+
+    return nullptr;
+}
+
 ObjectGuid NewRpgBaseAction::ChooseNpcOrGameObjectToInteract(bool questgiverOnly, float distanceLimit)
 {
     GuidVector possibleTargets = AI_VALUE(GuidVector, "possible new rpg targets");
@@ -778,41 +808,12 @@ ObjectGuid NewRpgBaseAction::ChooseNpcOrGameObjectToInteract(bool questgiverOnly
     if (possibleTargets.empty() && possibleGameObjects.empty())
         return ObjectGuid();
 
-    WorldObject* nearestObject = nullptr;
-    for (ObjectGuid& guid : possibleTargets)
+    WorldObject* nearestObject = FindNearestQuestGiver(possibleTargets, distanceLimit);
+
+    if (WorldObject* nearestGameObject = FindNearestQuestGiver(possibleGameObjects, distanceLimit))
     {
-        WorldObject* object = ObjectAccessor::GetWorldObject(*bot, guid);
-
-        if (!object || !object->IsInWorld())
-            continue;
-
-        if (distanceLimit && bot->GetDistance(object) > distanceLimit)
-            continue;
-
-        if (CanInteractWithQuestGiver(object) && HasQuestToAcceptOrReward(object))
-        {
-            if (!nearestObject || bot->GetExactDist(nearestObject) > bot->GetExactDist(object))
-                nearestObject = object;
-            break;
-        }
-    }
-
-    for (ObjectGuid& guid : possibleGameObjects)
-    {
-        WorldObject* object = ObjectAccessor::GetWorldObject(*bot, guid);
-
-        if (!object || !object->IsInWorld())
-            continue;
-
-        if (distanceLimit && bot->GetDistance(object) > distanceLimit)
-            continue;
-
-        if (CanInteractWithQuestGiver(object) && HasQuestToAcceptOrReward(object))
-        {
-            if (!nearestObject || bot->GetExactDist(nearestObject) > bot->GetExactDist(object))
-                nearestObject = object;
-            break;
-        }
+        if (!nearestObject || bot->GetExactDist(nearestGameObject) < bot->GetExactDist(nearestObject))
+            nearestObject = nearestGameObject;
     }
 
     if (nearestObject)
