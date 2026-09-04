@@ -11,6 +11,7 @@
 #include "Formations.h"
 #include "GossipDef.h"
 #include "GuildCreateActions.h"
+#include "Helpers.h"
 #include "LastMovementValue.h"
 #include "MovementActions.h"
 #include "PlayerbotTextMgr.h"
@@ -175,7 +176,7 @@ bool RpgTaxiAction::Execute(Event /*event*/)
         return false;
     }
 
-    uint32 path = nodes[urand(0, nodes.size() - 1)];
+    uint32 path = *RandomElement(nodes);
     uint32 money = bot->GetMoney();
     bot->SetMoney(money + 100000);
 

@@ -10,6 +10,7 @@
 #include "ChatHelper.h"
 #include "Corpse.h"
 #include "Creature.h"
+#include "Helpers.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapCollisionData.h"
@@ -4453,14 +4454,17 @@ std::vector<std::vector<uint32>> TravelMgr::GetOptimalFlightDestinations(Player*
 
     while (!candidateZones.empty())
     {
-        uint32 zoneIndex = urand(0, candidateZones.size() - 1);
+        size_t zoneIndex = 0;
+        if (!RandomIndex(candidateZones, zoneIndex))
+            break;
+
         uint32 pickedZone = candidateZones[zoneIndex];
 
         std::vector<uint32> usableNodes = GetFlightNodesInZone(pickedZone, bot->GetTeamId(), fromNode);
 
         if (!usableNodes.empty())
         {
-            uint32 pickedNode = usableNodes[urand(0, usableNodes.size() - 1)];
+            uint32 pickedNode = *RandomElement(usableNodes);
             std::vector<uint32> path = sTravelNodeMap.FindTaxiPath(fromNode, pickedNode);
             if (!path.empty())
             {
@@ -4540,13 +4544,17 @@ std::vector<WorldLocation> TravelMgr::GetCityLocations(Player* bot)
         return fallbackLocations;
 
     // Pick a weighted city randomly, then a random banker in that city
-    uint32 selectedCity = weightedCities[urand(0, weightedCities.size() - 1)];
+    uint32 selectedCity = *RandomElement(weightedCities);
     Capital const* selectedCapital = FindCapitalByZone(selectedCity);
     if (!selectedCapital)
         return fallbackLocations;
     auto const& bankers = selectedCapital->bankers;
-    uint32 selectedBankerEntry = bankers[urand(0, bankers.size() - 1)];
-    auto locIt = bankerEntryToLocation.find(selectedBankerEntry);
+    // `bankers` came straight out of the capital definition and was indexed without an emptiness
+    // check: a capital with no bankers configured read out of bounds.
+    uint32 const* selectedBankerEntry = RandomElement(bankers);
+    if (!selectedBankerEntry)
+        return fallbackLocations;
+    auto locIt = bankerEntryToLocation.find(*selectedBankerEntry);
     if (locIt != bankerEntryToLocation.end())
         return { locIt->second };
     // Fallback if something went wrong

@@ -8,6 +8,7 @@
 #define PLAYERBOTS_TRAVELNODE_H
 
 #include "TravelMgr.h"
+#include "Helpers.h"
 #include <shared_mutex>
 
 // THEORY
@@ -533,7 +534,7 @@ public:
         if (rNodes.empty())
             return nullptr;
 
-        return rNodes[urand(0, rNodes.size() - 1)];
+        return *RandomElement(rNodes);
     }
 
     // Finds the best nodePath between two nodes

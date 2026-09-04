@@ -5,6 +5,7 @@
  */
 
 #include "NewRpgOutdoorPvP.h"
+#include "Helpers.h"
 #include "OutdoorPvP.h"
 #include "OutdoorPvPMgr.h"
 
@@ -112,8 +113,7 @@ OPvPCapturePoint* NewRpgOutdoorPvpAction::SelectNewObjective(OutdoorPvP::OPvPCap
         botAI->rpgInfo.ChangeToIdle();
         return objective;
     }
-    int randomIndex = urand(0, candidateObjectives.size() - 1);
-    objective = candidateObjectives[randomIndex];
+    objective = *RandomElement(candidateObjectives);
     return objective;
 }
 

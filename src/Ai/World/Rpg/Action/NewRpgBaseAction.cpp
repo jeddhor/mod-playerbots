@@ -5,6 +5,7 @@
  */
 
 #include "NewRpgBaseAction.h"
+#include "Helpers.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
 #include "Creature.h"
@@ -826,8 +827,7 @@ ObjectGuid NewRpgBaseAction::ChooseNpcOrGameObjectToInteract(bool questgiverOnly
     if (possibleTargets.empty())
         return ObjectGuid();
 
-    int idx = urand(0, possibleTargets.size() - 1);
-    ObjectGuid guid = possibleTargets[idx];
+    ObjectGuid guid = *RandomElement(possibleTargets);
     WorldObject* object = ObjectAccessor::GetCreatureOrPetOrVehicle(*bot, guid);
     if (!object)
         object = ObjectAccessor::GetGameObject(*bot, guid);
@@ -1149,15 +1149,9 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
     }
     WorldPosition dest{};
     if (urand(1, 100) <= 50 && !hi_prepared_locs.empty())
-    {
-        uint32 idx = urand(0, hi_prepared_locs.size() - 1);
-        dest = hi_prepared_locs[idx];
-    }
-    else if (!lo_prepared_locs.empty())
-    {
-        uint32 idx = urand(0, lo_prepared_locs.size() - 1);
-        dest = lo_prepared_locs[idx];
-    }
+        dest = *RandomElement(hi_prepared_locs);
+    else if (WorldLocation const* loc = RandomElement(lo_prepared_locs))
+        dest = *loc;
     LOG_DEBUG("playerbots", "[New RPG] Bot {} select random grind pos Map:{} X:{} Y:{} Z:{} ({}+{} available in {})",
               bot->GetName(), dest.GetMapId(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(),
               hi_prepared_locs.size(), lo_prepared_locs.size() - hi_prepared_locs.size(), locs.size());
@@ -1196,11 +1190,8 @@ WorldPosition NewRpgBaseAction::SelectRandomCampPos(Player* bot)
         prepared_locs.push_back(loc);
     }
     WorldPosition dest{};
-    if (!prepared_locs.empty())
-    {
-        uint32 idx = urand(0, prepared_locs.size() - 1);
-        dest = prepared_locs[idx];
-    }
+    if (WorldLocation const* loc = RandomElement(prepared_locs))
+        dest = *loc;
     LOG_DEBUG("playerbots", "[New RPG] Bot {} select random inn keeper pos Map:{} X:{} Y:{} Z:{} ({} available in {})",
               bot->GetName(), dest.GetMapId(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(),
               prepared_locs.size(), locs.size());
@@ -1219,7 +1210,7 @@ bool NewRpgBaseAction::SelectRandomFlightTaxiNode(uint32& flightMasterEntry, Wor
 
     flightMasterEntry = info->templateEntry;
     flightMasterPos = info->pos;
-    path = availablePaths[urand(0, availablePaths.size() - 1)];
+    path = *RandomElement(availablePaths);
     LOG_DEBUG("playerbots", "[New RPG] Bot {} select random flight taxi node from:{} (node {}) to:{} ({} available)",
               bot->GetName(), flightMasterEntry, path[0], path[path.size() - 1], availablePaths.size());
     return true;
@@ -1309,7 +1300,7 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             }
             if (availableQuests.size())
             {
-                uint32 questId = availableQuests[urand(0, availableQuests.size() - 1)];
+                uint32 questId = *RandomElement(availableQuests);
                 const Quest* quest = sObjectMgr->GetQuestTemplate(questId);
                 if (quest)
                 {

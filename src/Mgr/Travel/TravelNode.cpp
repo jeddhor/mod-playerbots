@@ -6,6 +6,7 @@
 
 #include "TravelNode.h"
 #include "BudgetValues.h"
+#include "Helpers.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "RaceMgr.h"
@@ -1504,7 +1505,11 @@ TravelNode* TravelNodeMap::addRandomExtNode(TravelNode* startNode)
 
     for (uint32 i = 0; i < 20; i++)
     {
-        auto random_it = std::next(std::begin(paths), urand(0, paths.size() - 1));
+        size_t pathIdx = 0;
+        if (!RandomIndex(paths, pathIdx))
+            continue;
+
+        auto random_it = std::next(std::begin(paths), pathIdx);
 
         TravelNode* endNode = random_it->first;
         std::vector<WorldPosition> path = random_it->second.getPath();
@@ -1520,7 +1525,7 @@ TravelNode* TravelNodeMap::addRandomExtNode(TravelNode* startNode)
         if (!startNode->hasLinkTo(endNode) && !urand(0, 20))
             continue;
 
-        WorldPosition point = path[urand(0, path.size() - 1)];
+        WorldPosition point = *RandomElement(path);
 
         if (!getNode(point, nullptr, 100.0f))
             return TravelNodeMap::instance().addNode(point, startNode->getName(), false, true);
@@ -1553,9 +1558,7 @@ void TravelNodeMap::manageNodes(Unit* bot, bool mapFull)
 
             if (!rnodes.empty())
             {
-                uint32 j = urand(0, rnodes.size() - 1);
-
-                startNode = rnodes[j];
+                startNode = *RandomElement(rnodes);
                 newNode = nullptr;
 
                 bool nodeDone = false;

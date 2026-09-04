@@ -5,6 +5,7 @@
  */
 
 #include "NewRpgAction.h"
+#include "Helpers.h"
 #include "AreaDefines.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
@@ -525,11 +526,15 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
             botAI->rpgInfo.ChangeToIdle();
             return true;
         }
-        uint32 rndIdx = urand(0, poiInfo.size() - 1);
-        G3D::Vector2 nearestPoi = poiInfo[rndIdx].pos;
-        int32 objectiveIdx = poiInfo[rndIdx].objectiveIdx;
+        POIInfo const* picked = RandomElement(poiInfo);
+        if (!picked)
+        {
+            botAI->rpgInfo.ChangeToIdle();
+            return true;
+        }
 
-        float dx = nearestPoi.x, dy = nearestPoi.y;
+        float dx = picked->pos.x, dy = picked->pos.y;
+        int32 objectiveIdx = picked->objectiveIdx;
 
         // z = MAX_HEIGHT as we do not know accurate z
         float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
@@ -640,8 +645,14 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
         }
         // now we get the place to get rewarded - pick at random rather than always taking the
         // first candidate, so a turn-in that repeatedly fails gets a different approach point
-        uint32 rndIdx = urand(0, poiInfo.size() - 1);
-        float dx = poiInfo[rndIdx].pos.x, dy = poiInfo[rndIdx].pos.y;
+        POIInfo const* picked = RandomElement(poiInfo);
+        if (!picked)
+        {
+            botAI->rpgInfo.ChangeToIdle();
+            return false;
+        }
+
+        float dx = picked->pos.x, dy = picked->pos.y;
         // z = MAX_HEIGHT as we do not know accurate z
         float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
 
