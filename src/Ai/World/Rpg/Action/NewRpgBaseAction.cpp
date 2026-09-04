@@ -254,9 +254,15 @@ bool NewRpgBaseAction::MoveRandomNear(float moveStep, MovementPriority priority,
     // Previously: attempts = 1. A single random sample often landed in
     // water / blocked geometry / unreachable poly, the function returned
     // false, and the caller had no fallback — bot stood still. Retry a
-    // handful of times with a fresh distance each loop so a bad roll
-    // doesn't lock the bot in place.
-    for (int attempt = 0; attempt < 8; ++attempt)
+    // few times with a fresh distance each loop so a bad roll doesn't
+    // lock the bot in place.
+    //
+    // Capped at 3, down from 8. Every attempt is a full PathGenerator
+    // (Detour) query, and this is called from four different NewRpg
+    // actions plus the MoveFarTo fallbacks, so the worst case was ~11
+    // Detour queries per bot per tick from the RPG system alone. Three
+    // samples still clear a bad roll; the caller retries next tick.
+    for (int attempt = 0; attempt < 3; ++attempt)
     {
         float distance = (0.4f + rand_norm() * 0.6f) * moveStep;
         float angle = (float)rand_norm() * 2 * static_cast<float>(M_PI);

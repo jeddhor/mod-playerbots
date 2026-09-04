@@ -1792,8 +1792,12 @@ PlayerbotAI* PlayerbotsMgr::GetPlayerbotAI(Player* player)
     auto itr = _playerbotsAIMap.find(player->GetGUID());
     if (itr != _playerbotsAIMap.end())
     {
+        // static_cast, not dynamic_cast. This runs from PlayerbotScript::OnPlayerbotPacketSent,
+        // which the core calls from WorldSession::SendPacket - i.e. for every packet on every
+        // session on the server. The cast is provably safe: _playerbotsAIMap is only ever
+        // populated with `new PlayerbotAI(...)` in AddPlayerbotData, and IsBotAI() confirms it.
         if (itr->second->IsBotAI())
-            return dynamic_cast<PlayerbotAI*>(itr->second);
+            return static_cast<PlayerbotAI*>(itr->second);
     }
 
     return nullptr;
@@ -1808,8 +1812,9 @@ PlayerbotMgr* PlayerbotsMgr::GetPlayerbotMgr(Player* player)
     auto itr = _playerbotsMgrMap.find(player->GetGUID());
     if (itr != _playerbotsMgrMap.end())
     {
+        // As above: _playerbotsMgrMap only ever receives `new PlayerbotMgr(...)`.
         if (!itr->second->IsBotAI())
-            return dynamic_cast<PlayerbotMgr*>(itr->second);
+            return static_cast<PlayerbotMgr*>(itr->second);
     }
 
     return nullptr;
