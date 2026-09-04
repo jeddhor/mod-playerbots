@@ -1430,6 +1430,21 @@ AiPlayerbot.RpgStatusProbWeight.OutdoorPvp = 10
 
 AiPlayerbot.Quest.MaxDropsPerPass = 1
 
+#
+#    AiPlayerbot.Quest.BlacklistFailThreshold
+#        Description: How many times bots must fail to make progress on a quest before the realm
+#                     stops offering it as a questing target. The count is shared by every bot and
+#                     persisted in `playerbot_quest_blacklist` in the playerbots database, so the
+#                     same broken quest is not rediscovered by each bot after every restart.
+#                     A quest that ANY bot has successfully turned in is never blacklisted,
+#                     regardless of how many failures it has accumulated.
+#                     Set to 0 to blacklist on the first failure; there is no way to disable the
+#                     blacklist entirely, but a very high value effectively does so.
+#        Default:     5
+#
+
+AiPlayerbot.Quest.BlacklistFailThreshold = 5
+
 # Bots' minimum and maximum level when teleporting in and out of a zone, according to the new RPG strategy
 # Format: AiPlayerbot.ZoneBracket.zoneID = minLevel,maxLevel
 #

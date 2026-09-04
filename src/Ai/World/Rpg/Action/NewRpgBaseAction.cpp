@@ -5,13 +5,13 @@
  */
 
 #include "NewRpgBaseAction.h"
-#include "Helpers.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "GossipDef.h"
 #include "GridTerrainData.h"
+#include "Helpers.h"
 #include "IVMapMgr.h"
 #include "NewRpgInfo.h"
 #include "NewRpgStrategy.h"
@@ -28,6 +28,7 @@
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "Position.h"
+#include "QuestBlacklistMgr.h"
 #include "QuestDef.h"
 #include "QuestPackets.h"
 #include "Random.h"
@@ -339,6 +340,9 @@ bool NewRpgBaseAction::InteractWithNpcOrGameObjectForQuest(ObjectGuid guid)
         if (status == QUEST_STATUS_COMPLETE && bot->CanRewardQuest(quest, 0, false))
         {
             TurnInQuest(quest, guid);
+            // A completion is the strongest possible evidence that this quest is workable, so it
+            // clears any failure verdict other bots have built up against it.
+            sQuestBlacklistMgr.ReportSuccess(quest->GetQuestId());
             if (botAI->GetMaster())
                 botAI->TellMasterNoFacing(PlayerbotTextMgr::instance().GetBotTextOrDefault(
                     "new_rpg_quest_rewarded",
@@ -679,7 +683,7 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
     score -= std::abs(levelGap) * 5.0f;
 
     // Already written off after repeatedly failing to make progress on it.
-    if (botAI->lowPriorityQuest.find(questId) != botAI->lowPriorityQuest.end())
+    if (sQuestBlacklistMgr.IsBlacklisted(questId))
         score -= 600.0f;
 
     return score;
@@ -1289,7 +1293,7 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
             {
                 uint32 questId = bot->GetQuestSlotQuestId(slot);
-                if (botAI->lowPriorityQuest.find(questId) != botAI->lowPriorityQuest.end())
+                if (sQuestBlacklistMgr.IsBlacklisted(questId))
                     continue;
 
                 std::vector<POIInfo> poiInfo;
@@ -1381,7 +1385,7 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
             {
                 uint32 questId = bot->GetQuestSlotQuestId(slot);
-                if (botAI->lowPriorityQuest.find(questId) != botAI->lowPriorityQuest.end())
+                if (sQuestBlacklistMgr.IsBlacklisted(questId))
                     continue;
 
                 std::vector<POIInfo> poiInfo;
