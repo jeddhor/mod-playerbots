@@ -766,7 +766,19 @@ bool NewRpgBaseAction::OrganizeQuestLog()
 
 bool NewRpgBaseAction::SearchQuestGiverAndAcceptOrReward()
 {
-    OrganizeQuestLog();
+    // Throttled per bot. Nothing here needs tick resolution: questgivers do not move, and a bot
+    // that walks past one will still see it on the next pass a couple of seconds later.
+    if (botAI->lastQuestGiverSearch && GetMSTimeDiffToNow(botAI->lastQuestGiverSearch) < questGiverSearchInterval)
+        return false;
+
+    botAI->lastQuestGiverSearch = getMSTime();
+
+    if (!botAI->lastQuestLogOrganize || GetMSTimeDiffToNow(botAI->lastQuestLogOrganize) >= questLogOrganizeInterval)
+    {
+        botAI->lastQuestLogOrganize = getMSTime();
+        OrganizeQuestLog();
+    }
+
     if (ObjectGuid npcOrGo = ChooseNpcOrGameObjectToInteract(true, 80.0f))
     {
         WorldObject* object = ObjectAccessor::GetWorldObject(*bot, npcOrGo);

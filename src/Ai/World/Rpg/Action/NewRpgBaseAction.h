@@ -16,6 +16,7 @@
 #include "ObjectGuid.h"
 #include "PlayerbotAI.h"
 #include "QuestDef.h"
+#include "Timer.h"
 #include "TravelMgr.h"
 
 struct POIInfo
@@ -90,6 +91,16 @@ protected:
     // How many standable points to offer per POI polygon. More candidates means a better chance
     // that at least one of them sits on the actual objective rather than in a lake or a cliff face.
     static constexpr uint32 poiSamplesPerArea = 4;
+    /* HOUSEKEEPING THROTTLES */
+    // SearchQuestGiverAndAcceptOrReward ran at the top of GoGrind, GoCamp, WanderRandom and DoQuest
+    // on every tick. Each run read two values that sweep 150 yards of grid and then called
+    // Player::PrepareQuestMenu - a DB-backed, side-effecting menu build - per candidate. In a
+    // capital that was dozens of PrepareQuestMenu calls per bot per tick.
+    static constexpr uint32 questGiverSearchInterval = 2 * IN_MILLISECONDS;
+    // OrganizeQuestLog walks 25 quest slots scoring each one. It only needs to run when the log is
+    // nearly full, which changes on the timescale of quest pickups, not ticks.
+    static constexpr uint32 questLogOrganizeInterval = 30 * IN_MILLISECONDS;
+
     // How many POIs a bot will sit at without making progress before it gives up on the quest.
     // The old code blacklisted the quest after the very first unproductive POI, so a single bad
     // sample permanently cost the bot a perfectly good quest.

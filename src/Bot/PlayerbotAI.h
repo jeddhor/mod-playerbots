@@ -604,6 +604,11 @@ public:
     static SpellFamilyNames Class2SpellFamilyName(uint8 cls);
     NewRpgInfo rpgInfo;
     NewRpgStatistic rpgStatistic;
+    // NewRpg quest-giver housekeeping throttles. These live on the bot rather than on the action
+    // because action instances are per-named-action: a member timer on NewRpgBaseAction would give
+    // "new rpg go grind" and "new rpg do quest" independent budgets instead of one shared per bot.
+    uint32 lastQuestGiverSearch = 0;
+    uint32 lastQuestLogOrganize = 0;
     time_t bgReleaseAttemptTime = 0;
     ForceRebuffState forceRebuff;
 
