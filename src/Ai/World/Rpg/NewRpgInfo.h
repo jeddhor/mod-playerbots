@@ -51,6 +51,13 @@ struct NewRpgInfo
         int32 objectiveIdx{0};
         WorldPosition pos{};
         uint32 lastReachPOI{0};
+        // POIs visited for the current objective without any progress. Reset whenever the bot
+        // makes progress or switches objective; when it reaches maxPoiAttempts the quest is
+        // blacklisted. Guards against one badly-sampled POI costing the bot a good quest.
+        uint8 poiAttempts{0};
+        // Set once the "quest complete" broadcast has fired, so retrying the turn-in POI does not
+        // re-announce the completion or double-count it in NewRpgStatistic.
+        bool completionAnnounced{false};
     };
     // RPG_TRAVEL_FLIGHT
     struct TravelFlight

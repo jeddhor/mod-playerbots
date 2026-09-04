@@ -60,6 +60,9 @@ protected:
 
 protected:
     bool GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete = false);
+    /// Turns one quest POI polygon into up to `poiSamplesPerArea` standable candidate points and
+    /// appends the ones that pass the cheap terrain checks to `poiInfo`.
+    void AddPoiCandidates(QuestPOI const& qPoi, std::vector<POIInfo>& poiInfo);
     static WorldPosition SelectRandomGrindPos(Player* bot);
     static WorldPosition SelectRandomCampPos(Player* bot);
     bool SelectRandomFlightTaxiNode(uint32& flightMasterEntry, WorldPosition& flightMasterPos, std::vector<uint32>& path);
@@ -77,6 +80,15 @@ protected:
     // the teleport fires, but long enough that a genuine long
     // walk that is slowly making progress never triggers it.
     const uint32 stuckTime = 90 * 1000;
+
+    /* FOR QUEST POI SELECTION */
+    // How many standable points to offer per POI polygon. More candidates means a better chance
+    // that at least one of them sits on the actual objective rather than in a lake or a cliff face.
+    static constexpr uint32 poiSamplesPerArea = 4;
+    // How many POIs a bot will sit at without making progress before it gives up on the quest.
+    // The old code blacklisted the quest after the very first unproductive POI, so a single bad
+    // sample permanently cost the bot a perfectly good quest.
+    static constexpr uint8 maxPoiAttempts = 3;
 };
 
 #endif

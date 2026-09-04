@@ -493,6 +493,7 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
             data.lastReachPOI = 0;
             data.pos = WorldPosition();
             data.objectiveIdx = 0;
+            data.poiAttempts = 0;
         }
     }
     if (data.pos == WorldPosition())
@@ -568,8 +569,18 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
         }
         if (!hasProgression)
         {
-            // we has reach the poi for more than 5 mins but no progession
-            // may not be able to complete this quest, marked as abandoned
+            // No progress after `poiStayTime` at this POI. That is usually a bad sample rather than
+            // a broken quest, so try a different candidate point for the same objective first and
+            // only give up once maxPoiAttempts of them have failed.
+            if (++data.poiAttempts < maxPoiAttempts)
+            {
+                LOG_DEBUG("playerbots", "[New RPG] {} no progress on quest {} at POI {}/{}, trying another POI",
+                          bot->GetName(), questId, data.poiAttempts, maxPoiAttempts);
+                data.lastReachPOI = 0;
+                data.pos = WorldPosition();
+                return true;
+            }
+
             /// @TODO: It may be better to make lowPriorityQuest a global set shared by all bots (or saved in db)
             botAI->lowPriorityQuest.insert(questId);
             botAI->rpgStatistic.questAbandoned++;
@@ -581,6 +592,7 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
         data.lastReachPOI = 0;
         data.pos = WorldPosition();
         data.objectiveIdx = 0;
+        data.poiAttempts = 0;
         return true;
     }
 
@@ -599,28 +611,34 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
     if (data.objectiveIdx != -1)
     {
         // if quest is completed, back to poi with -1 idx to reward
-        BroadcastHelper::BroadcastQuestUpdateComplete(botAI, bot, quest);
-        botAI->rpgStatistic.questCompleted++;
         std::vector<POIInfo> poiInfo;
-        if (!GetQuestPOIPosAndObjectiveIdx(questId, poiInfo, true))
+        if (!GetQuestPOIPosAndObjectiveIdx(questId, poiInfo, true) || poiInfo.empty())
         {
             // can't find a poi pos to reward, stop doing quest for now
             botAI->rpgInfo.ChangeToIdle();
             return false;
         }
-        if (poiInfo.empty())
-        {
-            botAI->rpgInfo.ChangeToIdle();
-            return false;
-        }
-        // now we get the place to get rewarded
-        float dx = poiInfo[0].pos.x, dy = poiInfo[0].pos.y;
+        // now we get the place to get rewarded - pick at random rather than always taking the
+        // first candidate, so a turn-in that repeatedly fails gets a different approach point
+        uint32 rndIdx = urand(0, poiInfo.size() - 1);
+        float dx = poiInfo[rndIdx].pos.x, dy = poiInfo[rndIdx].pos.y;
         // z = MAX_HEIGHT as we do not know accurate z
         float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
 
         // double check for GetQuestPOIPosAndObjectiveIdx
         if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
             return false;
+
+        // Only announce and count the completion once we actually have somewhere to hand it in.
+        // Counting it before the lookup meant every failed lookup re-broadcast and re-incremented.
+        if (!data.completionAnnounced)
+        {
+            BroadcastHelper::BroadcastQuestUpdateComplete(botAI, bot, quest);
+            botAI->rpgStatistic.questCompleted++;
+            data.completionAnnounced = true;
+            // Turn-in gets its own retry budget, independent of whatever the objective phase used.
+            data.poiAttempts = 0;
+        }
 
         WorldPosition pos(bot->GetMapId(), dx, dy, dz);
         data.lastReachPOI = 0;
@@ -648,6 +666,19 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
     // stayed at this POI for more than 5 minutes
     if (GetMSTimeDiffToNow(data.lastReachPOI) >= poiStayTime)
     {
+        // Could not hand the quest in here. Try another approach point for the turn-in before
+        // writing the quest off - e.g. a POI polygon that spans a building will often sample a
+        // spot the questgiver cannot be reached from.
+        if (++data.poiAttempts < maxPoiAttempts)
+        {
+            LOG_DEBUG("playerbots", "[New RPG] {} could not turn in quest {} at POI {}/{}, trying another POI",
+                      bot->GetName(), questId, data.poiAttempts, maxPoiAttempts);
+            data.lastReachPOI = 0;
+            data.pos = WorldPosition();
+            data.objectiveIdx = 0;
+            return true;
+        }
+
         // e.g. Can not reward quest to gameobjects
         /// @TODO: It may be better to make lowPriorityQuest a global set shared by all bots (or saved in db)
         botAI->lowPriorityQuest.insert(questId);

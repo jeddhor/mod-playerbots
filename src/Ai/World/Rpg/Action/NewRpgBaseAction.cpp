@@ -812,21 +812,137 @@ bool NewRpgBaseAction::HasQuestToAcceptOrReward(WorldObject* object)
     return false;
 }
 
-static std::vector<float> GenerateRandomWeights(int n)
+/// Standard ray-casting point-in-polygon test.
+static bool IsPointInPolygon(std::vector<QuestPOIPoint> const& poly, float x, float y)
 {
-    std::vector<float> weights(n);
-    float sum = 0.0;
+    bool inside = false;
+    for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+    {
+        float xi = static_cast<float>(poly[i].x);
+        float yi = static_cast<float>(poly[i].y);
+        float xj = static_cast<float>(poly[j].x);
+        float yj = static_cast<float>(poly[j].y);
 
-    for (int i = 0; i < n; ++i)
-    {
-        weights[i] = rand_norm();
-        sum += weights[i];
+        // The half-open y test guarantees yi != yj by the time we divide.
+        if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+            inside = !inside;
     }
-    for (int i = 0; i < n; ++i)
+    return inside;
+}
+
+/// Produce up to `maxSamples` points that lie INSIDE a quest POI polygon.
+///
+/// The previous implementation took a random-weighted average of every vertex. For any POI that
+/// is not roughly convex and centre-filled - a ring around a lake, a valley rim, two lobes joined
+/// by a corridor - that average lands somewhere the objective is not. The bot then walked there,
+/// found nothing, and blacklisted the quest. Rejection-sampling the polygon interior instead keeps
+/// every candidate somewhere the quest designer actually marked.
+static void SampleQuestPoiPoints(std::vector<QuestPOIPoint> const& points, std::vector<G3D::Vector2>& out,
+                                 uint32 maxSamples)
+{
+    if (points.empty() || !maxSamples)
+        return;
+
+    if (points.size() == 1)
     {
-        weights[i] /= sum;
+        out.emplace_back(static_cast<float>(points[0].x), static_cast<float>(points[0].y));
+        return;
     }
-    return weights;
+
+    float minX = static_cast<float>(points[0].x);
+    float maxX = minX;
+    float minY = static_cast<float>(points[0].y);
+    float maxY = minY;
+    float centroidX = 0.0f;
+    float centroidY = 0.0f;
+
+    for (QuestPOIPoint const& point : points)
+    {
+        float px = static_cast<float>(point.x);
+        float py = static_cast<float>(point.y);
+        minX = std::min(minX, px);
+        maxX = std::max(maxX, px);
+        minY = std::min(minY, py);
+        maxY = std::max(maxY, py);
+        centroidX += px;
+        centroidY += py;
+    }
+    centroidX /= static_cast<float>(points.size());
+    centroidY /= static_cast<float>(points.size());
+
+    // Two points describe a line, not an area - offer both ends and the midpoint.
+    if (points.size() == 2)
+    {
+        out.emplace_back(centroidX, centroidY);
+        if (maxSamples > 1)
+            out.emplace_back(static_cast<float>(points[0].x), static_cast<float>(points[0].y));
+        if (maxSamples > 2)
+            out.emplace_back(static_cast<float>(points[1].x), static_cast<float>(points[1].y));
+        return;
+    }
+
+    uint32 const maxTries = maxSamples * 8;
+    for (uint32 tries = 0; tries < maxTries && out.size() < maxSamples; ++tries)
+    {
+        float x = frand(minX, maxX);
+        float y = frand(minY, maxY);
+        if (IsPointInPolygon(points, x, y))
+            out.emplace_back(x, y);
+    }
+
+    if (!out.empty())
+        return;
+
+    // Degenerate or extremely thin polygon: rejection sampling can miss it entirely. Fall back to
+    // the vertices, pulled a fifth of the way toward the centroid so we sit just inside the
+    // outline rather than exactly on the boundary.
+    for (size_t i = 0; i < points.size() && out.size() < maxSamples; ++i)
+    {
+        float x = static_cast<float>(points[i].x);
+        float y = static_cast<float>(points[i].y);
+        out.emplace_back(x + (centroidX - x) * 0.2f, y + (centroidY - y) * 0.2f);
+    }
+}
+
+void NewRpgBaseAction::AddPoiCandidates(QuestPOI const& qPoi, std::vector<POIInfo>& poiInfo)
+{
+    std::vector<G3D::Vector2> samples;
+    SampleQuestPoiPoints(qPoi.points, samples, poiSamplesPerArea);
+
+    Map* map = bot->GetMap();
+    // Candidates that landed in open water are held back rather than dropped: a POI polygon
+    // overlapping a lake should prefer the shore, but some objectives genuinely are underwater and
+    // discarding those outright would make the quest look unreachable.
+    std::vector<POIInfo> submerged;
+
+    for (G3D::Vector2 const& sample : samples)
+    {
+        float dx = sample.x;
+        float dy = sample.y;
+
+        if (bot->GetDistance2d(dx, dy) >= 1500.0f)
+            continue;
+
+        // z = MAX_HEIGHT as we do not know accurate z
+        float dz = std::max(map->GetHeight(dx, dy, MAX_HEIGHT), map->GetWaterLevel(dx, dy));
+
+        if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
+            continue;
+
+        if (bot->GetZoneId() != map->GetZoneId(bot->GetPhaseMask(), dx, dy, dz))
+            continue;
+
+        if (map->IsInWater(bot->GetPhaseMask(), dx, dy, dz, bot->GetCollisionHeight()))
+        {
+            submerged.push_back({{dx, dy}, qPoi.ObjectiveIndex});
+            continue;
+        }
+
+        poiInfo.push_back({{dx, dy}, qPoi.ObjectiveIndex});
+    }
+
+    if (poiInfo.empty() && !submerged.empty())
+        poiInfo.insert(poiInfo.end(), submerged.begin(), submerged.end());
 }
 
 bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete)
@@ -858,30 +974,10 @@ bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector
             if (qPoi.ObjectiveIndex != -1)
                 continue;
 
-            if (qPoi.points.size() == 0)
+            if (qPoi.points.empty())
                 continue;
 
-            float dx = 0, dy = 0;
-            std::vector<float> weights = GenerateRandomWeights(qPoi.points.size());
-            for (size_t i = 0; i < qPoi.points.size(); i++)
-            {
-                const QuestPOIPoint& point = qPoi.points[i];
-                dx += point.x * weights[i];
-                dy += point.y * weights[i];
-            }
-
-            if (bot->GetDistance2d(dx, dy) >= 1500.0f)
-                continue;
-
-            float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
-
-            if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
-                continue;
-
-            if (bot->GetZoneId() != bot->GetMap()->GetZoneId(bot->GetPhaseMask(), dx, dy, dz))
-                continue;
-
-            poiInfo.push_back({{dx, dy}, qPoi.ObjectiveIndex});
+            AddPoiCandidates(qPoi, poiInfo);
         }
 
         if (poiInfo.empty())
@@ -931,29 +1027,10 @@ bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector
         }
         if (!inComplete)
             continue;
-        if (qPoi.points.size() == 0)
-            continue;
-        float dx = 0, dy = 0;
-        std::vector<float> weights = GenerateRandomWeights(qPoi.points.size());
-        for (size_t i = 0; i < qPoi.points.size(); i++)
-        {
-            const QuestPOIPoint& point = qPoi.points[i];
-            dx += point.x * weights[i];
-            dy += point.y * weights[i];
-        }
-
-        if (bot->GetDistance2d(dx, dy) >= 1500.0f)
+        if (qPoi.points.empty())
             continue;
 
-        float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
-
-        if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
-            continue;
-
-        if (bot->GetZoneId() != bot->GetMap()->GetZoneId(bot->GetPhaseMask(), dx, dy, dz))
-            continue;
-
-        poiInfo.push_back({{dx, dy}, qPoi.ObjectiveIndex});
+        AddPoiCandidates(qPoi, poiInfo);
     }
 
     if (poiInfo.size() == 0)
