@@ -1296,9 +1296,11 @@ bool NewRpgBaseAction::HasVendorBusiness()
     return false;
 }
 
-WorldPosition NewRpgBaseAction::SelectNearestVendorPos(Player* bot)
+WorldPosition NewRpgBaseAction::SelectNearestVendorPos()
 {
-    GuidVector npcs = PAI_VALUE(GuidVector, "nearest npcs");
+    // Non-static and using AI_VALUE (which resolves through `context`) rather than PAI_VALUE, whose
+    // macro hardcodes a variable literally named `player`.
+    GuidVector npcs = AI_VALUE(GuidVector, "nearest npcs");
     WorldPosition best{};
     float bestDist = FLT_MAX;
 
@@ -1446,7 +1448,7 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
         }
         case RPG_VENDOR:
         {
-            WorldPosition pos = SelectNearestVendorPos(bot);
+            WorldPosition pos = SelectNearestVendorPos();
             if (pos != WorldPosition())
             {
                 botAI->rpgInfo.ChangeToVendor(pos);
@@ -1525,7 +1527,7 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             // Only worth a trip if there is something to offload or repair. AutoVendorJunk already
             // clears greys with no travel, so this is for whites and for durability.
             if (HasVendorBusiness())
-                return SelectNearestVendorPos(bot) != WorldPosition();
+                return SelectNearestVendorPos() != WorldPosition();
             return false;
         }
         case RPG_MAILBOX:

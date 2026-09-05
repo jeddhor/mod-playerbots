@@ -72,7 +72,7 @@ protected:
     /// True when a vendor trip would actually accomplish something: gear needing repair, or items
     /// the classifier calls vendor fodder that AutoVendorJunk will not sell without travel.
     bool HasVendorBusiness();
-    static WorldPosition SelectNearestVendorPos(Player* bot);
+    WorldPosition SelectNearestVendorPos();
     static WorldPosition SelectRandomGrindPos(Player* bot);
     static WorldPosition SelectRandomCampPos(Player* bot);
     bool SelectRandomFlightTaxiNode(uint32& flightMasterEntry, WorldPosition& flightMasterPos, std::vector<uint32>& path);
