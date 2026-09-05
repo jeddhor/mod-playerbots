@@ -1416,6 +1416,8 @@ AiPlayerbot.RpgStatusProbWeight.DoQuest = 60
 AiPlayerbot.RpgStatusProbWeight.TravelFlight = 15
 AiPlayerbot.RpgStatusProbWeight.Rest = 5
 AiPlayerbot.RpgStatusProbWeight.OutdoorPvp = 10
+AiPlayerbot.RpgStatusProbWeight.Vendor = 10
+AiPlayerbot.RpgStatusProbWeight.Mailbox = 5
 
 #
 #    AiPlayerbot.Quest.MaxDropsPerPass

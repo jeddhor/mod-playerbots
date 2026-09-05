@@ -5,6 +5,8 @@
  */
 
 #include "NewRpgAction.h"
+#include "Item.h"
+#include "Mail.h"
 #include "AreaDefines.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
@@ -237,7 +239,7 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
     {
         case RPG_IDLE:
             return RandomChangeStatus({RPG_GO_CAMP, RPG_GO_GRIND, RPG_WANDER_RANDOM, RPG_WANDER_NPC, RPG_DO_QUEST,
-                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP});
+                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX});
 
         case RPG_GO_GRIND:
         {
@@ -341,6 +343,24 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         {
             // REST -> IDLE
             if (info.HasStatusPersisted(statusRestDuration))
+            {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_VENDOR:
+        {
+            if (info.HasStatusPersisted(statusVendorDuration))
+            {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_MAILBOX:
+        {
+            if (info.HasStatusPersisted(statusMailboxDuration))
             {
                 info.ChangeToIdle();
                 return true;
@@ -718,6 +738,112 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
         return true;
     }
     return false;
+}
+
+bool NewRpgVendorAction::Execute(Event /*event*/)
+{
+    NewRpgInfo& info = botAI->rpgInfo;
+    auto* dataPtr = std::get_if<NewRpgInfo::Vendor>(&info.data);
+    if (!dataPtr)
+        return false;
+
+    auto& data = *dataPtr;
+
+    if (data.pos == WorldPosition())
+    {
+        info.ChangeToIdle();
+        return true;
+    }
+
+    if (bot->GetDistance(data.pos) > INTERACTION_DISTANCE && !data.lastReach)
+    {
+        if (MoveFarTo(data.pos))
+            return true;
+        return MoveRandomNear(10.0f);
+    }
+
+    if (!data.lastReach)
+    {
+        data.lastReach = getMSTime();
+        return true;
+    }
+
+    if (!data.sold)
+    {
+        // "sell" and "repair" already handle finding the nearby vendor NPC and the packet exchange.
+        botAI->DoSpecificAction("sell", Event(), true);
+        botAI->DoSpecificAction("repair", Event(), true);
+        data.sold = true;
+        return true;
+    }
+
+    if (GetMSTimeDiffToNow(data.lastReach) >= vendorStayTime)
+        info.ChangeToIdle();
+
+    return true;
+}
+
+bool NewRpgMailboxAction::Execute(Event /*event*/)
+{
+    // Take money and items from every mail, regardless of who sent it. See the class comment for
+    // why CheckMailAction cannot be reused: it drops anything not sent by a connected non-bot
+    // player, which is every auction payment.
+    uint32 collected = 0;
+    uint32 money = 0;
+
+    std::vector<uint32> done;
+    for (Mail* mail : bot->GetMails())
+    {
+        if (!mail || mail->state == MAIL_STATE_DELETED)
+            continue;
+
+        if (mail->money)
+        {
+            money += mail->money;
+            bot->ModifyMoney(static_cast<int32>(mail->money));
+            mail->money = 0;
+        }
+
+        // Returned or won auction items come back as attachments; pull them into the bags if there
+        // is room, and leave the mail alone if there is not so nothing is destroyed.
+        bool itemsPending = false;
+        for (auto const& att : mail->items)
+        {
+            Item* item = bot->GetMItem(att.item_guid);
+            if (!item)
+                continue;
+
+            ItemPosCountVec dest;
+            if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            {
+                itemsPending = true;
+                continue;
+            }
+
+            bot->RemoveMItem(item->GetGUID().GetCounter());
+            bot->MoveItemToInventory(dest, item, true);
+            collected++;
+        }
+
+        if (itemsPending)
+            continue;
+
+        mail->state = MAIL_STATE_DELETED;
+        done.push_back(mail->messageID);
+    }
+
+    for (uint32 id : done)
+    {
+        bot->SendMailResult(id, MAIL_DELETED, MAIL_OK);
+        bot->RemoveMail(id);
+    }
+
+    if (money || collected)
+        LOG_DEBUG("playerbots", "[Logistics] {} collected {} copper and {} item(s) from mail",
+                  bot->GetName(), money, collected);
+
+    botAI->rpgInfo.ChangeToIdle();
+    return true;
 }
 
 bool NewRpgTravelFlightAction::Execute(Event /*event*/)

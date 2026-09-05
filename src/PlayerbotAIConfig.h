@@ -71,7 +71,12 @@ enum NewRpgStatus : int
     // Taking a break
     RPG_REST = 7,
     RPG_OUTDOOR_PVP = 8,
-    RPG_STATUS_END = 9
+    // Logistics (Phase 3). A bot that cannot clear its bags stops looting, stops picking up quest
+    // items and drops gathered materials, so these are prerequisites for gathering and the economy
+    // rather than flavour.
+    RPG_VENDOR = 9,
+    RPG_MAILBOX = 10,
+    RPG_STATUS_END = 11
 };
 
 #define MAX_SPECNO 20

@@ -68,6 +68,22 @@ void NewRpgStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(
         new TriggerNode(
+            "vendor status",
+            {
+                NextAction("new rpg vendor", 3.0f)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "mailbox status",
+            {
+                NextAction("new rpg mailbox", 3.0f)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
             "outdoor pvp status",
             {
                 NextAction("new rpg outdoor pvp", 3.0f)

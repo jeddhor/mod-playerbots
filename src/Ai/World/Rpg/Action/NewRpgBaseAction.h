@@ -69,6 +69,10 @@ protected:
     /// Turns one quest POI polygon into up to `poiSamplesPerArea` standable candidate points and
     /// appends the ones that pass the cheap terrain checks to `poiInfo`.
     void AddPoiCandidates(QuestPOI const& qPoi, std::vector<POIInfo>& poiInfo);
+    /// True when a vendor trip would actually accomplish something: gear needing repair, or items
+    /// the classifier calls vendor fodder that AutoVendorJunk will not sell without travel.
+    bool HasVendorBusiness();
+    static WorldPosition SelectNearestVendorPos(Player* bot);
     static WorldPosition SelectRandomGrindPos(Player* bot);
     static WorldPosition SelectRandomCampPos(Player* bot);
     bool SelectRandomFlightTaxiNode(uint32& flightMasterEntry, WorldPosition& flightMasterPos, std::vector<uint32>& path);

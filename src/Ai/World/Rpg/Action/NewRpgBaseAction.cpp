@@ -1257,6 +1257,71 @@ bool NewRpgBaseAction::SelectRandomFlightTaxiNode(uint32& flightMasterEntry, Wor
     return true;
 }
 
+bool NewRpgBaseAction::HasVendorBusiness()
+{
+    // Repair first: durability loss is the most common reason to need a vendor at all.
+    if (bot->GetUInt32Value(PLAYER_FIELD_COINAGE) && bot->GetAverageItemLevel() > 0)
+    {
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item)
+                continue;
+
+            uint32 maxDur = item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY);
+            uint32 dur = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
+            if (maxDur && dur * 100 / maxDur < 60)
+                return true;
+        }
+    }
+
+    // Anything the shared classifier calls vendor fodder that AutoVendorJunk will not take.
+    for (uint8 bag = INVENTORY_SLOT_ITEM_START; bag < INVENTORY_SLOT_ITEM_END; ++bag)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (!item)
+            continue;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto || !proto->SellPrice)
+            continue;
+
+        if (proto->Quality <= sPlayerbotAIConfig.autoVendorJunkMaxQuality)
+            continue;  // AutoVendorJunk handles this without travelling
+
+        if (AI_VALUE2(ItemUsage, "item usage", proto->ItemId) == ITEM_USAGE_VENDOR)
+            return true;
+    }
+
+    return false;
+}
+
+WorldPosition NewRpgBaseAction::SelectNearestVendorPos(Player* bot)
+{
+    GuidVector npcs = PAI_VALUE(GuidVector, "nearest npcs");
+    WorldPosition best{};
+    float bestDist = FLT_MAX;
+
+    for (ObjectGuid const& guid : npcs)
+    {
+        Unit* unit = ObjectAccessor::GetUnit(*bot, guid);
+        if (!unit || !unit->HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+            continue;
+
+        if (unit->GetReactionTo(bot) <= REP_UNFRIENDLY)
+            continue;
+
+        float d = bot->GetExactDist(unit);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+        }
+    }
+
+    return best;
+}
+
 bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateStatus)
 {
     std::vector<NewRpgStatus> availableStatus;
@@ -1379,6 +1444,21 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             botAI->rpgInfo.ChangeToOutdoorPvp();
             return true;
         }
+        case RPG_VENDOR:
+        {
+            WorldPosition pos = SelectNearestVendorPos(bot);
+            if (pos != WorldPosition())
+            {
+                botAI->rpgInfo.ChangeToVendor(pos);
+                return true;
+            }
+            return false;
+        }
+        case RPG_MAILBOX:
+        {
+            botAI->rpgInfo.ChangeToMailbox();
+            return true;
+        }
         default:
         {
             botAI->rpgInfo.ChangeToRest();
@@ -1440,6 +1520,16 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             std::vector<uint32> path;
             return SelectRandomFlightTaxiNode(flightMasterEntry, flightMasterPos, path);
         }
+        case RPG_VENDOR:
+        {
+            // Only worth a trip if there is something to offload or repair. AutoVendorJunk already
+            // clears greys with no travel, so this is for whites and for durability.
+            if (HasVendorBusiness())
+                return SelectNearestVendorPos(bot) != WorldPosition();
+            return false;
+        }
+        case RPG_MAILBOX:
+            return !bot->GetMails().empty();
         case RPG_OUTDOOR_PVP:
         {
             if (!bot->IsPvP())

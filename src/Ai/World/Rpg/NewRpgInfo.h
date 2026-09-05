@@ -77,6 +77,18 @@ struct NewRpgInfo
     {
         ObjectGuid::LowType capturePointSpawnId{0};
     };
+    // RPG_VENDOR
+    struct Vendor
+    {
+        ObjectGuid vendorGuid{};
+        WorldPosition pos{};
+        uint32 lastReach{0};
+        bool sold{false};
+    };
+    // RPG_MAILBOX
+    struct Mailbox
+    {
+    };
     struct Idle
     {
     };
@@ -99,7 +111,9 @@ struct NewRpgInfo
         DoQuest,
         Rest,
         TravelFlight,
-        OutdoorPvP
+        OutdoorPvP,
+        Vendor,
+        Mailbox
     >;
     RpgData data;
 
@@ -113,6 +127,8 @@ struct NewRpgInfo
     void ChangeToDoQuest(uint32 questId, const Quest* quest);
     void ChangeToTravelFlight(uint32 flightMasterEntry, WorldPosition flightMasterPos, std::vector<uint32> path);
     void ChangeToOutdoorPvp(ObjectGuid::LowType capturePointSpawnId = 0);
+    void ChangeToVendor(WorldPosition pos);
+    void ChangeToMailbox();
     void ChangeToRest();
     void ChangeToIdle();
     bool CanChangeTo(NewRpgStatus status);

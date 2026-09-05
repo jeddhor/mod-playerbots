@@ -73,6 +73,8 @@ protected:
     const int32 statusGoGrindDuration = 10 * MINUTE * IN_MILLISECONDS;
     const int32 statusGoCampDuration = 10 * MINUTE * IN_MILLISECONDS;
     const int32 statusTravelFlightDuration = 15 * MINUTE * IN_MILLISECONDS;
+    const int32 statusVendorDuration = 5 * MINUTE * IN_MILLISECONDS;
+    const int32 statusMailboxDuration = 30 * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
@@ -116,6 +118,37 @@ protected:
     bool DoCompletedQuest(NewRpgInfo::DoQuest& data);
 
     const uint32 poiStayTime = 5 * 60 * 1000;
+};
+
+/// Travels to a vendor to offload what AutoVendorJunk cannot: white-quality items, and anything
+/// else the classifier marks as vendor fodder above the auto-sell quality threshold. Also repairs.
+///
+/// AutoVendorJunk deliberately handles only greys with no travel (R4.1), so whites still accumulate
+/// and need a real vendor trip - this is that trip.
+class NewRpgVendorAction : public NewRpgBaseAction
+{
+public:
+    NewRpgVendorAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg vendor") {}
+    bool Execute(Event event) override;
+
+    const uint32 vendorStayTime = 5 * 1000;
+};
+
+/// Collects mail without visiting a mailbox, in the same spirit as posting to the auction house
+/// from anywhere.
+///
+/// This does NOT reuse CheckMailAction. That action skips any mail whose sender is not a currently
+/// connected non-bot player:
+///     Player* owner = ObjectAccessor::FindConnectedPlayer(mail->sender);
+///     if (!owner) continue;
+/// Auction proceeds are sent by the auction house, not by a connected player, so every auction
+/// payment would be silently skipped. CheckMailAction is for player gifts and guild tasks; the
+/// economy needs its own path.
+class NewRpgMailboxAction : public NewRpgBaseAction
+{
+public:
+    NewRpgMailboxAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg mailbox") {}
+    bool Execute(Event event) override;
 };
 
 class NewRpgTravelFlightAction : public NewRpgBaseAction
