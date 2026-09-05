@@ -166,7 +166,7 @@ public:
     bool Execute(Event event) override;
 
     // Long enough for the `gather` strategy to notice the node, cast, and loot it.
-    const uint32 nodeStayTime = 6 * 1000;
+    const uint32 nodeStayTime = 10 * 1000;
 };
 
 /// Travels to a trainer and learns whatever is available, profession ranks included.

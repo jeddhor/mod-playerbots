@@ -35,6 +35,17 @@ public:
         return instance;
     }
 
+    /// A waypoint: the CENTROID of a cluster of nearby spawn points, not a single spawn point.
+    ///
+    /// Herb and ore nodes are pooled - roughly 4 candidate spawn points share a pool and only ~1.4
+    /// are live at any moment (measured: 29,862 of 31,592 gatherable spawn points are pooled). An
+    /// index built from individual spawn points therefore sends bots to empty ground about two
+    /// thirds of the time, which is exactly what the first behavioural test showed: 21 bots
+    /// gathering for 35 minutes produced 7 items.
+    ///
+    /// Aiming at a cluster centroid instead makes pooling irrelevant. The bot stands where nodes
+    /// *tend* to be and the existing `gather` strategy picks up whatever actually spawned, since
+    /// the whole cluster sits well inside its detection range.
     struct Node
     {
         uint32 mapId{0};
@@ -42,6 +53,7 @@ public:
         float y{0.0f};
         float z{0.0f};
         uint32 requiredSkillValue{0};
+        uint32 spawnPoints{1};   ///< how many pooled spawn points this centroid covers
     };
 
     /// An ordered loop a bot walks in sequence.
@@ -71,6 +83,8 @@ private:
     GatherRouteMgr& operator=(GatherRouteMgr const&) = delete;
 
     /// Greedy nearest-neighbour walk over a zone's nodes, cut into loops of a workable length.
+    /// Collapse nearby spawn points into centroids before routing. See Node.
+    std::vector<Node> ClusterSpawnPoints(std::vector<Node>& points) const;
     void BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::vector<Node>& nodes);
 
     std::vector<Route> _routes;

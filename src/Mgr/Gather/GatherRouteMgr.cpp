@@ -25,6 +25,9 @@ constexpr size_t MIN_ROUTE_NODES = 6;
 constexpr size_t MAX_ROUTE_NODES = 15;
 // Nodes further apart than this belong to different clusters, not the same loop.
 constexpr float MAX_LINK_DISTANCE = 300.0f;
+// Spawn points within this radius collapse into one waypoint. Comfortably inside the bot's node
+// detection range, so standing on the centroid puts the whole cluster in view.
+constexpr float CLUSTER_RADIUS = 50.0f;
 
 float Dist2(GatherRouteMgr::Node const& a, GatherRouteMgr::Node const& b)
 {
@@ -88,14 +91,70 @@ void GatherRouteMgr::Load()
             Node{data.mapid, data.posX, data.posY, data.posZ, reqSkillValue});
     }
 
+    uint32 rawPoints = 0;
+    uint32 waypoints = 0;
     for (auto& entry : buckets)
-        BuildRoutesForBucket(entry.first.first, entry.first.second, entry.second);
+    {
+        rawPoints += static_cast<uint32>(entry.second.size());
+        std::vector<Node> clustered = ClusterSpawnPoints(entry.second);
+        waypoints += static_cast<uint32>(clustered.size());
+        BuildRoutesForBucket(entry.first.first, entry.first.second, clustered);
+    }
 
     for (uint32 i = 0; i < _routes.size(); ++i)
         _byZone[_routes[i].zoneId].push_back(i);
 
-    LOG_INFO("server.loading", ">> Loaded {} playerbot gathering routes across {} zones in {} ms", _routes.size(),
-             _byZone.size(), GetMSTimeDiffToNow(oldMSTime));
+    LOG_INFO("server.loading",
+             ">> Loaded {} playerbot gathering routes across {} zones ({} spawn points -> {} clustered waypoints) "
+             "in {} ms",
+             _routes.size(), _byZone.size(), rawPoints, waypoints, GetMSTimeDiffToNow(oldMSTime));
+}
+
+std::vector<GatherRouteMgr::Node> GatherRouteMgr::ClusterSpawnPoints(std::vector<Node>& points) const
+{
+    std::vector<Node> clusters;
+    std::vector<bool> used(points.size(), false);
+
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        if (used[i])
+            continue;
+
+        Node centroid = points[i];
+        double sx = points[i].x, sy = points[i].y, sz = points[i].z;
+        uint32 count = 1;
+        used[i] = true;
+
+        for (size_t j = i + 1; j < points.size(); ++j)
+        {
+            if (used[j] || points[j].mapId != points[i].mapId)
+                continue;
+
+            if (Dist2(points[i], points[j]) > CLUSTER_RADIUS * CLUSTER_RADIUS)
+                continue;
+
+            sx += points[j].x;
+            sy += points[j].y;
+            sz += points[j].z;
+            // The cluster is only workable if the bot can harvest its hardest member.
+            centroid.requiredSkillValue = std::max(centroid.requiredSkillValue, points[j].requiredSkillValue);
+            ++count;
+            used[j] = true;
+        }
+
+        centroid.x = static_cast<float>(sx / count);
+        centroid.y = static_cast<float>(sy / count);
+        centroid.z = static_cast<float>(sz / count);
+        centroid.spawnPoints = count;
+        clusters.push_back(centroid);
+    }
+
+    // Denser clusters first: with ~1.4 of every 4 pooled points live, a waypoint covering more
+    // spawn points is proportionally more likely to have something actually there.
+    std::sort(clusters.begin(), clusters.end(),
+              [](Node const& a, Node const& b) { return a.spawnPoints > b.spawnPoints; });
+
+    return clusters;
 }
 
 void GatherRouteMgr::BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::vector<Node>& nodes)
