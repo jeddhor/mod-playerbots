@@ -167,6 +167,9 @@ public:
 
     // Long enough for the `gather` strategy to notice the node, cast, and loot it.
     const uint32 nodeStayTime = 10 * 1000;
+    // Well inside AiPlayerbot.SightDistance (100) so the whole cluster is detectable on arrival,
+    // while still close enough that the loot action's approach is short.
+    const float gatherArrivalDistance = 40.0f;
 };
 
 /// Travels to a trainer and learns whatever is available, profession ranks included.

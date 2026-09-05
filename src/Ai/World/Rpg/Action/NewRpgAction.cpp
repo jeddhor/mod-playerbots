@@ -900,12 +900,25 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
     if (data.pos == WorldPosition())
         data.pos = WorldPosition(node.mapId, node.x, node.y, node.z);
 
-    if (bot->GetDistance(data.pos) > INTERACTION_DISTANCE && !data.lastReach)
+    // Arrive within DETECTION range, not interaction range.
+    //
+    // This previously required INTERACTION_DISTANCE (5.5 yards) of the waypoint. That is the wrong
+    // measure entirely: the bot never needs to stand on the node, it needs the node to be visible
+    // to the `gather` strategy, which scans to AiPlayerbot.SightDistance (100 yards) and whose loot
+    // action handles the final approach within LootDistance (15). Worse, a waypoint is a cluster
+    // centroid - an averaged coordinate that may land inside a rock or mid-air - so 5.5 yards was
+    // frequently unreachable and the bot burned its entire gather window on a single waypoint
+    // without ever advancing. Measured: 20 bots gathering for 35 minutes produced zero items.
+    if (bot->GetDistance(data.pos) > gatherArrivalDistance && !data.lastReach)
     {
         if (MoveFarTo(data.pos))
             return true;
         return MoveRandomNear(10.0f);
     }
+
+    if (!data.lastReach)
+        LOG_DEBUG("playerbots", "[Gather] {} reached waypoint {}/{} in zone {} (dist {:.1f})", bot->GetName(),
+                  data.routeIndex + 1, route->nodes.size(), data.zoneId, bot->GetDistance(data.pos));
 
     if (!data.lastReach)
     {
