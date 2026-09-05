@@ -6,7 +6,8 @@
 
 #include "GatherRouteMgr.h"
 #include "DBCStores.h"
-#include "GameObjectData.h"
+// NOTE: do not include GameObjectData.h directly - it declares a G3D::Quat member without
+// including G3D itself, so it only compiles behind ObjectMgr.h.
 #include "Log.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
