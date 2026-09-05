@@ -396,6 +396,7 @@ public:
     uint32 questBlacklistFailThreshold;
     bool autoVendorJunk;
     uint32 autoVendorJunkMaxQuality;
+    bool botTypeParity;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;

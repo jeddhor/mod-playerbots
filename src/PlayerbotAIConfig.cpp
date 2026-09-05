@@ -717,7 +717,12 @@ bool PlayerbotAIConfig::Initialize()
     dropObsoleteQuests = sConfigMgr->GetOption<bool>("AiPlayerbot.DropObsoleteQuests", true);
     allowLearnTrainerSpells = sConfigMgr->GetOption<bool>("AiPlayerbot.AllowLearnTrainerSpells", true);
     autoPickTalents = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoPickTalents", true);
-    autoUpgradeEquip = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoUpgradeEquip", true);
+    // Default flipped to false (R4.2). This gated PlayerbotFactory::InitEquipment on every
+    // level-up, i.e. bots were handed a fresh set of gear they never earned. A bot that is
+    // auto-geared has no reason to buy anything, so leaving this on makes the entire buy side
+    // of the economy (auction upgrades, buying mats to craft an upgrade) untestable - there are
+    // no customers. Bots still equip what they LOOT via AutoEquipUpgradeLoot, which stays on.
+    autoUpgradeEquip = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoUpgradeEquip", false);
     hunterWolfPet = sConfigMgr->GetOption<int32>("AiPlayerbot.HunterWolfPet", 0);
     defaultPetStance = sConfigMgr->GetOption<int32>("AiPlayerbot.DefaultPetStance", 1);
     petChatCommandDebug = sConfigMgr->GetOption<bool>("AiPlayerbot.PetChatCommandDebug", 0);
@@ -740,6 +745,7 @@ bool PlayerbotAIConfig::Initialize()
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
     autoVendorJunk = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoVendorJunk", true);
     autoVendorJunkMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.AutoVendorJunkMaxQuality", ITEM_QUALITY_POOR);
+    botTypeParity = sConfigMgr->GetOption<bool>("AiPlayerbot.BotTypeParity", true);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
     randomBotGroupNearby = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotGroupNearby", false);

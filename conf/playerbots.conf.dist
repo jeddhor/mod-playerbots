@@ -1470,6 +1470,22 @@ AiPlayerbot.AutoVendorJunk = 1
 
 AiPlayerbot.AutoVendorJunkMaxQuality = 0
 
+#
+#    AiPlayerbot.BotTypeParity
+#        Description: Decide a bot's autonomous behaviour from its SITUATION rather than from how
+#                     it was created.
+#                     Previously only random bots were given the 'grind' and 'new rpg' strategies,
+#                     so an alt bot outside a party - or a player turned into a self bot - fell
+#                     through to a much thinner set and visibly did far less than a random bot
+#                     standing next to it. With this enabled, any bot without a human master gets
+#                     the full autonomous strategy set, whether it is a random bot, an alt or a
+#                     self bot. Bots grouped with a human still follow and assist as before.
+#                     Set to 0 to restore the old provenance-based behaviour.
+#        Default:     1 (enabled)
+#
+
+AiPlayerbot.BotTypeParity = 1
+
 # Bots' minimum and maximum level when teleporting in and out of a zone, according to the new RPG strategy
 # Format: AiPlayerbot.ZoneBracket.zoneID = minLevel,maxLevel
 #

@@ -588,7 +588,24 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     if (sPlayerbotAIConfig.autoSaveMana && PlayerbotAI::IsHeal(player, true))
         nonCombatEngine->addStrategy("save mana", false);
 
-    if ((sRandomPlayerbotMgr.IsRandomBot(player)) && !player->InBattleground())
+    // Autonomy is decided by SITUATION, not by how the bot came to exist.
+    //
+    // This used to read `IsRandomBot(player)`, so only random bots were given the `grind` and
+    // `new rpg` strategies. An alt bot standing outside a party, or a player turned into a self
+    // bot, fell through to a much thinner strategy set and visibly did less than a random bot next
+    // to it - which is also why self-bot behaviour reports were hard to reason about: they were
+    // observations of a different strategy set, not of the same code behaving differently.
+    //
+    // An unsupervised bot is one with no human master. That covers random bots, unparried alt bots
+    // and self bots alike (R8.1, R8.2), and it is the condition the autonomous strategies were
+    // always really about.
+    Player* aiMaster = facade ? facade->GetMaster() : nullptr;
+    bool const humanSupervised = aiMaster && !GET_PLAYERBOT_AI(aiMaster);
+    bool const unsupervised = sPlayerbotAIConfig.botTypeParity
+                                  ? !humanSupervised
+                                  : sRandomPlayerbotMgr.IsRandomBot(player);
+
+    if (unsupervised && !player->InBattleground())
     {
         Player* master = facade->GetMaster();
 
