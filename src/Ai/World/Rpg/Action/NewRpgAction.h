@@ -75,6 +75,7 @@ protected:
     const int32 statusTravelFlightDuration = 15 * MINUTE * IN_MILLISECONDS;
     const int32 statusVendorDuration = 5 * MINUTE * IN_MILLISECONDS;
     const int32 statusMailboxDuration = 30 * IN_MILLISECONDS;
+    const int32 statusGatherDuration = 15 * MINUTE * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
@@ -149,6 +150,22 @@ class NewRpgMailboxAction : public NewRpgBaseAction
 public:
     NewRpgMailboxAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg mailbox") {}
     bool Execute(Event event) override;
+};
+
+/// Walks a precomputed gathering route, node to node.
+///
+/// Deliberately does NOT harvest anything itself. The existing `gather` strategy
+/// (AddGatheringLootAction + LootObjectStack) already picks up any node that comes within loot
+/// range, and it works. All that was ever missing was a reason to be standing next to one, which
+/// is what this provides.
+class NewRpgGatherAction : public NewRpgBaseAction
+{
+public:
+    NewRpgGatherAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg gather") {}
+    bool Execute(Event event) override;
+
+    // Long enough for the `gather` strategy to notice the node, cast, and loot it.
+    const uint32 nodeStayTime = 6 * 1000;
 };
 
 class NewRpgTravelFlightAction : public NewRpgBaseAction

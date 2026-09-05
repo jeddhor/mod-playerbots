@@ -89,6 +89,16 @@ struct NewRpgInfo
     struct Mailbox
     {
     };
+    // RPG_GATHER
+    struct Gather
+    {
+        uint32 zoneId{0};
+        uint32 skillId{0};
+        uint32 routeIndex{0};   // which node of the route we are heading for
+        WorldPosition pos{};
+        uint32 lastReach{0};
+        uint32 nodesVisited{0};
+    };
     struct Idle
     {
     };
@@ -113,7 +123,8 @@ struct NewRpgInfo
         TravelFlight,
         OutdoorPvP,
         Vendor,
-        Mailbox
+        Mailbox,
+        Gather
     >;
     RpgData data;
 
@@ -129,6 +140,7 @@ struct NewRpgInfo
     void ChangeToOutdoorPvp(ObjectGuid::LowType capturePointSpawnId = 0);
     void ChangeToVendor(WorldPosition pos);
     void ChangeToMailbox();
+    void ChangeToGather(uint32 zoneId, uint32 skillId);
     void ChangeToRest();
     void ChangeToIdle();
     bool CanChangeTo(NewRpgStatus status);

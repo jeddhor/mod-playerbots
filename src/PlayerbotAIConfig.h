@@ -76,7 +76,10 @@ enum NewRpgStatus : int
     // rather than flavour.
     RPG_VENDOR = 9,
     RPG_MAILBOX = 10,
-    RPG_STATUS_END = 11
+    // Gathering (Phase 4): walk a precomputed node loop. The harvesting itself is already handled
+    // by the existing `gather` strategy; this supplies the intent to go where the nodes are.
+    RPG_GATHER = 11,
+    RPG_STATUS_END = 12
 };
 
 #define MAX_SPECNO 20
@@ -402,6 +405,7 @@ public:
     bool autoVendorJunk;
     uint32 autoVendorJunkMaxQuality;
     bool botTypeParity;
+    uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;

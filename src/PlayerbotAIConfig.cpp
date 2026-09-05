@@ -742,12 +742,14 @@ bool PlayerbotAIConfig::Initialize()
     RpgStatusProbWeight[RPG_OUTDOOR_PVP] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.OutdoorPvp", 10);
     RpgStatusProbWeight[RPG_VENDOR] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Vendor", 10);
     RpgStatusProbWeight[RPG_MAILBOX] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Mailbox", 5);
+    RpgStatusProbWeight[RPG_GATHER] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Gather", 20);
 
     questMaxDropsPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.MaxDropsPerPass", 1);
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
     autoVendorJunk = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoVendorJunk", true);
     autoVendorJunkMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.AutoVendorJunkMaxQuality", ITEM_QUALITY_POOR);
     botTypeParity = sConfigMgr->GetOption<bool>("AiPlayerbot.BotTypeParity", true);
+    gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
     randomBotGroupNearby = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotGroupNearby", false);

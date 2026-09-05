@@ -17,6 +17,7 @@
 #include "PlayerbotGuildMgr.h"
 #include "PlayerbotSpellRepository.h"
 #include "PlayerbotWorldThreadProcessor.h"
+#include "GatherRouteMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
@@ -362,6 +363,8 @@ public:
         PlayerbotSpellRepository::Instance().Initialize();
 
         QuestBlacklistMgr::instance().Load();
+
+        GatherRouteMgr::instance().Load();
 
         LOG_INFO("server.loading", "Playerbots World Thread Processor initialized");
     }

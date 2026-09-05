@@ -241,6 +241,7 @@ public:
         creators["go camp status"] = &TriggerContext::go_camp_status;
         creators["vendor status"] = &TriggerContext::vendor_status;
         creators["mailbox status"] = &TriggerContext::mailbox_status;
+        creators["gather status"] = &TriggerContext::gather_status;
         creators["wander random status"] = &TriggerContext::wander_random_status;
         creators["wander npc status"] = &TriggerContext::wander_npc_status;
         creators["do quest status"] = &TriggerContext::do_quest_status;
@@ -463,6 +464,7 @@ private:
     static Trigger* outdoor_pvp_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_OUTDOOR_PVP); }
     static Trigger* vendor_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_VENDOR); }
     static Trigger* mailbox_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_MAILBOX); }
+    static Trigger* gather_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_GATHER); }
     static Trigger* can_self_resurrect(PlayerbotAI* ai) { return new SelfResurrectTrigger(ai); }
     static Trigger* can_fish(PlayerbotAI* ai) { return new CanFishTrigger(ai); }
     static Trigger* can_use_fishing_bobber(PlayerbotAI* ai) { return new CanUseFishingBobberTrigger(ai); }

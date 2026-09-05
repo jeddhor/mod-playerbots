@@ -5,6 +5,7 @@
  */
 
 #include "NewRpgAction.h"
+#include "GatherRouteMgr.h"
 #include "Item.h"
 #include "Mail.h"
 #include "AreaDefines.h"
@@ -239,7 +240,7 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
     {
         case RPG_IDLE:
             return RandomChangeStatus({RPG_GO_CAMP, RPG_GO_GRIND, RPG_WANDER_RANDOM, RPG_WANDER_NPC, RPG_DO_QUEST,
-                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX});
+                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER});
 
         case RPG_GO_GRIND:
         {
@@ -343,6 +344,15 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         {
             // REST -> IDLE
             if (info.HasStatusPersisted(statusRestDuration))
+            {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_GATHER:
+        {
+            if (info.HasStatusPersisted(statusGatherDuration))
             {
                 info.ChangeToIdle();
                 return true;
@@ -843,6 +853,67 @@ bool NewRpgMailboxAction::Execute(Event /*event*/)
                   bot->GetName(), money, collected);
 
     botAI->rpgInfo.ChangeToIdle();
+    return true;
+}
+
+bool NewRpgGatherAction::Execute(Event /*event*/)
+{
+    NewRpgInfo& info = botAI->rpgInfo;
+    auto* dataPtr = std::get_if<NewRpgInfo::Gather>(&info.data);
+    if (!dataPtr)
+        return false;
+
+    auto& data = *dataPtr;
+
+    GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
+    if (!route || route->nodes.empty())
+    {
+        info.ChangeToIdle();
+        return true;
+    }
+
+    // Wandered out of the zone the route belongs to - the route is no longer reachable.
+    if (bot->GetZoneId() != data.zoneId)
+    {
+        info.ChangeToIdle();
+        return true;
+    }
+
+    if (data.routeIndex >= route->nodes.size())
+    {
+        LOG_DEBUG("playerbots", "[Gather] {} completed a {}-node route in zone {} ({} nodes visited)",
+                  bot->GetName(), route->nodes.size(), data.zoneId, data.nodesVisited);
+        info.ChangeToIdle();
+        return true;
+    }
+
+    GatherRouteMgr::Node const& node = route->nodes[data.routeIndex];
+    if (data.pos == WorldPosition())
+        data.pos = WorldPosition(node.mapId, node.x, node.y, node.z);
+
+    if (bot->GetDistance(data.pos) > INTERACTION_DISTANCE && !data.lastReach)
+    {
+        if (MoveFarTo(data.pos))
+            return true;
+        return MoveRandomNear(10.0f);
+    }
+
+    if (!data.lastReach)
+    {
+        data.lastReach = getMSTime();
+        return true;
+    }
+
+    // Linger briefly so the `gather` strategy can act, then move to the next node whether or not
+    // the node was still there - another bot or a player may have taken it.
+    if (GetMSTimeDiffToNow(data.lastReach) >= nodeStayTime)
+    {
+        data.routeIndex++;
+        data.nodesVisited++;
+        data.lastReach = 0;
+        data.pos = WorldPosition();
+    }
+
     return true;
 }
 

@@ -1,0 +1,83 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
+#ifndef PLAYERBOTS_GATHERROUTEMGR_H
+#define PLAYERBOTS_GATHERROUTEMGR_H
+
+#include "Define.h"
+#include "SharedDefines.h"
+#include <unordered_map>
+#include <vector>
+
+class Player;
+
+/**
+ * Precomputed gathering routes: ordered loops of herb or mineral nodes, grouped by zone and skill.
+ *
+ * The harvesting mechanics already work - `GatherStrategy`, `AddGatheringLootAction` and
+ * `LootObjectStack` will happily skin, mine and pick anything that comes within loot range. What is
+ * missing is intent: today a bot only gathers what it happens to walk past while doing something
+ * else. This supplies the "go to where the ore is" half.
+ *
+ * Built once at startup from spawn data, using the same lock->skill chain LootObject uses at
+ * runtime: GameObjectTemplate::GetLockId() -> sLockStore -> SkillByLockType. No live objects are
+ * needed, so the index is available before any bot logs in.
+ */
+class GatherRouteMgr
+{
+public:
+    static GatherRouteMgr& instance()
+    {
+        static GatherRouteMgr instance;
+        return instance;
+    }
+
+    struct Node
+    {
+        uint32 mapId{0};
+        float x{0.0f};
+        float y{0.0f};
+        float z{0.0f};
+        uint32 requiredSkillValue{0};
+    };
+
+    /// An ordered loop a bot walks in sequence.
+    struct Route
+    {
+        uint32 zoneId{0};
+        uint32 skillId{0};
+        uint32 minSkillValue{0};   // highest requirement on the route: the gate to walk it at all
+        std::vector<Node> nodes;
+    };
+
+    /// Build the index. Call once during world startup, after gameobject data is loaded.
+    void Load();
+
+    /// Routes for a zone that this bot's skill can actually harvest, or empty.
+    std::vector<Route const*> GetRoutesFor(Player* bot, uint32 zoneId) const;
+
+    /// Pick one route at random from those the bot qualifies for. nullptr if none.
+    Route const* PickRoute(Player* bot, uint32 zoneId) const;
+
+    uint32 GetRouteCount() const { return static_cast<uint32>(_routes.size()); }
+
+private:
+    GatherRouteMgr() = default;
+    ~GatherRouteMgr() = default;
+    GatherRouteMgr(GatherRouteMgr const&) = delete;
+    GatherRouteMgr& operator=(GatherRouteMgr const&) = delete;
+
+    /// Greedy nearest-neighbour walk over a zone's nodes, cut into loops of a workable length.
+    void BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::vector<Node>& nodes);
+
+    std::vector<Route> _routes;
+    // zoneId -> indices into _routes, so lookup at pick time is a single hash.
+    std::unordered_map<uint32, std::vector<uint32>> _byZone;
+};
+
+#define sGatherRouteMgr GatherRouteMgr::instance()
+
+#endif

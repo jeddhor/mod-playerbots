@@ -5,6 +5,7 @@
  */
 
 #include "NewRpgBaseAction.h"
+#include "GatherRouteMgr.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
 #include "Creature.h"
@@ -1461,6 +1462,15 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             botAI->rpgInfo.ChangeToMailbox();
             return true;
         }
+        case RPG_GATHER:
+        {
+            if (GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()))
+            {
+                botAI->rpgInfo.ChangeToGather(bot->GetZoneId(), route->skillId);
+                return true;
+            }
+            return false;
+        }
         default:
         {
             botAI->rpgInfo.ChangeToRest();
@@ -1532,6 +1542,12 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
         }
         case RPG_MAILBOX:
             return !bot->GetMails().empty();
+        case RPG_GATHER:
+            // Needs a gathering profession, a route in this zone the bot's skill can work, and
+            // somewhere to put what it picks up.
+            if (bot->GetFreeInventorySpace() < sPlayerbotAIConfig.gatheringMinFreeBagSlots)
+                return false;
+            return sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()) != nullptr;
         case RPG_OUTDOOR_PVP:
         {
             if (!bot->IsPvP())

@@ -74,6 +74,15 @@ void NewRpgInfo::ChangeToMailbox()
     data = Mailbox{};
 }
 
+void NewRpgInfo::ChangeToGather(uint32 zoneId, uint32 skillId)
+{
+    startT = getMSTime();
+    Gather gather;
+    gather.zoneId = zoneId;
+    gather.skillId = skillId;
+    data = gather;
+}
+
 void NewRpgInfo::ChangeToRest()
 {
     startT = getMSTime();
@@ -118,6 +127,7 @@ NewRpgStatus NewRpgInfo::StatusFromString(std::string const& name)
     if (name == "outdoor pvp")    return RPG_OUTDOOR_PVP;
     if (name == "vendor")         return RPG_VENDOR;
     if (name == "mailbox")        return RPG_MAILBOX;
+    if (name == "gather")         return RPG_GATHER;
     return RPG_STATUS_END;
 }
 
@@ -136,6 +146,7 @@ NewRpgStatus NewRpgInfo::GetStatus()
         if constexpr (std::is_same_v<T, OutdoorPvP>) return RPG_OUTDOOR_PVP;
         if constexpr (std::is_same_v<T, Vendor>) return RPG_VENDOR;
         if constexpr (std::is_same_v<T, Mailbox>) return RPG_MAILBOX;
+        if constexpr (std::is_same_v<T, Gather>) return RPG_GATHER;
         return RPG_IDLE;
     }, data);
 }
@@ -224,6 +235,12 @@ std::string NewRpgInfo::ToString()
         {
             out << "MAILBOX";
             out << "\nlastMailbox: " << startT;
+        }
+        else if constexpr (std::is_same_v<T, Gather>)
+        {
+            out << "GATHER";
+            out << "\nzoneId: " << arg.zoneId << "  skillId: " << arg.skillId;
+            out << "\nrouteIndex: " << arg.routeIndex << "  nodesVisited: " << arg.nodesVisited;
         }
         else
             out << "UNKNOWN";

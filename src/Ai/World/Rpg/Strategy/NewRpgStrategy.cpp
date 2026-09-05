@@ -68,6 +68,14 @@ void NewRpgStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(
         new TriggerNode(
+            "gather status",
+            {
+                NextAction("new rpg gather", 3.0f)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
             "vendor status",
             {
                 NextAction("new rpg vendor", 3.0f)
