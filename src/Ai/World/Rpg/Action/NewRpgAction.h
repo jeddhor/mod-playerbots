@@ -76,6 +76,7 @@ protected:
     const int32 statusVendorDuration = 5 * MINUTE * IN_MILLISECONDS;
     const int32 statusMailboxDuration = 30 * IN_MILLISECONDS;
     const int32 statusGatherDuration = 15 * MINUTE * IN_MILLISECONDS;
+    const int32 statusTrainDuration = 5 * MINUTE * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
@@ -166,6 +167,25 @@ public:
 
     // Long enough for the `gather` strategy to notice the node, cast, and loot it.
     const uint32 nodeStayTime = 6 * 1000;
+};
+
+/// Travels to a trainer and learns whatever is available, profession ranks included.
+///
+/// This exists because nothing else raises a bot past Apprentice. PlayerbotFactory grants the
+/// starter spell for each profession and stops there, so without training every bot is capped at
+/// skill 75 forever - meaning the auction house would only ever see Peacebloom and Copper Ore no
+/// matter how much gathering happens.
+///
+/// Reuses the existing "trainer" action rather than reimplementing the learn logic: it already
+/// walks sObjectMgr->GetTrainer() and handles tradeskill trainers. All that was missing was a bot
+/// deciding to go and stand in front of one.
+class NewRpgTrainAction : public NewRpgBaseAction
+{
+public:
+    NewRpgTrainAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg train") {}
+    bool Execute(Event event) override;
+
+    const uint32 trainerStayTime = 5 * 1000;
 };
 
 class NewRpgTravelFlightAction : public NewRpgBaseAction

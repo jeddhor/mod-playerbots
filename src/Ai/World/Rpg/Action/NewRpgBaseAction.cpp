@@ -1258,6 +1258,59 @@ bool NewRpgBaseAction::SelectRandomFlightTaxiNode(uint32& flightMasterEntry, Wor
     return true;
 }
 
+bool NewRpgBaseAction::HasTrainingBusiness()
+{
+    // A profession sitting at its rank cap is the signal that the next rank is worth buying. Below
+    // the cap the bot can still improve by gathering, so a trip would accomplish nothing.
+    //
+    // Local list rather than PlayerbotFactory::tradeSkills, which is declared `uint32 tradeSkills[]`
+    // with no size and therefore has no usable element count.
+    static constexpr uint16 professionSkills[] = {
+        SKILL_ALCHEMY,     SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+        SKILL_HERBALISM,   SKILL_INSCRIPTION,   SKILL_JEWELCRAFTING, SKILL_LEATHERWORKING,
+        SKILL_MINING,      SKILL_SKINNING,      SKILL_TAILORING,  SKILL_COOKING,
+        SKILL_FIRST_AID,   SKILL_FISHING};
+
+    for (uint16 skillId : professionSkills)
+    {
+        uint16 value = bot->GetSkillValue(skillId);
+        if (!value)
+            continue;
+
+        if (value >= bot->GetMaxSkillValue(skillId))
+            return true;
+    }
+
+    return false;
+}
+
+WorldPosition NewRpgBaseAction::SelectNearestTrainerPos(ObjectGuid& trainerGuid)
+{
+    GuidVector npcs = AI_VALUE(GuidVector, "nearest npcs");
+    WorldPosition best{};
+    float bestDist = FLT_MAX;
+
+    for (ObjectGuid const& guid : npcs)
+    {
+        Unit* unit = ObjectAccessor::GetUnit(*bot, guid);
+        if (!unit || !unit->HasNpcFlag(UNIT_NPC_FLAG_TRAINER))
+            continue;
+
+        if (unit->GetReactionTo(bot) <= REP_UNFRIENDLY)
+            continue;
+
+        float d = bot->GetExactDist(unit);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            trainerGuid = guid;
+            best = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+        }
+    }
+
+    return best;
+}
+
 bool NewRpgBaseAction::HasVendorBusiness()
 {
     // Repair first: durability loss is the most common reason to need a vendor at all.
@@ -1462,6 +1515,17 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             botAI->rpgInfo.ChangeToMailbox();
             return true;
         }
+        case RPG_TRAIN:
+        {
+            ObjectGuid trainerGuid;
+            WorldPosition pos = SelectNearestTrainerPos(trainerGuid);
+            if (pos != WorldPosition())
+            {
+                botAI->rpgInfo.ChangeToTrain(pos, trainerGuid);
+                return true;
+            }
+            return false;
+        }
         case RPG_GATHER:
         {
             if (GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()))
@@ -1542,6 +1606,13 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
         }
         case RPG_MAILBOX:
             return !bot->GetMails().empty();
+        case RPG_TRAIN:
+        {
+            if (!HasTrainingBusiness())
+                return false;
+            ObjectGuid guid;
+            return SelectNearestTrainerPos(guid) != WorldPosition();
+        }
         case RPG_GATHER:
             // Needs a gathering profession, a route in this zone the bot's skill can work, and
             // somewhere to put what it picks up.

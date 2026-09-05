@@ -83,6 +83,15 @@ void NewRpgInfo::ChangeToGather(uint32 zoneId, uint32 skillId)
     data = gather;
 }
 
+void NewRpgInfo::ChangeToTrain(WorldPosition pos, ObjectGuid trainerGuid)
+{
+    startT = getMSTime();
+    Train train;
+    train.pos = pos;
+    train.trainerGuid = trainerGuid;
+    data = train;
+}
+
 void NewRpgInfo::ChangeToRest()
 {
     startT = getMSTime();
@@ -128,6 +137,7 @@ NewRpgStatus NewRpgInfo::StatusFromString(std::string const& name)
     if (name == "vendor")         return RPG_VENDOR;
     if (name == "mailbox")        return RPG_MAILBOX;
     if (name == "gather")         return RPG_GATHER;
+    if (name == "train")          return RPG_TRAIN;
     return RPG_STATUS_END;
 }
 
@@ -147,6 +157,7 @@ NewRpgStatus NewRpgInfo::GetStatus()
         if constexpr (std::is_same_v<T, Vendor>) return RPG_VENDOR;
         if constexpr (std::is_same_v<T, Mailbox>) return RPG_MAILBOX;
         if constexpr (std::is_same_v<T, Gather>) return RPG_GATHER;
+        if constexpr (std::is_same_v<T, Train>) return RPG_TRAIN;
         return RPG_IDLE;
     }, data);
 }
@@ -241,6 +252,12 @@ std::string NewRpgInfo::ToString()
             out << "GATHER";
             out << "\nzoneId: " << arg.zoneId << "  skillId: " << arg.skillId;
             out << "\nrouteIndex: " << arg.routeIndex << "  nodesVisited: " << arg.nodesVisited;
+        }
+        else if constexpr (std::is_same_v<T, Train>)
+        {
+            out << "TRAIN";
+            out << "\ntrainerGuid: " << arg.trainerGuid.ToString();
+            out << "\ntrained: " << arg.trained;
         }
         else
             out << "UNKNOWN";

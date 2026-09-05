@@ -79,7 +79,10 @@ enum NewRpgStatus : int
     // Gathering (Phase 4): walk a precomputed node loop. The harvesting itself is already handled
     // by the existing `gather` strategy; this supplies the intent to go where the nodes are.
     RPG_GATHER = 11,
-    RPG_STATUS_END = 12
+    // Without training, every bot stays at Apprentice rank forever and the auction house only ever
+    // sees tier-1 materials. This is what gives the gathering economy any depth.
+    RPG_TRAIN = 12,
+    RPG_STATUS_END = 13
 };
 
 #define MAX_SPECNO 20

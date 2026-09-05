@@ -72,6 +72,9 @@ protected:
     /// True when a vendor trip would actually accomplish something: gear needing repair, or items
     /// the classifier calls vendor fodder that AutoVendorJunk will not sell without travel.
     bool HasVendorBusiness();
+    /// True when a profession is at its rank cap, i.e. the next rank is what unblocks progress.
+    bool HasTrainingBusiness();
+    WorldPosition SelectNearestTrainerPos(ObjectGuid& trainerGuid);
     WorldPosition SelectNearestVendorPos();
     static WorldPosition SelectRandomGrindPos(Player* bot);
     static WorldPosition SelectRandomCampPos(Player* bot);

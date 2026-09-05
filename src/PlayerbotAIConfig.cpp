@@ -743,6 +743,7 @@ bool PlayerbotAIConfig::Initialize()
     RpgStatusProbWeight[RPG_VENDOR] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Vendor", 10);
     RpgStatusProbWeight[RPG_MAILBOX] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Mailbox", 5);
     RpgStatusProbWeight[RPG_GATHER] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Gather", 20);
+    RpgStatusProbWeight[RPG_TRAIN] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Train", 8);
 
     questMaxDropsPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.MaxDropsPerPass", 1);
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);

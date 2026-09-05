@@ -1419,6 +1419,7 @@ AiPlayerbot.RpgStatusProbWeight.OutdoorPvp = 10
 AiPlayerbot.RpgStatusProbWeight.Vendor = 10
 AiPlayerbot.RpgStatusProbWeight.Mailbox = 5
 AiPlayerbot.RpgStatusProbWeight.Gather = 20
+AiPlayerbot.RpgStatusProbWeight.Train = 8
 
 AiPlayerbot.Gathering.MinFreeBagSlots = 4
 

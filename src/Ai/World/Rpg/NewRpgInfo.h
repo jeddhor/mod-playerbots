@@ -89,6 +89,14 @@ struct NewRpgInfo
     struct Mailbox
     {
     };
+    // RPG_TRAIN
+    struct Train
+    {
+        WorldPosition pos{};
+        ObjectGuid trainerGuid{};
+        uint32 lastReach{0};
+        bool trained{false};
+    };
     // RPG_GATHER
     struct Gather
     {
@@ -124,7 +132,8 @@ struct NewRpgInfo
         OutdoorPvP,
         Vendor,
         Mailbox,
-        Gather
+        Gather,
+        Train
     >;
     RpgData data;
 
@@ -141,6 +150,7 @@ struct NewRpgInfo
     void ChangeToVendor(WorldPosition pos);
     void ChangeToMailbox();
     void ChangeToGather(uint32 zoneId, uint32 skillId);
+    void ChangeToTrain(WorldPosition pos, ObjectGuid trainerGuid);
     void ChangeToRest();
     void ChangeToIdle();
     bool CanChangeTo(NewRpgStatus status);

@@ -20,6 +20,20 @@ public:
     std::string const getName() override { return "loot"; }
 };
 
+/// Operator-selectable bias toward gathering (R5.1).
+///
+/// Does not add new mechanics - it raises the relevance of the existing `new rpg gather` action so
+/// a bot running it prefers walking node routes over the other RPG activities. Enable with
+/// `+farm materials` on a bot or via AiPlayerbot.RandomBotNonCombatStrategies.
+class FarmMaterialsStrategy : public Strategy
+{
+public:
+    FarmMaterialsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+
+    std::string const getName() override { return "farm materials"; }
+    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+};
+
 class GatherStrategy : public Strategy
 {
 public:

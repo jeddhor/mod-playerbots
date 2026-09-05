@@ -20,6 +20,14 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("often", { NextAction("vendor junk", 1.0f) }));
 }
 
+void FarmMaterialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+{
+    // Relevance 6.0 beats the 3.0 the NewRpg strategy gives every other activity, so a bot with
+    // this strategy on will pick gathering whenever a workable route exists, and fall back to
+    // normal RPG behaviour when one does not.
+    triggers.push_back(new TriggerNode("gather status", { NextAction("new rpg gather", 6.0f) }));
+}
+
 void GatherStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(

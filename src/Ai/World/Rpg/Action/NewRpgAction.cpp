@@ -240,7 +240,7 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
     {
         case RPG_IDLE:
             return RandomChangeStatus({RPG_GO_CAMP, RPG_GO_GRIND, RPG_WANDER_RANDOM, RPG_WANDER_NPC, RPG_DO_QUEST,
-                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER});
+                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER, RPG_TRAIN});
 
         case RPG_GO_GRIND:
         {
@@ -344,6 +344,15 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         {
             // REST -> IDLE
             if (info.HasStatusPersisted(statusRestDuration))
+            {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_TRAIN:
+        {
+            if (info.HasStatusPersisted(statusTrainDuration))
             {
                 info.ChangeToIdle();
                 return true;
@@ -913,6 +922,56 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
         data.lastReach = 0;
         data.pos = WorldPosition();
     }
+
+    return true;
+}
+
+bool NewRpgTrainAction::Execute(Event /*event*/)
+{
+    NewRpgInfo& info = botAI->rpgInfo;
+    auto* dataPtr = std::get_if<NewRpgInfo::Train>(&info.data);
+    if (!dataPtr)
+        return false;
+
+    auto& data = *dataPtr;
+
+    if (data.pos == WorldPosition())
+    {
+        info.ChangeToIdle();
+        return true;
+    }
+
+    if (bot->GetDistance(data.pos) > INTERACTION_DISTANCE && !data.lastReach)
+    {
+        if (MoveFarTo(data.pos))
+            return true;
+        return MoveRandomNear(10.0f);
+    }
+
+    if (!data.lastReach)
+    {
+        data.lastReach = getMSTime();
+        return true;
+    }
+
+    if (!data.trained)
+    {
+        // "trainer" reads the bot's current target, so select the trainer first.
+        Unit* trainer = ObjectAccessor::GetUnit(*bot, data.trainerGuid);
+        if (!trainer)
+        {
+            info.ChangeToIdle();
+            return true;
+        }
+
+        bot->SetSelection(data.trainerGuid);
+        botAI->DoSpecificAction("trainer", Event(), true);
+        data.trained = true;
+        return true;
+    }
+
+    if (GetMSTimeDiffToNow(data.lastReach) >= trainerStayTime)
+        info.ChangeToIdle();
 
     return true;
 }

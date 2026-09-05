@@ -258,6 +258,7 @@ public:
         creators["new rpg vendor"] = &ActionContext::new_rpg_vendor;
         creators["new rpg mailbox"] = &ActionContext::new_rpg_mailbox;
         creators["new rpg gather"] = &ActionContext::new_rpg_gather;
+        creators["new rpg train"] = &ActionContext::new_rpg_train;
         creators["rpg repair"] = &ActionContext::rpg_repair;
         creators["rpg train"] = &ActionContext::rpg_train;
         creators["rpg heal"] = &ActionContext::rpg_heal;
@@ -469,6 +470,7 @@ private:
     static Action* new_rpg_vendor(PlayerbotAI* botAI) { return new NewRpgVendorAction(botAI); }
     static Action* new_rpg_mailbox(PlayerbotAI* botAI) { return new NewRpgMailboxAction(botAI); }
     static Action* new_rpg_gather(PlayerbotAI* botAI) { return new NewRpgGatherAction(botAI); }
+    static Action* new_rpg_train(PlayerbotAI* botAI) { return new NewRpgTrainAction(botAI); }
     static Action* rpg_repair(PlayerbotAI* botAI) { return new RpgRepairAction(botAI); }
     static Action* rpg_train(PlayerbotAI* botAI) { return new RpgTrainAction(botAI); }
     static Action* rpg_heal(PlayerbotAI* botAI) { return new RpgHealAction(botAI); }

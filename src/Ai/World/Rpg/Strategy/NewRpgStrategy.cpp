@@ -68,6 +68,14 @@ void NewRpgStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(
         new TriggerNode(
+            "train status",
+            {
+                NextAction("new rpg train", 3.0f)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
             "gather status",
             {
                 NextAction("new rpg gather", 3.0f)
