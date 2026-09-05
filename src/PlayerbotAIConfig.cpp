@@ -738,6 +738,8 @@ bool PlayerbotAIConfig::Initialize()
 
     questMaxDropsPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.MaxDropsPerPass", 1);
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
+    autoVendorJunk = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoVendorJunk", true);
+    autoVendorJunkMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.AutoVendorJunkMaxQuality", ITEM_QUALITY_POOR);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
     randomBotGroupNearby = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotGroupNearby", false);

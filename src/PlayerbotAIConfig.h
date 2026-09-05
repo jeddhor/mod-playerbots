@@ -394,6 +394,8 @@ public:
     std::unordered_map<NewRpgStatus, uint32> RpgStatusProbWeight;
     uint32 questMaxDropsPerPass;
     uint32 questBlacklistFailThreshold;
+    bool autoVendorJunk;
+    uint32 autoVendorJunkMaxQuality;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;

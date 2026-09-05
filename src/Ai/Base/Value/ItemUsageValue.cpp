@@ -149,10 +149,14 @@ ItemUsage ItemUsageValue::Calculate()
     // Need to add something like free bagspace or item value.
     if (proto->SellPrice > 0)
     {
-        if (proto->Quality >= ITEM_QUALITY_NORMAL && !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP)
+        // Auction uncommon (green) and better only. The old threshold was ITEM_QUALITY_NORMAL,
+        // which sent every white item to the auction house - thousands of near-worthless listings
+        // that bury the goods players actually want and give the price index nothing but noise.
+        // Whites still have value, so they go to the vendor rather than being destroyed.
+        if (proto->Quality >= ITEM_QUALITY_UNCOMMON && !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP)
             return ITEM_USAGE_AH;
-        else
-            return ITEM_USAGE_VENDOR;
+
+        return ITEM_USAGE_VENDOR;
     }
 
     return ITEM_USAGE_NONE;

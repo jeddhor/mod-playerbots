@@ -1445,6 +1445,31 @@ AiPlayerbot.Quest.MaxDropsPerPass = 1
 
 AiPlayerbot.Quest.BlacklistFailThreshold = 5
 
+#
+#    AiPlayerbot.AutoVendorJunk
+#        Description: Let bots sell junk at vendor price without travelling to a vendor.
+#                     A full inventory silently disables almost everything else a bot does - it
+#                     stops looting, cannot pick up quest items, and loses gathered materials - and
+#                     walking every bot to a vendor to fix that is a great deal of pathfinding for
+#                     no gameplay value. The gold is real and the item is really destroyed, so the
+#                     realm's money supply moves exactly as if the bot had visited a vendor. Only
+#                     the travel is skipped.
+#        Default:     1 (enabled)
+#
+
+AiPlayerbot.AutoVendorJunk = 1
+
+#
+#    AiPlayerbot.AutoVendorJunkMaxQuality
+#        Description: Highest item quality that AutoVendorJunk will sell.
+#                     0 = poor/grey, 1 = common/white, 2 = uncommon/green.
+#                     Raising this above 1 is not recommended: uncommon and better items are worth
+#                     more on the auction house than at a vendor.
+#        Default:     0 - (poor/grey only)
+#
+
+AiPlayerbot.AutoVendorJunkMaxQuality = 0
+
 # Bots' minimum and maximum level when teleporting in and out of a zone, according to the new RPG strategy
 # Format: AiPlayerbot.ZoneBracket.zoneID = minLevel,maxLevel
 #

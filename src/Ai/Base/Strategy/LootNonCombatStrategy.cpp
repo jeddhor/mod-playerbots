@@ -14,6 +14,10 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode("far from loot target", { NextAction("move to loot", 7.0f) }));
     triggers.push_back(new TriggerNode("can loot", { NextAction("open loot", 8.0f) }));
     triggers.push_back(new TriggerNode("often", { NextAction("add all loot", 5.0f) }));
+    // Low relevance on purpose: clearing junk should never win against actually looting, fighting
+    // or questing. It just needs to happen eventually, before bags fill and silently disable
+    // everything downstream of looting.
+    triggers.push_back(new TriggerNode("often", { NextAction("vendor junk", 1.0f) }));
 }
 
 void GatherStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
