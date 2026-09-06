@@ -122,6 +122,10 @@ public:
     Player* GetRandomPlayer();
     std::vector<Player*> GetPlayers() { return players; };
     PlayerBotMap GetAllBots() { return playerBots; };
+
+    /// Same map without the copy. GetAllBots returns by value, which is a whole-map copy per call --
+    /// fine for a one-off command, wasteful for anything on a tick.
+    PlayerBotMap const& GetAllBotsRef() const { return playerBots; }
     void InitArenaTeams();
     void PrintStats();
     double GetBuyMultiplier(Player* bot);

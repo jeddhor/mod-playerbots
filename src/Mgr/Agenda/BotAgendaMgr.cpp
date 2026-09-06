@@ -254,19 +254,30 @@ void BotAgendaMgr::Update(uint32 diff)
 
     _timer = 0;
 
-    // Round-robin with a fixed budget: cost per tick is independent of realm size. A goal changes
-    // over minutes, so revisiting a given bot every few seconds rather than every tick loses
-    // nothing and keeps this off the profile at three thousand bots.
-    std::vector<Player*> bots = sRandomPlayerbotMgr.GetPlayers();
+    // GetAllBotsRef, not GetPlayers. GetPlayers returns the *non-bot* players -- the else branch of
+    // IsRandomBot -- so on a realm with no humans online it is empty and not one bot was ever
+    // evaluated. The first run of this produced zero goals and zero profiles for exactly that reason.
+    PlayerBotMap const& bots = sRandomPlayerbotMgr.GetAllBotsRef();
     if (bots.empty())
         return;
 
+    // Round-robin with a fixed budget: cost per tick is independent of realm size. A goal changes
+    // over minutes, so revisiting a given bot every few seconds rather than every tick loses
+    // nothing and keeps this off the profile at three thousand bots.
     uint32 const budget = std::min<uint32>(sPlayerbotAIConfig.agendaBotsPerTick, bots.size());
+
+    auto itr = bots.begin();
+    std::advance(itr, _cursor % bots.size());
+
     for (uint32 i = 0; i < budget; ++i)
     {
-        Player* bot = bots[(_cursor + i) % bots.size()];
-        if (bot && bot->IsInWorld())
+        if (itr == bots.end())
+            itr = bots.begin();
+
+        if (Player* bot = itr->second; bot && bot->IsInWorld())
             Evaluate(bot);
+
+        ++itr;
     }
 
     _cursor = (_cursor + budget) % bots.size();
