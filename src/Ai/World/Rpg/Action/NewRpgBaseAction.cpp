@@ -1614,11 +1614,30 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             return SelectNearestTrainerPos(guid) != WorldPosition();
         }
         case RPG_GATHER:
+        {
             // Needs a gathering profession, a route in this zone the bot's skill can work, and
             // somewhere to put what it picks up.
+            //
+            // Logged with the reason: an availability check that silently returns false is exactly
+            // how gathering stayed broken for three test cycles while looking configured correctly.
             if (bot->GetFreeInventorySpace() < sPlayerbotAIConfig.gatheringMinFreeBagSlots)
+            {
+                LOG_DEBUG("playerbots", "[GatherAvail] {} denied: only {} free bag slots (needs {})",
+                          bot->GetName(), bot->GetFreeInventorySpace(),
+                          sPlayerbotAIConfig.gatheringMinFreeBagSlots);
                 return false;
-            return sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()) != nullptr;
+            }
+
+            if (!sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()))
+            {
+                LOG_DEBUG("playerbots", "[GatherAvail] {} denied: no usable route in zone {}", bot->GetName(),
+                          bot->GetZoneId());
+                return false;
+            }
+
+            LOG_DEBUG("playerbots", "[GatherAvail] {} available in zone {}", bot->GetName(), bot->GetZoneId());
+            return true;
+        }
         case RPG_OUTDOOR_PVP:
         {
             if (!bot->IsPvP())

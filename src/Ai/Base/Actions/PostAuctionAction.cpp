@@ -9,6 +9,7 @@
 #include "BotEconomyMgr.h"
 #include "Item.h"
 #include "ItemTemplate.h"
+#include "ItemUsageValue.h"
 #include "ItemVisitors.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
@@ -113,6 +114,12 @@ bool PostAuctionAction::Execute(Event /*event*/)
             break;
 
         if (!sBotEconomyMgr.ShouldPost(item))
+            continue;
+
+        // Defer to the shared classifier for the per-bot half of the judgement. It already knows
+        // this bot's quests, professions, ammo and what it is wearing, so only list what it
+        // independently agrees is auction fodder rather than something the bot needs.
+        if (AI_VALUE2(ItemUsage, "item usage", item->GetEntry()) != ITEM_USAGE_AH)
             continue;
 
         auto op = std::make_unique<PostAuctionOperation>(bot->GetGUID(), item->GetGUID());

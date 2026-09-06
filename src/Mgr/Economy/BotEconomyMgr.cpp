@@ -357,10 +357,16 @@ bool BotEconomyMgr::ShouldPost(Item* item) const
     if (proto->Quality < ITEM_QUALITY_NORMAL)
         return false;
 
-    // Whites are only worth listing when they are an input to something: reagents, recipes, and
-    // trade goods. A white sword is vendor fodder.
+    // Whites are only worth listing when they are an input to something: reagents and recipes.
+    // A white sword is vendor fodder.
+    //
+    // Consumables are deliberately NOT here. They were, and bots promptly auctioned their own
+    // healing potions, poisons and sharpening stones -- every white listing in the first economy
+    // run was a consumable the bot should have been drinking. Whether a *particular* bot needs a
+    // particular consumable is a per-bot question this class cannot answer; the caller asks
+    // ItemUsageValue.
     if (proto->Quality == ITEM_QUALITY_NORMAL && proto->Class != ITEM_CLASS_TRADE_GOODS &&
-        proto->Class != ITEM_CLASS_RECIPE && proto->Class != ITEM_CLASS_CONSUMABLE)
+        proto->Class != ITEM_CLASS_RECIPE)
         return false;
 
     // Depth control: above the target the house already has more of this than it can clear, so
