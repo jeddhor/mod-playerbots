@@ -2826,3 +2826,24 @@ AiPlayerbot.Economy.MaxListingsPerBot = 24
 #
 
 AiPlayerbot.Economy.DisenchantMaxPricePct = 50
+
+#
+#    AiPlayerbot.Economy.DisenchantMaxQuality
+#        Highest item quality an enchanter will break down rather than sell (2 uncommon, 3 rare,
+#        4 epic). The default follows the rule "wear it if better, otherwise disenchant it, and
+#        only list it if it cannot be disenchanted at all". Lower it to keep rares and epics on
+#        the auction house instead of turning them into reagents.
+#        Default: 4
+#
+
+AiPlayerbot.Economy.DisenchantMaxQuality = 4
+
+#
+#    AiPlayerbot.Economy.MaxListingAttempts
+#        How many times a bot relists an item before giving up and vendoring it. An auction runs
+#        at most 48 hours, so the default of 5 gives an item about ten days on the house before the
+#        bot accepts that nobody wants it. Set to 0 to relist forever.
+#        Default: 5
+#
+
+AiPlayerbot.Economy.MaxListingAttempts = 5

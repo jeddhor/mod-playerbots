@@ -116,18 +116,21 @@ ItemUsage ItemUsageValue::Calculate()
             bool const boundToBot =
                 proto->Bonding == BIND_WHEN_PICKED_UP || (proto->Bonding == BIND_WHEN_EQUIPPED && isSoulbound);
 
-            // A tradeable green is also disenchant fodder, which is what real enchanters do with
-            // them: greens are worth more as dust than as another listing nobody bids on. Kept to
-            // uncommon only -- rares and epics are worth more sold, and this is reached only after
-            // QueryItemUsageForEquip has already claimed anything that would be an upgrade.
+            // Tradeable gear an enchanter cannot wear is disenchant fodder too. The operator's rule
+            // is: wear it if it is better, otherwise break it down, and only list it if it cannot be
+            // broken down at all. Reaching here already means QueryItemUsageForEquip declined it, so
+            // it is not an upgrade.
             //
-            // This classification is what lets an enchanter buy cheap greens off the auction house
-            // and actually consume them. Without it a purchased green classifies as ITEM_USAGE_AH
-            // and the bot relists the item it just bought, forever.
-            bool const tradeableGreen =
-                !isSoulbound && proto->Bonding == BIND_WHEN_EQUIPPED && proto->Quality == ITEM_QUALITY_UNCOMMON;
+            // This classification is also what lets an enchanter buy gear off the auction house and
+            // actually consume it. Without it a purchased item classifies as ITEM_USAGE_AH and the
+            // bot relists what it just bought, forever.
+            //
+            // DisenchantMaxQuality exists because this trades listings for reagents: an operator who
+            // would rather see rares and epics on the house can lower it to uncommon.
+            bool const tradeable = !isSoulbound && proto->Bonding == BIND_WHEN_EQUIPPED &&
+                                   proto->Quality <= sPlayerbotAIConfig.economyDisenchantMaxQuality;
 
-            if (boundToBot || tradeableGreen)
+            if (boundToBot || tradeable)
                 return ITEM_USAGE_DISENCHANT;
         }
     }

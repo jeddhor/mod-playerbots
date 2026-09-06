@@ -97,6 +97,20 @@ public:
      */
     bool ShouldPost(Item* item) const;
 
+    /// Times this item has been listed without selling.
+    uint32 GetListingAttempts(ObjectGuid itemGuid) const;
+
+    /**
+     * Sell an item at vendor price without travelling to a vendor.
+     *
+     * The same sanctioned abstraction as posting without an auctioneer: the gold and the item
+     * destruction are real, only the walk is skipped. Lives here so the auction give-up path and
+     * VendorJunkAction cannot drift apart on how a bot converts goods to gold.
+     *
+     * @return copper credited.
+     */
+    uint32 SellToVendor(Player* bot, Item* item, bool goldCheat);
+
     /**
      * List the whole of `item`'s stack on the bot's faction auction house.
      *
@@ -195,8 +209,12 @@ private:
     using BargainList = std::vector<Bargain>;
     std::atomic<std::shared_ptr<BargainList const>> _bargains;
 
+    // item GUID -> failed listing attempts. Small: only items that failed to sell at least once.
+    std::unordered_map<uint32, uint32> _listingAttempts;
+
     uint32 _sampleTimer{0};
     uint32 _persistTimer{0};
+    uint32 _reportTimer{0};
 
     // mutable so ShouldPost, which is a query, can still record why it said no.
     mutable Stats _stats;

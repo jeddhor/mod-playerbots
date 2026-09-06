@@ -61,8 +61,19 @@ void BotEconomyMgr::Load()
         } while (result->NextRow());
     }
 
+    std::unordered_map<uint32, uint32> attempts;
+    if (QueryResult result = PlayerbotsDatabase.Query("SELECT item_guid, attempts FROM playerbot_auction_attempts"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            attempts[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+        } while (result->NextRow());
+    }
+
     {
         std::lock_guard<std::mutex> guard(_mutex);
+        _listingAttempts = std::move(attempts);
         _records = std::move(loaded);
         _published.store(std::make_shared<PriceMap const>(_records), std::memory_order_release);
     }
@@ -139,6 +150,41 @@ uint32 BotEconomyMgr::GetListingDepth(uint32 itemId) const
     return 0;
 }
 
+uint32 BotEconomyMgr::GetListingAttempts(ObjectGuid itemGuid) const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    auto itr = _listingAttempts.find(itemGuid.GetCounter());
+    return itr != _listingAttempts.end() ? itr->second : 0;
+}
+
+uint32 BotEconomyMgr::SellToVendor(Player* bot, Item* item, bool goldCheat)
+{
+    if (!bot || !item)
+        return 0;
+
+    ItemTemplate const* proto = item->GetTemplate();
+    if (!proto)
+        return 0;
+
+    uint32 const price = proto->SellPrice * item->GetCount();
+    uint32 const itemGuid = item->GetGUID().GetCounter();
+
+    bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+
+    // With the gold cheat active a bot's money is held constant, so cheat realms do not quietly
+    // inflate every time a bot clears its bags.
+    if (!goldCheat)
+        bot->ModifyMoney(static_cast<int32>(price));
+
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        _listingAttempts.erase(itemGuid);
+    }
+    PlayerbotsDatabase.Execute("DELETE FROM playerbot_auction_attempts WHERE item_guid = {}", itemGuid);
+
+    return price;
+}
+
 uint32 BotEconomyMgr::GetBotListingCount(ObjectGuid owner) const
 {
     std::lock_guard<std::mutex> guard(_mutex);
@@ -177,6 +223,16 @@ void BotEconomyMgr::Update(uint32 diff)
     {
         _persistTimer = 0;
         Persist();
+    }
+
+    // The same summary `.playerbots economy` prints, on a slow cycle. An operator watching a realm
+    // overnight should not have to be at a console to answer "is gold inflating, and is the market
+    // clearing?", and it means the reporting path is exercised on every run rather than only when
+    // somebody remembers to ask for it.
+    if (++_reportTimer >= 10)
+    {
+        _reportTimer = 0;
+        PrintStats();
     }
 }
 
@@ -460,10 +516,17 @@ bool BotEconomyMgr::PostAuction(Player* bot, Item* item)
     bot->SaveInventoryAndGoldToDB(trans);
     CharacterDatabase.CommitTransaction(trans);
 
+    uint32 attempts;
     {
         std::lock_guard<std::mutex> guard(_mutex);
         ++_listingsByOwner[bot->GetGUID()];
+        attempts = ++_listingAttempts[item->GetGUID().GetCounter()];
     }
+
+    PlayerbotsDatabase.Execute(
+        "INSERT INTO playerbot_auction_attempts (item_guid, attempts) VALUES ({}, {}) "
+        "ON DUPLICATE KEY UPDATE attempts = {}",
+        item->GetGUID().GetCounter(), attempts, attempts);
 
     ++_stats.posted;
     _stats.goldListed += buyout;
@@ -534,6 +597,7 @@ bool BotEconomyMgr::BuyoutAuction(Player* bot, uint32 auctionId, AuctionHouseId 
     uint32 const itemId = auction->item_template;
     uint32 const itemCount = auction->itemCount;
     ObjectGuid const seller = auction->owner;
+    uint32 const itemGuid2 = auction->item_guid.GetCounter();
 
     // Mirrors the buyout branch of WorldSession::HandleAuctionPlaceBid. The mails are what actually
     // pay the seller and deliver the goods, and they must be inside the transaction.
@@ -569,6 +633,12 @@ bool BotEconomyMgr::BuyoutAuction(Player* bot, uint32 auctionId, AuctionHouseId 
         if (itr != _listingsByOwner.end() && itr->second)
             --itr->second;
     }
+
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        _listingAttempts.erase(itemGuid2);
+    }
+    PlayerbotsDatabase.Execute("DELETE FROM playerbot_auction_attempts WHERE item_guid = {}", itemGuid2);
 
     ++_stats.bought;
     _stats.goldSpent += buyout;

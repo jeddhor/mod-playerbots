@@ -116,6 +116,21 @@ bool PostAuctionAction::Execute(Event /*event*/)
         if (!sBotEconomyMgr.ShouldPost(item))
             continue;
 
+        // An item that has been through several full listings has been declined by the market, not
+        // starved of time -- an auction runs at most 48 hours, so five attempts is ten days on the
+        // house. Vendoring it recovers something and, more importantly, stops the house
+        // accumulating a permanent floor of goods no bot will ever bid on.
+        if (sPlayerbotAIConfig.economyMaxListingAttempts &&
+            sBotEconomyMgr.GetListingAttempts(item->GetGUID()) >= sPlayerbotAIConfig.economyMaxListingAttempts)
+        {
+            std::string const name = item->GetTemplate()->Name1;
+            uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
+
+            LOG_DEBUG("playerbots", "[Economy] {} gave up on {} after {} listings, vendored for {}c",
+                      bot->GetName(), name, sPlayerbotAIConfig.economyMaxListingAttempts, earned);
+            continue;
+        }
+
         // Defer to the shared classifier for the per-bot half of the judgement. It already knows
         // this bot's quests, professions, ammo and what it is wearing, so only list what it
         // independently agrees is auction fodder rather than something the bot needs.

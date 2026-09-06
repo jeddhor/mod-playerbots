@@ -757,6 +757,9 @@ bool PlayerbotAIConfig::Initialize()
     economyMaxListingsPerBot = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingsPerBot", 24);
     economyDisenchantMaxPricePct =
         sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxPricePct", 50);
+    // ITEM_QUALITY_EPIC: disenchant anything the skill allows, listing only what cannot be broken.
+    economyDisenchantMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxQuality", 4);
+    economyMaxListingAttempts = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingAttempts", 5);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

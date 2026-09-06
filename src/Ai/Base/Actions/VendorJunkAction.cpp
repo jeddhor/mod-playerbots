@@ -5,6 +5,7 @@
  */
 
 #include "VendorJunkAction.h"
+#include "BotEconomyMgr.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "ItemUsageValue.h"
@@ -73,21 +74,10 @@ bool VendorJunkAction::IsJunk(Item* item) const
 
 uint32 VendorJunkAction::SellWithoutVendor(Item* item)
 {
-    ItemTemplate const* proto = item->GetTemplate();
-    uint32 const count = item->GetCount();
-    uint32 const price = proto->SellPrice * count;
-
-    uint8 const bag = item->GetBagSlot();
-    uint8 const slot = item->GetSlot();
-
-    bot->DestroyItem(bag, slot, true);
-
-    // Mirrors SellAction: with the gold cheat active the bot's money is held constant, so cheat
-    // realms do not quietly inflate from auto-vendoring.
-    if (!botAI->HasCheat(BotCheatMask::gold))
-        bot->ModifyMoney(static_cast<int32>(price));
-
-    return price;
+    // Delegates to BotEconomyMgr so there is exactly one implementation of "convert an item to gold
+    // without walking to a vendor" -- the auction give-up path needs the same thing, and two copies
+    // would drift on the gold-cheat rule.
+    return sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
 }
 
 bool VendorJunkAction::Execute(Event /*event*/)
