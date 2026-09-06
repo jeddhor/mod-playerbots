@@ -5,6 +5,7 @@
  */
 
 #include "RandomPlayerbotMgr.h"
+#include "BotEconomyMgr.h"
 #include "AiFactory.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
@@ -2402,6 +2403,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     {
         sRandomPlayerbotMgr.PrintStats();
         // activatePrintStatsThread();
+        return true;
+    }
+
+    if (cmd == "economy")
+    {
+        sBotEconomyMgr.PrintStats();
         return true;
     }
 

@@ -18,6 +18,11 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // or questing. It just needs to happen eventually, before bags fill and silently disable
     // everything downstream of looting.
     triggers.push_back(new TriggerNode("often", { NextAction("vendor junk", 1.0f) }));
+
+    // "seldom" (1 in 300) rather than "often": listing is bookkeeping, not gameplay, and iterating
+    // every bot's bags on a fast trigger is a real cost at a few thousand bots.
+    triggers.push_back(new TriggerNode("seldom", { NextAction("post auctions", 1.0f) }));
+    triggers.push_back(new TriggerNode("seldom", { NextAction("buy auctions", 1.0f) }));
 }
 
 void FarmMaterialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

@@ -18,6 +18,7 @@
 #include "PlayerbotSpellRepository.h"
 #include "PlayerbotWorldThreadProcessor.h"
 #include "GatherRouteMgr.h"
+#include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
@@ -366,6 +367,8 @@ public:
 
         GatherRouteMgr::instance().Load();
 
+        BotEconomyMgr::instance().Load();
+
         LOG_INFO("server.loading", "Playerbots World Thread Processor initialized");
     }
 
@@ -373,6 +376,7 @@ public:
     {
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
+        sBotEconomyMgr.Update(diff);         // World thread only: touches AuctionHouseObject
     }
 };
 

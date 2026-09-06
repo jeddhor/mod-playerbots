@@ -408,6 +408,12 @@ public:
     bool autoVendorJunk;
     uint32 autoVendorJunkMaxQuality;
     bool botTypeParity;
+
+    // Economy / auction house (Phase 5).
+    bool economyEnabled;
+    uint32 economySampleIntervalSeconds;
+    uint32 economyTargetDepth;
+    uint32 economyMaxListingsPerBot;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

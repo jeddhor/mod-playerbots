@@ -750,6 +750,11 @@ bool PlayerbotAIConfig::Initialize()
     autoVendorJunk = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoVendorJunk", true);
     autoVendorJunkMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.AutoVendorJunkMaxQuality", ITEM_QUALITY_POOR);
     botTypeParity = sConfigMgr->GetOption<bool>("AiPlayerbot.BotTypeParity", true);
+
+    economyEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.Enabled", true);
+    economySampleIntervalSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.SampleIntervalSeconds", 300);
+    economyTargetDepth = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.TargetDepth", 20);
+    economyMaxListingsPerBot = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingsPerBot", 24);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

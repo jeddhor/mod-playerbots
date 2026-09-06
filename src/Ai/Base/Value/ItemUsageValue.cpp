@@ -153,7 +153,17 @@ ItemUsage ItemUsageValue::Calculate()
         // which sent every white item to the auction house - thousands of near-worthless listings
         // that bury the goods players actually want and give the price index nothing but noise.
         // Whites still have value, so they go to the vendor rather than being destroyed.
-        if (proto->Quality >= ITEM_QUALITY_UNCOMMON && !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP)
+        bool const listable = !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP;
+
+        if (proto->Quality >= ITEM_QUALITY_UNCOMMON && listable)
+            return ITEM_USAGE_AH;
+
+        // Crafting inputs are the deliberate exception to the quality rule. Ore, herbs, leather and
+        // cloth are white, but they are exactly what the crafting economy runs on and what another
+        // bot with the matching profession needs to buy. Falling through to the vendor here would
+        // quietly undo gathering: a bot would mine all day and sell every stack to an NPC, and the
+        // auction house would never see a single reagent.
+        if (listable && (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_RECIPE))
             return ITEM_USAGE_AH;
 
         return ITEM_USAGE_VENDOR;

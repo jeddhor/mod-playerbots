@@ -1,0 +1,129 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
+#include "PostAuctionAction.h"
+
+#include "BotEconomyMgr.h"
+#include "Item.h"
+#include "ItemTemplate.h"
+#include "ItemVisitors.h"
+#include "Log.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
+#include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
+#include "PlayerbotOperation.h"
+#include "PlayerbotWorldThreadProcessor.h"
+#include "Playerbots.h"
+
+#include <vector>
+
+namespace
+{
+/// Collects every item currently in the bot's bags so the caller can filter them.
+class CollectBagItemsVisitor : public IterateItemsVisitor
+{
+public:
+    bool Visit(Item* item) override
+    {
+        if (item)
+            items.push_back(item);
+        return true;
+    }
+
+    std::vector<Item*> items;
+};
+
+/**
+ * Posts one item on the world thread.
+ *
+ * Carries GUIDs rather than pointers on purpose. Between this being queued on a map thread and run
+ * on the world thread the bot can log out and the item can be destroyed, sold or traded away; a
+ * raw Item* would be dangling by then. Re-resolving both through the bot means the worst case is
+ * that the operation finds nothing and does nothing.
+ */
+class PostAuctionOperation : public PlayerbotOperation
+{
+public:
+    PostAuctionOperation(ObjectGuid botGuid, ObjectGuid itemGuid) : _botGuid(botGuid), _itemGuid(itemGuid) {}
+
+    bool Execute() override
+    {
+        Player* bot = ObjectAccessor::FindPlayer(_botGuid);
+        if (!bot)
+            return false;
+
+        Item* item = bot->GetItemByGuid(_itemGuid);
+        if (!item)
+            return false;
+
+        // Re-check rather than trusting the queueing thread's decision: depth may have risen past
+        // the target, or the bot may have equipped the item, since this was queued.
+        if (!sBotEconomyMgr.ShouldPost(item))
+            return false;
+
+        return sBotEconomyMgr.PostAuction(bot, item);
+    }
+
+    ObjectGuid GetBotGuid() const override { return _botGuid; }
+    uint32 GetPriority() const override { return 0; }  // background bookkeeping, never urgent
+    std::string GetName() const override { return "PostAuction"; }
+
+private:
+    ObjectGuid _botGuid;
+    ObjectGuid _itemGuid;
+};
+}  // namespace
+
+bool PostAuctionAction::isUseful()
+{
+    if (!sPlayerbotAIConfig.economyEnabled)
+        return false;
+
+    // A bot under a human's command should not be quietly liquidating the bags its owner is
+    // looking at. Only unsupervised bots trade on their own account.
+    if (botAI->GetMaster() && !GET_PLAYERBOT_AI(botAI->GetMaster()))
+        return false;
+
+    return sBotEconomyMgr.GetBotListingCount(bot->GetGUID()) < sPlayerbotAIConfig.economyMaxListingsPerBot;
+}
+
+bool PostAuctionAction::Execute(Event /*event*/)
+{
+    uint32 const held = sBotEconomyMgr.GetBotListingCount(bot->GetGUID());
+    if (held >= sPlayerbotAIConfig.economyMaxListingsPerBot)
+        return false;
+
+    uint32 slots = sPlayerbotAIConfig.economyMaxListingsPerBot - held;
+
+    // A handful per pass. Listing a full 24-slot bag in one tick makes every bot dump its inventory
+    // the instant it fills, which reads as a bot and floods the house in bursts.
+    slots = std::min<uint32>(slots, 3);
+
+    CollectBagItemsVisitor visitor;
+    IterateItems(&visitor, ITERATE_ITEMS_IN_BAGS);
+
+    uint32 queued = 0;
+    for (Item* item : visitor.items)
+    {
+        if (queued >= slots)
+            break;
+
+        if (!sBotEconomyMgr.ShouldPost(item))
+            continue;
+
+        auto op = std::make_unique<PostAuctionOperation>(bot->GetGUID(), item->GetGUID());
+        if (!PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(op)))
+            break;  // queue is full; try again next pass rather than spinning
+
+        ++queued;
+
+        LOG_DEBUG("playerbots", "[Economy] {} queued {} for auction", bot->GetName(),
+                  item->GetTemplate()->Name1);
+    }
+
+    return queued > 0;
+}

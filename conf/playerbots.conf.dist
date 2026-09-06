@@ -2790,3 +2790,29 @@ AiPlayerbot.TargetPosRecalcDistance = 0.1
 
 # Allow bots to be summoned near innkeepers
 AiPlayerbot.SummonAtInnkeepersEnabled = 1
+
+#
+#    AiPlayerbot.Economy.Enabled
+#        Bots post gathered and looted goods on the auction house, and buy from it.
+#        Bots do not travel to an auctioneer and do not pay a deposit.
+#        Default: 1 (enabled)
+#
+#    AiPlayerbot.Economy.SampleIntervalSeconds
+#        How often the market price index samples live auction listings. Each pass walks every
+#        auction on the realm, so do not set this low.
+#        Default: 300
+#
+#    AiPlayerbot.Economy.TargetDepth
+#        Listings of a single item above which bots stop posting more of it and start discounting.
+#        This is what keeps the auction house from filling with thousands of identical stacks.
+#        Default: 20
+#
+#    AiPlayerbot.Economy.MaxListingsPerBot
+#        Concurrent auctions a single bot will hold. The core's own hard limit is 160.
+#        Default: 24
+#
+
+AiPlayerbot.Economy.Enabled = 1
+AiPlayerbot.Economy.SampleIntervalSeconds = 300
+AiPlayerbot.Economy.TargetDepth = 20
+AiPlayerbot.Economy.MaxListingsPerBot = 24

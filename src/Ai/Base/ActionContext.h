@@ -66,6 +66,8 @@
 #include "TravelAction.h"
 #include "UseItemAction.h"
 #include "VehicleActions.h"
+#include "BuyAuctionAction.h"
+#include "PostAuctionAction.h"
 #include "VendorJunkAction.h"
 #include "WaitForAttackAction.h"
 #include "WorldBuffAction.h"
@@ -255,6 +257,8 @@ public:
         creators["rpg buy"] = &ActionContext::rpg_buy;
         creators["rpg sell"] = &ActionContext::rpg_sell;
         creators["vendor junk"] = &ActionContext::vendor_junk;
+        creators["post auctions"] = &ActionContext::post_auctions;
+        creators["buy auctions"] = &ActionContext::buy_auctions;
         creators["new rpg vendor"] = &ActionContext::new_rpg_vendor;
         creators["new rpg mailbox"] = &ActionContext::new_rpg_mailbox;
         creators["new rpg gather"] = &ActionContext::new_rpg_gather;
@@ -467,6 +471,8 @@ private:
     static Action* rpg_buy(PlayerbotAI* botAI) { return new RpgBuyAction(botAI); }
     static Action* rpg_sell(PlayerbotAI* botAI) { return new RpgSellAction(botAI); }
     static Action* vendor_junk(PlayerbotAI* botAI) { return new VendorJunkAction(botAI); }
+    static Action* post_auctions(PlayerbotAI* botAI) { return new PostAuctionAction(botAI); }
+    static Action* buy_auctions(PlayerbotAI* botAI) { return new BuyAuctionAction(botAI); }
     static Action* new_rpg_vendor(PlayerbotAI* botAI) { return new NewRpgVendorAction(botAI); }
     static Action* new_rpg_mailbox(PlayerbotAI* botAI) { return new NewRpgMailboxAction(botAI); }
     static Action* new_rpg_gather(PlayerbotAI* botAI) { return new NewRpgGatherAction(botAI); }
