@@ -756,7 +756,7 @@ bool PlayerbotAIConfig::Initialize()
     economyTargetDepth = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.TargetDepth", 20);
     economyMaxListingsPerBot = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingsPerBot", 24);
     economyDisenchantMaxPricePct =
-        sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxPricePct", 50);
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxPricePct", 90);
     // ITEM_QUALITY_EPIC: disenchant anything the skill allows, listing only what cannot be broken.
     economyDisenchantMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxQuality", 4);
     economyMaxListingAttempts = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingAttempts", 5);

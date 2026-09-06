@@ -78,8 +78,92 @@ void BotEconomyMgr::Load()
         _published.store(std::make_shared<PriceMap const>(_records), std::memory_order_release);
     }
 
+    LoadDisenchantYields();
+
     LOG_INFO("server.loading", ">> Loaded {} playerbot market prices in {} ms",
              _published.load(std::memory_order_acquire)->size(), GetMSTimeDiffToNow(oldMSTime));
+}
+
+void BotEconomyMgr::LoadDisenchantYields()
+{
+    // Rows within a loot group share the probability: entries with an explicit Chance take it, and
+    // any left at zero split whatever remains of the group equally. Reading Chance 0 as "never
+    // drops" would undervalue every disenchant, because the commonest reagents are exactly the ones
+    // stored that way.
+    struct Row
+    {
+        uint32 itemId;
+        float chance;
+        float avgCount;
+        uint32 groupId;
+    };
+
+    std::unordered_map<uint32, std::vector<Row>> byEntry;
+
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT Entry, Item, Chance, MinCount, MaxCount, GroupId FROM disenchant_loot_template"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 const entry = fields[0].Get<uint32>();
+            Row row;
+            row.itemId = fields[1].Get<uint32>();
+            row.chance = fields[2].Get<float>();
+            row.avgCount = (fields[3].Get<uint8>() + fields[4].Get<uint8>()) / 2.0f;
+            row.groupId = fields[5].Get<uint8>();
+            byEntry[entry].push_back(row);
+        } while (result->NextRow());
+    }
+
+    for (auto& [entry, rows] : byEntry)
+    {
+        // Distribute each group's unclaimed probability across its zero-chance rows.
+        std::unordered_map<uint32, float> claimed;
+        std::unordered_map<uint32, uint32> blanks;
+        for (Row const& row : rows)
+        {
+            claimed[row.groupId] += row.chance;
+            if (row.chance <= 0.0f)
+                ++blanks[row.groupId];
+        }
+
+        std::vector<Yield> yields;
+        yields.reserve(rows.size());
+
+        for (Row const& row : rows)
+        {
+            float chance = row.chance;
+            if (chance <= 0.0f && blanks[row.groupId])
+                chance = std::max(0.0f, 100.0f - claimed[row.groupId]) / blanks[row.groupId];
+
+            if (chance <= 0.0f)
+                continue;
+
+            yields.push_back({row.itemId, (chance / 100.0f) * row.avgCount});
+        }
+
+        if (!yields.empty())
+            _disenchantYields[entry] = std::move(yields);
+    }
+
+    LOG_INFO("server.loading", ">> Loaded disenchant yields for {} item classes", _disenchantYields.size());
+}
+
+uint32 BotEconomyMgr::GetDisenchantValue(uint32 disenchantId) const
+{
+    if (!disenchantId)
+        return 0;
+
+    auto itr = _disenchantYields.find(disenchantId);
+    if (itr == _disenchantYields.end())
+        return 0;
+
+    float value = 0.0f;
+    for (Yield const& yield : itr->second)
+        value += yield.expectedCount * GetMarketPrice(yield.itemId);
+
+    return static_cast<uint32>(value);
 }
 
 uint32 BotEconomyMgr::SeedPrice(ItemTemplate const* proto)

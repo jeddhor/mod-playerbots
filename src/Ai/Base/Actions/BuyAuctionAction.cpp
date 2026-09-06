@@ -116,15 +116,18 @@ bool BuyAuctionAction::Execute(Event /*event*/)
                             usage == ITEM_USAGE_SKILL || usage == ITEM_USAGE_USE ||
                             usage == ITEM_USAGE_QUEST || usage == ITEM_USAGE_AMMO;
 
-        // An enchanter buys cheap greens to break down for dust and essences. This is the one case
-        // where a bot buys something it has no direct use for, and it is what actually clears gear
-        // off the house: greens that no bot wants to wear would otherwise sit until they expire.
+        // An enchanter buys gear to break down for dust and essences. This is the one case where a
+        // bot buys something it has no direct use for, and it is what actually clears gear off the
+        // house: items nobody wants to wear would otherwise sit until they expire.
         //
-        // Only at a real discount. The materials are worth roughly what the item is worth, so
-        // paying full price converts gold into dust at a loss; paying half turns a listing nobody
-        // bid on into reagents somebody will.
-        bool const forDisenchant = usage == ITEM_USAGE_DISENCHANT && value &&
-                                   bargain.buyout <= value * sPlayerbotAIConfig.economyDisenchantMaxPricePct / 100;
+        // Judged against what the reagents are actually worth, computed from disenchant_loot_template
+        // against the live index -- not against a discount off the item's own price. The discount
+        // test could never fire: bots price at market, and the lowest a posted price can reach is
+        // about 0.55 of the index, so "at most half of market" excluded every listing that existed.
+        uint32 const deValue = sBotEconomyMgr.GetDisenchantValue(proto->DisenchantID);
+        bool const forDisenchant =
+            usage == ITEM_USAGE_DISENCHANT && deValue &&
+            bargain.buyout <= deValue * sPlayerbotAIConfig.economyDisenchantMaxPricePct / 100;
 
         if (!wanted && !forDisenchant)
         {

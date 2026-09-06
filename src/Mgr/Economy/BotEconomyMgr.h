@@ -97,6 +97,18 @@ public:
      */
     bool ShouldPost(Item* item) const;
 
+    /**
+     * What the reagents from disenchanting this item are worth, in copper.
+     *
+     * Computed from `disenchant_loot_template` against the live price index, so it moves with the
+     * market rather than being a fixed guess. Returns 0 for anything not disenchantable.
+     *
+     * This is the honest test for whether breaking an item down beats leaving it listed, and it
+     * replaces "is it priced below half of market" -- which could never fire, because bots price at
+     * market and the lowest a posted price can reach is about 0.55 of the index.
+     */
+    uint32 GetDisenchantValue(uint32 disenchantId) const;
+
     /// Times this item has been listed without selling.
     uint32 GetListingAttempts(ObjectGuid itemGuid) const;
 
@@ -182,6 +194,17 @@ private:
     };
 
     using PriceMap = std::unordered_map<uint32, PriceRecord>;
+
+    /// Expected reagent yield per disenchant id, from `disenchant_loot_template`. Built once.
+    void LoadDisenchantYields();
+
+    struct Yield
+    {
+        uint32 itemId;
+        float expectedCount;  // chance x average stack
+    };
+
+    std::unordered_map<uint32, std::vector<Yield>> _disenchantYields;
 
     /// Vendor-and-quality derived opening estimate for an item the house has never carried.
     static uint32 SeedPrice(ItemTemplate const* proto);
