@@ -110,9 +110,26 @@ ItemUsage ItemUsageValue::Calculate()
         uint32 enchantingSkill = bot->GetSkillValue(SKILL_ENCHANTING);
 
         // Only disenchant if skilled enough and binding allows it
-        if (enchantingSkill >= proto->RequiredDisenchantSkill &&
-            (proto->Bonding == BIND_WHEN_PICKED_UP || (proto->Bonding == BIND_WHEN_EQUIPPED && isSoulbound)))
-            return ITEM_USAGE_DISENCHANT;
+        if (enchantingSkill >= proto->RequiredDisenchantSkill)
+        {
+            // Soulbound gear cannot be sold, so disenchanting is the only way to get value from it.
+            bool const boundToBot =
+                proto->Bonding == BIND_WHEN_PICKED_UP || (proto->Bonding == BIND_WHEN_EQUIPPED && isSoulbound);
+
+            // A tradeable green is also disenchant fodder, which is what real enchanters do with
+            // them: greens are worth more as dust than as another listing nobody bids on. Kept to
+            // uncommon only -- rares and epics are worth more sold, and this is reached only after
+            // QueryItemUsageForEquip has already claimed anything that would be an upgrade.
+            //
+            // This classification is what lets an enchanter buy cheap greens off the auction house
+            // and actually consume them. Without it a purchased green classifies as ITEM_USAGE_AH
+            // and the bot relists the item it just bought, forever.
+            bool const tradeableGreen =
+                !isSoulbound && proto->Bonding == BIND_WHEN_EQUIPPED && proto->Quality == ITEM_QUALITY_UNCOMMON;
+
+            if (boundToBot || tradeableGreen)
+                return ITEM_USAGE_DISENCHANT;
+        }
     }
 
     Player* master = botAI->GetMaster();

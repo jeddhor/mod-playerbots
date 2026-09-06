@@ -115,7 +115,18 @@ bool BuyAuctionAction::Execute(Event /*event*/)
         bool const wanted = usage == ITEM_USAGE_EQUIP || usage == ITEM_USAGE_REPLACE ||
                             usage == ITEM_USAGE_SKILL || usage == ITEM_USAGE_USE ||
                             usage == ITEM_USAGE_QUEST || usage == ITEM_USAGE_AMMO;
-        if (!wanted)
+
+        // An enchanter buys cheap greens to break down for dust and essences. This is the one case
+        // where a bot buys something it has no direct use for, and it is what actually clears gear
+        // off the house: greens that no bot wants to wear would otherwise sit until they expire.
+        //
+        // Only at a real discount. The materials are worth roughly what the item is worth, so
+        // paying full price converts gold into dust at a loss; paying half turns a listing nobody
+        // bid on into reagents somebody will.
+        bool const forDisenchant = usage == ITEM_USAGE_DISENCHANT && value &&
+                                   bargain.buyout <= value * sPlayerbotAIConfig.economyDisenchantMaxPricePct / 100;
+
+        if (!wanted && !forDisenchant)
         {
             ++rejUnwanted;
             continue;
@@ -125,8 +136,9 @@ bool BuyAuctionAction::Execute(Event /*event*/)
         if (!PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(op)))
             return false;
 
-        LOG_DEBUG("playerbots", "[Economy] {} queued buyout of {}x{} for {}c (usage {})", bot->GetName(),
-                  bargain.count, proto->Name1, bargain.buyout, static_cast<uint32>(usage));
+        LOG_DEBUG("playerbots", "[Economy] {} queued buyout of {}x{} for {}c (usage {}{})", bot->GetName(),
+                  bargain.count, proto->Name1, bargain.buyout, static_cast<uint32>(usage),
+                  forDisenchant ? ", to disenchant" : "");
 
         // One purchase per pass: a bot that empties the house in a single tick is both obvious and
         // a good way to corner the market by accident.

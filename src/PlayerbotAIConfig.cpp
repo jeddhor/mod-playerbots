@@ -755,6 +755,8 @@ bool PlayerbotAIConfig::Initialize()
     economySampleIntervalSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.SampleIntervalSeconds", 300);
     economyTargetDepth = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.TargetDepth", 20);
     economyMaxListingsPerBot = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingsPerBot", 24);
+    economyDisenchantMaxPricePct =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxPricePct", 50);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

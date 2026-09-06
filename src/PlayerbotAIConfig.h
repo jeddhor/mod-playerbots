@@ -414,6 +414,7 @@ public:
     uint32 economySampleIntervalSeconds;
     uint32 economyTargetDepth;
     uint32 economyMaxListingsPerBot;
+    uint32 economyDisenchantMaxPricePct;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

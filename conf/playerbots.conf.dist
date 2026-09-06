@@ -2816,3 +2816,13 @@ AiPlayerbot.Economy.Enabled = 1
 AiPlayerbot.Economy.SampleIntervalSeconds = 300
 AiPlayerbot.Economy.TargetDepth = 20
 AiPlayerbot.Economy.MaxListingsPerBot = 24
+
+#
+#    AiPlayerbot.Economy.DisenchantMaxPricePct
+#        Percentage of an item's market value an enchanter will pay for a green it intends to
+#        break down for reagents. The materials are worth roughly what the item is, so buying at
+#        full price converts gold into dust at a loss. Set to 0 to stop bots buying to disenchant.
+#        Default: 50
+#
+
+AiPlayerbot.Economy.DisenchantMaxPricePct = 50

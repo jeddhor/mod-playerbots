@@ -25,6 +25,17 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // economy from a broken one.
     triggers.push_back(new TriggerNode("random", { NextAction("post auctions", 1.0f) }));
     triggers.push_back(new TriggerNode("random", { NextAction("buy auctions", 1.0f) }));
+
+    // Enchanters break down the greens they buy and the soulbound gear they cannot sell.
+    //
+    // The "maintenance" strategy already carries this action but is commented out in AiFactory for
+    // both random-bot paths, so no bot has ever disenchanted anything. Only this one action is
+    // pulled in rather than enabling that strategy wholesale, because it also carries crafting and
+    // enchanting, which have not been looked at yet and belong to the professions phase.
+    //
+    // This is load-bearing for the buying side: without something that consumes them, an enchanter
+    // buying cheap greens just hoards them, which is worse than not buying at all.
+    triggers.push_back(new TriggerNode("random", { NextAction("disenchant random item", 1.0f) }));
 }
 
 void FarmMaterialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
