@@ -2827,6 +2827,32 @@ void PlayerbotFactory::InitTradeSkills()
     if (!keepExistingProfessionPair && maxPrimaryTradeSkills > 1)
         primarySkills.push_back(secondSkill);
 
+    // Drop any primary trade skill that is not part of the intended pair.
+    //
+    // InitSkills is reached from Refresh() as well as Randomize(), and only Randomize clears skills
+    // beforehand -- and only when non-incremental. Every other path therefore layered a freshly
+    // rolled pair on top of whatever the bot already had. On the dev realm 228 of 500 bots had
+    // three to six primary professions; the game allows two.
+    //
+    // The economic consequence is what makes this worth fixing here rather than filing: a bot with
+    // four professions can use almost any material it picks up, so ItemUsageValue classifies nearly
+    // everything as "needed for a skill-up" and the bot never has a surplus to sell. Pure gatherers,
+    // the bots that should be supplying the auction house, had all but stopped existing -- 20 of
+    // 1000. Enforcing the pair here also repairs already-broken bots on their next refresh.
+    for (uint32 i = 0; i < sizeof(tradeSkills) / sizeof(uint32); ++i)
+    {
+        uint16 const skillId = static_cast<uint16>(tradeSkills[i]);
+        if (!IsPrimaryTradeSkill(skillId) || !bot->HasSkill(skillId))
+            continue;
+
+        if (std::find(primarySkills.begin(), primarySkills.end(), skillId) != primarySkills.end())
+            continue;
+
+        LOG_DEBUG("playerbots", "[Professions] {} unlearning surplus primary profession {}", bot->GetName(),
+                  skillId);
+        bot->SetSkill(skillId, 0, 0, 0);
+    }
+
     SetRandomSkill(SKILL_FIRST_AID);
     SetRandomSkill(SKILL_FISHING);
     SetRandomSkill(SKILL_COOKING);
