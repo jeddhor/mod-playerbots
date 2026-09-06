@@ -582,6 +582,12 @@ bool NewRpgBaseAction::IsQuestWorthDoing(Quest const* quest)
     if (quest->IsSeasonal())
         return false;
 
+    // Escorts are not attempted at all -- see QuestBlacklistMgr::IsEscortQuest. This is a hard gate
+    // rather than a score penalty because there is no level of desperation at which a bot should
+    // pick one up.
+    if (sQuestBlacklistMgr.IsEscortQuest(quest->GetQuestId()))
+        return false;
+
     return true;
 }
 
@@ -619,6 +625,52 @@ void NewRpgBaseAction::DropQuest(uint16 slot, uint32 questId, Quest const* quest
             {{"%quest", ChatHelper::FormatQuest(quest)}}));
 
     botAI->rpgStatistic.questDropped++;
+}
+
+float NewRpgBaseAction::ScoreQuestObjectiveShape(uint32 questId, Quest const* quest)
+{
+    if (!quest)
+        return 0.0f;
+
+    float score = 0.0f;
+
+    bool hasKill = false;
+    bool hasCollect = false;
+
+    for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
+        if (quest->RequiredNpcOrGoCount[i])
+            hasKill = true;
+
+    for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+        if (quest->RequiredItemCount[i])
+            hasCollect = true;
+
+    if (hasKill)
+        score += 40.0f;
+    if (hasCollect)
+        score += 40.0f;
+
+    // Neither: completion hangs on talking to somebody, reaching a trigger, or a script firing.
+    if (!hasKill && !hasCollect)
+        score -= 60.0f;
+
+    // A bot that fails a timed quest has spent the trip and the quest slot for nothing. There is
+    // no QUEST_FLAGS_TIMED despite the name appearing in some documentation -- flag 0x1 is
+    // STAY_ALIVE, which is a different (also bot-hostile) thing. Timed quests carry TimeAllowed.
+    if (quest->GetTimeAllowed() > 0)
+        score -= 40.0f;
+
+    // Fails if the bot dies. Bots die: to adds, to falling, to a patrol wandering into a fight.
+    if (quest->HasFlag(QUEST_FLAGS_STAY_ALIVE))
+        score -= 25.0f;
+
+    if (quest->HasSpecialFlag(QUEST_SPECIAL_FLAGS_EXPLORATION_OR_EVENT))
+        score -= 30.0f;
+
+    if (sQuestBlacklistMgr.IsEscortQuest(questId))
+        score -= 100.0f;
+
+    return score;
 }
 
 float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
@@ -688,6 +740,10 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
     // Level fit, in both directions - grey quests and quests well above the bot both score badly.
     int32 levelGap = static_cast<int32>(bot->GetLevel()) - static_cast<int32>(bot->GetQuestLevel(quest));
     score -= std::abs(levelGap) * 5.0f;
+
+    // Objectives the bot can actually drive. Weighted well below progress and completion: a
+    // half-finished awkward quest is still worth more than a pristine convenient one.
+    score += ScoreQuestObjectiveShape(questId, quest);
 
     // Already written off after repeatedly failing to make progress on it.
     if (sQuestBlacklistMgr.IsBlacklisted(questId))

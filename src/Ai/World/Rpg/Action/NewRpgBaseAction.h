@@ -62,6 +62,16 @@ protected:
     /// How much this bot wants to keep `questId`. Higher is better; the quest-log tidy-up drops
     /// the lowest scorers. A null `quest` (template missing from the DB) scores lowest of all.
     float ScoreQuestForKeeping(uint32 questId, Quest const* quest);
+
+    /**
+     * How well a quest's objectives suit a bot, independent of level or progress.
+     *
+     * Kill-N and collect-N are the two shapes the AI can actually drive: find the creature, kill
+     * it, loot it. Escorts, timed runs and scripted events are where a bot stalls, holds a quest
+     * slot until it is dropped, and gets the quest blacklisted for a reason that was never the
+     * quest's fault. Of 9464 quests, 6584 are kill/collect and 2880 are not.
+     */
+    float ScoreQuestObjectiveShape(uint32 questId, Quest const* quest);
     void DropQuest(uint16 slot, uint32 questId, Quest const* quest);
 
 protected:

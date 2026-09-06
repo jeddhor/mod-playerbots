@@ -50,6 +50,20 @@ public:
     /// A bot turned this quest in. Clears any accumulated failure verdict.
     void ReportSuccess(uint32 questId);
 
+    /**
+     * True if this quest starts an escort.
+     *
+     * There is no QUEST_SPECIAL_FLAGS_ESCORT to test, so the set is resolved once at startup from
+     * the two places escorts are actually defined: `script_waypoint` (the C++ npc_escortAI paths)
+     * and `smart_scripts` rows that start a waypoint path on quest accept. Roughly fifty quests
+     * realm-wide, so an immutable set built at load costs nothing to consult.
+     *
+     * Bots do not attempt escorts: they require holding a leash range on a moving NPC through
+     * scripted ambushes, and failure is silent -- the NPC despawns and the quest fails with no
+     * signal the bot can act on.
+     */
+    bool IsEscortQuest(uint32 questId) const;
+
 private:
     QuestBlacklistMgr() = default;
     ~QuestBlacklistMgr() = default;
@@ -67,6 +81,12 @@ private:
 
     /// Recompute the read-side snapshot. Must be called with `_mutex` held for writing.
     void RebuildBlacklistSet();
+
+    /// Resolve escort quests from the world DB. Called once by Load(); immutable afterwards.
+    void LoadEscortQuests();
+
+    // Written once during Load and only read afterwards, so it needs no synchronisation.
+    std::unordered_set<uint32> _escortQuests;
 
     // `_records` is the bookkeeping copy and is only ever touched on the (rare) write path.
     std::shared_mutex _mutex;

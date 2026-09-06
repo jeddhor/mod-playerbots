@@ -12,6 +12,39 @@
 #include "QueryResult.h"
 #include "Timer.h"
 
+void QuestBlacklistMgr::LoadEscortQuests()
+{
+    // Escorts started by a C++ npc_escortAI creature: the quest giver has a scripted waypoint path.
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT DISTINCT cq.quest FROM creature_queststarter cq "
+            "WHERE cq.id IN (SELECT DISTINCT entry FROM script_waypoint)"))
+    {
+        do
+        {
+            _escortQuests.insert(result->Fetch()[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+
+    // Escorts driven by SmartAI: event 19 is SMART_EVENT_QUEST_ACCEPTED, action 53 starts a
+    // waypoint path, so the pair means "accepting this quest sends an NPC walking".
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT DISTINCT event_param1 FROM smart_scripts "
+            "WHERE event_type = 19 AND action_type = 53 AND event_param1 > 0"))
+    {
+        do
+        {
+            _escortQuests.insert(result->Fetch()[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", ">> Identified {} escort quests bots will not attempt", _escortQuests.size());
+}
+
+bool QuestBlacklistMgr::IsEscortQuest(uint32 questId) const
+{
+    return _escortQuests.find(questId) != _escortQuests.end();
+}
+
 void QuestBlacklistMgr::Load()
 {
     uint32 oldMSTime = getMSTime();
@@ -40,6 +73,8 @@ void QuestBlacklistMgr::Load()
 
     LOG_INFO("server.loading", ">> Loaded {} playerbot quest blacklist entries in {} ms", _records.size(),
              GetMSTimeDiffToNow(oldMSTime));
+
+    LoadEscortQuests();
 }
 
 void QuestBlacklistMgr::RebuildBlacklistSet()
