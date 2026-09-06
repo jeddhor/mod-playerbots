@@ -2872,3 +2872,30 @@ AiPlayerbot.Agenda.Enabled = 1
 AiPlayerbot.Agenda.TickMs = 2000
 AiPlayerbot.Agenda.BotsPerTick = 50
 AiPlayerbot.Agenda.FreeSlotTarget = 8
+
+#
+#    AiPlayerbot.Archetype.*.Share
+#        Relative shares of each bot disposition. They need not sum to 100; they are weights.
+#
+#        Goals converge -- given time every bot wants gold, levels and a trained profession -- so a
+#        realm driven by goals alone drifts back toward uniformity. An archetype is fixed for the
+#        life of the character and biases its baseline, which is what keeps a Gatherer and a
+#        Socialite behaving differently even when they want the same things.
+#
+#          Questor    quests and travels
+#          Gatherer   works nodes, sells materials
+#          Grinder    kills things, wanders
+#          Trader     auction house, mail, vendors, sits in cities
+#          Socialite  camps and NPC-watches in populated places -- the bots that make a city look
+#                     inhabited, and the best hosts for mod-llm-chatter
+#          PvPer      outdoor PvP
+#
+#        Set every share to 0 to disable archetypes and return to uniform behaviour.
+#
+
+AiPlayerbot.Archetype.Questor.Share = 35
+AiPlayerbot.Archetype.Gatherer.Share = 20
+AiPlayerbot.Archetype.Grinder.Share = 15
+AiPlayerbot.Archetype.Trader.Share = 12
+AiPlayerbot.Archetype.Socialite.Share = 13
+AiPlayerbot.Archetype.PvPer.Share = 5

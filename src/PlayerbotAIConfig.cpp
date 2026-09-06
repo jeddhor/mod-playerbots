@@ -765,6 +765,13 @@ bool PlayerbotAIConfig::Initialize()
     agendaTickMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Agenda.TickMs", 2000);
     agendaBotsPerTick = sConfigMgr->GetOption<uint32>("AiPlayerbot.Agenda.BotsPerTick", 50);
     agendaFreeSlotTarget = sConfigMgr->GetOption<uint32>("AiPlayerbot.Agenda.FreeSlotTarget", 8);
+
+    archetypeShareQuestor = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Questor.Share", 35);
+    archetypeShareGatherer = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Gatherer.Share", 20);
+    archetypeShareGrinder = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Grinder.Share", 15);
+    archetypeShareTrader = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Trader.Share", 12);
+    archetypeShareSocialite = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Socialite.Share", 13);
+    archetypeSharePvPer = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.PvPer.Share", 5);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

@@ -423,6 +423,12 @@ public:
     uint32 agendaTickMs;
     uint32 agendaBotsPerTick;
     uint32 agendaFreeSlotTarget;
+    uint32 archetypeShareQuestor;
+    uint32 archetypeShareGatherer;
+    uint32 archetypeShareGrinder;
+    uint32 archetypeShareTrader;
+    uint32 archetypeShareSocialite;
+    uint32 archetypeSharePvPer;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

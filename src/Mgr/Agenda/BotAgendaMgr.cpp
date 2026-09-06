@@ -42,6 +42,38 @@ namespace
         /* Socialise          */ {1.0f, 0.8f, 1.6f, 1.2f, 2.0f, 1.0f, 1.2f, 1.5f, 1.0f, 1.0f, 1.0f, 0.8f, 1.0f},
     };
 
+    constexpr uint8 ARCHETYPE_COUNT = static_cast<uint8>(BotArchetype::Max);
+
+    /**
+     * Per-archetype baseline, as a multiplier on the configured global weights.
+     *
+     * These are what make the realm look inhabited rather than simulated. A Socialite hanging around
+     * a city and a Gatherer working the hills are running the same code with different numbers here.
+     */
+    float const ARCHETYPE_BASE[ARCHETYPE_COUNT][RPG_STATUS_END] = {
+        // IDLE GRIND CAMP WANDR NPC  QUEST FLIGHT REST PVP  VENDOR MAIL GATHER TRAIN
+        /* Questor   */ {1.0f, 1.0f, 0.8f, 0.9f, 1.1f, 2.2f, 1.4f, 0.9f, 0.7f, 1.0f, 1.0f, 0.7f, 1.0f},
+        /* Gatherer  */ {1.0f, 0.8f, 0.8f, 1.0f, 0.8f, 0.7f, 1.1f, 0.9f, 0.5f, 1.3f, 1.2f, 2.6f, 1.3f},
+        /* Grinder   */ {1.0f, 2.4f, 0.7f, 1.4f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f, 1.0f, 0.9f, 0.8f, 0.9f},
+        /* Trader    */ {1.0f, 0.6f, 1.4f, 0.8f, 1.2f, 0.7f, 1.2f, 1.0f, 0.5f, 1.8f, 2.0f, 1.1f, 1.2f},
+        /* Socialite */ {1.0f, 0.5f, 2.2f, 1.3f, 2.4f, 0.8f, 1.1f, 1.6f, 0.6f, 1.1f, 1.0f, 0.6f, 0.9f},
+        /* PvPer     */ {1.0f, 1.3f, 0.9f, 1.1f, 0.8f, 0.8f, 1.2f, 0.9f, 3.0f, 1.0f, 0.9f, 0.6f, 0.9f},
+    };
+
+    char const* ArchetypeName(BotArchetype type)
+    {
+        switch (type)
+        {
+            case BotArchetype::Questor:   return "Questor";
+            case BotArchetype::Gatherer:  return "Gatherer";
+            case BotArchetype::Grinder:   return "Grinder";
+            case BotArchetype::Trader:    return "Trader";
+            case BotArchetype::Socialite: return "Socialite";
+            case BotArchetype::PvPer:     return "PvPer";
+            default:                      return "?";
+        }
+    }
+
     char const* GoalName(BotGoalType type)
     {
         switch (type)
@@ -86,13 +118,113 @@ void BotAgendaMgr::Load()
         } while (result->NextRow());
     }
 
+    std::unordered_map<ObjectGuid, BotArchetype> profiles;
+    if (QueryResult result = PlayerbotsDatabase.Query("SELECT guid, archetype FROM playerbot_profile"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BotArchetype const archetype = static_cast<BotArchetype>(fields[1].Get<uint8>());
+            if (archetype < BotArchetype::Max)
+                profiles[ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>())] = archetype;
+        } while (result->NextRow());
+    }
+
     {
         std::unique_lock<std::shared_mutex> guard(_mutex);
         _agendas = std::move(loaded);
+        _archetypes = std::move(profiles);
     }
+
+    LOG_INFO("server.loading", ">> Loaded {} playerbot archetype profiles", _archetypes.size());
 
     LOG_INFO("server.loading", ">> Loaded agendas for {} playerbots in {} ms", _agendas.size(),
              GetMSTimeDiffToNow(oldMSTime));
+}
+
+BotArchetype BotAgendaMgr::RollArchetype()
+{
+    uint32 const shares[ARCHETYPE_COUNT] = {
+        sPlayerbotAIConfig.archetypeShareQuestor,   sPlayerbotAIConfig.archetypeShareGatherer,
+        sPlayerbotAIConfig.archetypeShareGrinder,   sPlayerbotAIConfig.archetypeShareTrader,
+        sPlayerbotAIConfig.archetypeShareSocialite, sPlayerbotAIConfig.archetypeSharePvPer};
+
+    uint32 total = 0;
+    for (uint32 share : shares)
+        total += share;
+
+    // An operator who zeroes every share gets the old uniform behaviour rather than a division by
+    // zero, which is the sane reading of "I do not want archetypes".
+    if (!total)
+        return BotArchetype::Questor;
+
+    uint32 roll = urand(1, total);
+    for (uint8 i = 0; i < ARCHETYPE_COUNT; ++i)
+    {
+        if (roll <= shares[i])
+            return static_cast<BotArchetype>(i);
+        roll -= shares[i];
+    }
+
+    return BotArchetype::Questor;
+}
+
+BotArchetype BotAgendaMgr::GetArchetype(Player* bot)
+{
+    if (!bot)
+        return BotArchetype::Questor;
+
+    ObjectGuid const guid = bot->GetGUID();
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        auto itr = _archetypes.find(guid);
+        if (itr != _archetypes.end())
+            return itr->second;
+    }
+
+    BotArchetype const rolled = RollArchetype();
+
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        // Another thread may have assigned one while the shared lock was released.
+        auto const [itr, inserted] = _archetypes.emplace(guid, rolled);
+        if (!inserted)
+            return itr->second;
+    }
+
+    PlayerbotsDatabase.Execute(
+        "INSERT INTO playerbot_profile (guid, archetype, assigned_at) VALUES ({}, {}, {}) "
+        "ON DUPLICATE KEY UPDATE archetype = archetype",
+        guid.GetCounter(), static_cast<uint32>(rolled),
+        static_cast<uint32>(GameTime::GetGameTime().count()));
+
+    return rolled;
+}
+
+std::string BotAgendaMgr::DescribeDistribution() const
+{
+    uint32 counts[ARCHETYPE_COUNT] = {};
+    uint32 total = 0;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        for (auto const& [guid, archetype] : _archetypes)
+        {
+            if (archetype < BotArchetype::Max)
+            {
+                ++counts[static_cast<uint8>(archetype)];
+                ++total;
+            }
+        }
+    }
+
+    std::string out = Acore::StringFormat("Archetypes across {} known bots:\n", total);
+    for (uint8 i = 0; i < ARCHETYPE_COUNT; ++i)
+        out += Acore::StringFormat("  {:<10} {:>5}  ({:.1f}%)\n", ArchetypeName(static_cast<BotArchetype>(i)),
+                                   counts[i], total ? 100.0f * counts[i] / total : 0.0f);
+
+    return out;
 }
 
 void BotAgendaMgr::Forget(ObjectGuid guid)
@@ -133,6 +265,10 @@ void BotAgendaMgr::Update(uint32 diff)
 void BotAgendaMgr::Evaluate(Player* bot)
 {
     uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
+
+    // Assign on first sight. Doing it here rather than at character creation means bots that predate
+    // the feature acquire one on their next tick instead of needing a migration.
+    GetArchetype(bot);
 
     Agenda agenda;
     {
@@ -283,9 +419,17 @@ float BotAgendaMgr::GetActivityMultiplier(Player* bot, NewRpgStatus status) cons
         return 1.0f;
 
     std::shared_lock<std::shared_mutex> lock(_mutex);
+
+    // Archetype sets the baseline; goals push around it. Read without assigning, because this is a
+    // const query on a hot path -- assignment happens during Evaluate.
+    float archetypeBase = 1.0f;
+    auto profile = _archetypes.find(bot->GetGUID());
+    if (profile != _archetypes.end() && profile->second < BotArchetype::Max)
+        archetypeBase = ARCHETYPE_BASE[static_cast<uint8>(profile->second)][status];
+
     auto itr = _agendas.find(bot->GetGUID());
     if (itr == _agendas.end())
-        return 1.0f;
+        return archetypeBase;
 
     float multiplier = 1.0f;
     for (BotGoal const& goal : itr->second)
@@ -299,7 +443,7 @@ float BotAgendaMgr::GetActivityMultiplier(Player* bot, NewRpgStatus status) cons
 
     // A goal may discourage an activity but never forbid it: availability is CheckRpgStatusAvailable's
     // job, and a bot that can literally never choose an activity is a bot with a hidden deadlock.
-    return std::clamp(multiplier, 0.1f, 5.0f);
+    return std::clamp(archetypeBase * multiplier, 0.1f, 8.0f);
 }
 
 std::string BotAgendaMgr::DescribeAgenda(Player* bot) const
@@ -312,7 +456,11 @@ std::string BotAgendaMgr::DescribeAgenda(Player* bot) const
     if (itr == _agendas.end() || itr->second.empty())
         return Acore::StringFormat("{} has no agenda yet", bot->GetName());
 
-    std::string out = Acore::StringFormat("{} agenda:\n", bot->GetName());
+    std::string archetype = "unassigned";
+    if (auto profile = _archetypes.find(bot->GetGUID()); profile != _archetypes.end())
+        archetype = ArchetypeName(profile->second);
+
+    std::string out = Acore::StringFormat("{} [{}] agenda:\n", bot->GetName(), archetype);
     for (BotGoal const& goal : itr->second)
         out += Acore::StringFormat("  {:<19} priority {:>3}  progress {} / {}\n", GoalName(goal.type),
                                    goal.priority, goal.progress, goal.target);

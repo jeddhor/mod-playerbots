@@ -39,6 +39,26 @@ enum class BotGoalType : uint8
     Max = 7
 };
 
+/**
+ * A bot's persistent disposition.
+ *
+ * Goals converge: given enough time every bot wants gold, levels and a trained profession, so a
+ * realm driven by goals alone drifts back toward uniformity. An archetype is fixed for the life of
+ * the character and biases the baseline, so a Gatherer and a Socialite with identical goals still
+ * spend their days differently.
+ */
+enum class BotArchetype : uint8
+{
+    Questor = 0,
+    Gatherer = 1,
+    Grinder = 2,
+    Trader = 3,
+    Socialite = 4,
+    PvPer = 5,
+
+    Max = 6
+};
+
 struct BotGoal
 {
     BotGoalType type{BotGoalType::LevelUp};
@@ -90,6 +110,12 @@ public:
     /// Human-readable dump for `.playerbots agenda <name>`.
     std::string DescribeAgenda(Player* bot) const;
 
+    /// This bot's archetype, assigning one on first use.
+    BotArchetype GetArchetype(Player* bot);
+
+    /// Realm-wide archetype distribution, for `.playerbots archetypes`.
+    std::string DescribeDistribution() const;
+
     /// Drop a bot's cached agenda, e.g. on logout.
     void Forget(ObjectGuid guid);
 
@@ -108,8 +134,12 @@ private:
     /// Persist a bot's non-derived goals.
     void Save(ObjectGuid guid, Agenda const& agenda);
 
+    /// Draw an archetype from the configured shares.
+    static BotArchetype RollArchetype();
+
     mutable std::shared_mutex _mutex;
     std::unordered_map<ObjectGuid, Agenda> _agendas;
+    std::unordered_map<ObjectGuid, BotArchetype> _archetypes;
 
     // Round-robin cursor into the online bot list, so each tick advances rather than restarting.
     uint32 _cursor{0};

@@ -2413,6 +2413,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
         return true;
     }
 
+    if (cmd == "archetypes")
+    {
+        LOG_INFO("playerbots", "{}", sBotAgendaMgr.DescribeDistribution());
+        return true;
+    }
+
     if (cmd.rfind("agenda", 0) == 0)
     {
         std::string name = cmd.size() > 6 ? cmd.substr(6) : "";
