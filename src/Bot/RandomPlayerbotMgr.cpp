@@ -5,6 +5,7 @@
  */
 
 #include "RandomPlayerbotMgr.h"
+#include "BotAgendaMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
 #include "Battleground.h"
@@ -2409,6 +2410,47 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "economy")
     {
         sBotEconomyMgr.PrintStats();
+        return true;
+    }
+
+    if (cmd.rfind("agenda", 0) == 0)
+    {
+        std::string name = cmd.size() > 6 ? cmd.substr(6) : "";
+        while (!name.empty() && name.front() == ' ')
+            name.erase(name.begin());
+
+        if (name.empty())
+        {
+            LOG_INFO("playerbots", "Usage: .playerbots agenda <botname>");
+            return true;
+        }
+
+        Player* bot = ObjectAccessor::FindPlayerByName(name, false);
+        if (!bot)
+        {
+            LOG_INFO("playerbots", "No bot online named '{}'", name);
+            return true;
+        }
+
+        LOG_INFO("playerbots", "{}", sBotAgendaMgr.DescribeAgenda(bot));
+
+        // The resulting per-activity odds, which is the half that is actually hard to predict from
+        // the goal list alone.
+        static char const* const statusNames[] = {"IDLE",   "GO_GRIND", "GO_CAMP", "WANDER_RANDOM",
+                                                  "WANDER_NPC", "DO_QUEST", "TRAVEL_FLIGHT", "REST",
+                                                  "OUTDOOR_PVP", "VENDOR", "MAILBOX", "GATHER", "TRAIN"};
+        for (int i = 0; i < RPG_STATUS_END; ++i)
+        {
+            NewRpgStatus const status = static_cast<NewRpgStatus>(i);
+            uint32 const base = sPlayerbotAIConfig.RpgStatusProbWeight[status];
+            if (!base)
+                continue;
+
+            float const mult = sBotAgendaMgr.GetActivityMultiplier(bot, status);
+            LOG_INFO("playerbots", "  {:<14} base {:>3} x {:.2f} = {:.0f}", statusNames[i], base, mult,
+                     base * mult);
+        }
+
         return true;
     }
 

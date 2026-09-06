@@ -2846,3 +2846,29 @@ AiPlayerbot.Economy.DisenchantMaxQuality = 4
 #
 
 AiPlayerbot.Economy.MaxListingAttempts = 5
+
+#
+#    AiPlayerbot.Agenda.Enabled
+#        Bots pursue goals -- level up, earn gold, train a profession, clear their bags -- and those
+#        goals bias which activity they choose next. With this off every bot draws from the same
+#        global weight table and the realm behaves as one bot copied many times.
+#        Default: 1
+#
+#    AiPlayerbot.Agenda.TickMs / AiPlayerbot.Agenda.BotsPerTick
+#        Agenda evaluation is round-robin with a fixed budget, so its cost does not grow with the
+#        number of bots. At the defaults a realm revisits 25 bots per second; a bot's goals are
+#        therefore refreshed every couple of minutes at 3000 bots, which is fine for something that
+#        changes over minutes.
+#        Defaults: 2000, 50
+#
+#    AiPlayerbot.Agenda.FreeSlotTarget
+#        Free bag slots a bot aims to keep. Below this the ClearInventory goal gains priority in
+#        proportion, and near zero it outranks everything -- a bot that cannot loot cannot gather,
+#        quest or supply the auction house.
+#        Default: 8
+#
+
+AiPlayerbot.Agenda.Enabled = 1
+AiPlayerbot.Agenda.TickMs = 2000
+AiPlayerbot.Agenda.BotsPerTick = 50
+AiPlayerbot.Agenda.FreeSlotTarget = 8

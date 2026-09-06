@@ -417,6 +417,12 @@ public:
     uint32 economyDisenchantMaxPricePct;
     uint32 economyDisenchantMaxQuality;
     uint32 economyMaxListingAttempts;
+
+    // Agenda layer (Phase 6).
+    bool agendaEnabled;
+    uint32 agendaTickMs;
+    uint32 agendaBotsPerTick;
+    uint32 agendaFreeSlotTarget;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

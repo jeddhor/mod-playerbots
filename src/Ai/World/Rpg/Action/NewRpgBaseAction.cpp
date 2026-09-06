@@ -29,6 +29,7 @@
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "Position.h"
+#include "BotAgendaMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "QuestDef.h"
 #include "QuestPackets.h"
@@ -1436,18 +1437,30 @@ WorldPosition NewRpgBaseAction::SelectNearestVendorPos()
 
 bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateStatus)
 {
+    // Base weight from config, scaled by what this bot is actually trying to achieve. Without the
+    // agenda multiplier every bot on the realm draws from one global table, so a gatherer saving for
+    // a mount and a fresh level-5 quester pick their next activity from identical odds.
     std::vector<NewRpgStatus> availableStatus;
+    std::vector<uint32> weights;
     uint32 probSum = 0;
+
     for (NewRpgStatus status : candidateStatus)
     {
-        if (sPlayerbotAIConfig.RpgStatusProbWeight[status] == 0)
+        uint32 const base = sPlayerbotAIConfig.RpgStatusProbWeight[status];
+        if (base == 0)
             continue;
 
-        if (CheckRpgStatusAvailable(status))
-        {
-            availableStatus.push_back(status);
-            probSum += sPlayerbotAIConfig.RpgStatusProbWeight[status];
-        }
+        if (!CheckRpgStatusAvailable(status))
+            continue;
+
+        // Rounded up, so a goal that merely discourages an activity cannot silently zero it out and
+        // make the activity unreachable.
+        uint32 const weight =
+            std::max<uint32>(1, static_cast<uint32>(base * sBotAgendaMgr.GetActivityMultiplier(bot, status)));
+
+        availableStatus.push_back(status);
+        weights.push_back(weight);
+        probSum += weight;
     }
     // Safety check. Default to "rest" if all RPG weights = 0
     if (availableStatus.empty() || probSum == 0)
@@ -1459,12 +1472,12 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
     uint32 rand = urand(1, probSum);
     uint32 accumulate = 0;
     NewRpgStatus chosenStatus = RPG_STATUS_END;
-    for (NewRpgStatus status : availableStatus)
+    for (size_t i = 0; i < availableStatus.size(); ++i)
     {
-        accumulate += sPlayerbotAIConfig.RpgStatusProbWeight[status];
+        accumulate += weights[i];
         if (accumulate >= rand)
         {
-            chosenStatus = status;
+            chosenStatus = availableStatus[i];
             break;
         }
     }
