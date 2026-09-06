@@ -1319,8 +1319,7 @@ AiPlayerbot.RandomBotQuestIds = "3802,5505,6502,7761,7848,10277,10285,11492,1318
 
 # Randombots will group with nearby randombots to do shared quests
 # Note: Currently not functioning properly
-AiPlayerbot.RandomBotGroupNearby = 0
-
+AiPlayerbot.RandomBotGroupNearby = 1
 # Randombots will pick quests on their own and try to complete them
 # Default: 1 (enabled)
 AiPlayerbot.AutoDoQuests = 1
