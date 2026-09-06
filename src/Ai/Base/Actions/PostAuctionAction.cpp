@@ -101,11 +101,14 @@ bool PostAuctionAction::Execute(Event /*event*/)
     uint32 slots = sPlayerbotAIConfig.economyMaxListingsPerBot - held;
 
     // A handful per pass. Listing a full 24-slot bag in one tick makes every bot dump its inventory
-    // the instant it fills, which reads as a bot and floods the house in bursts.
-    slots = std::min<uint32>(slots, 3);
+    // the instant it fills, which reads as a bot and floods the house in bursts. A bot that is
+    // actually stuck gets a larger allowance, because pacing matters less than being able to loot.
+    slots = std::min<uint32>(slots, bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget ? 8 : 3);
 
     CollectBagItemsVisitor visitor;
     IterateItems(&visitor, ITERATE_ITEMS_IN_BAGS);
+
+    bool const bagsUnderPressure = bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
 
     uint32 queued = 0;
     for (Item* item : visitor.items)
@@ -114,7 +117,22 @@ bool PostAuctionAction::Execute(Event /*event*/)
             break;
 
         if (!sBotEconomyMgr.ShouldPost(item))
+        {
+            // Bags full and the house already saturated with this item: posting is suppressed and
+            // the bot would sit stuck. Take the vendor price and move on. Without this the
+            // depth-control mechanism, which exists to protect the market, becomes a way for a bot
+            // to deadlock itself.
+            if (bagsUnderPressure && sBotEconomyMgr.IsAuctionable(item) &&
+                item->GetTemplate()->Class == ITEM_CLASS_TRADE_GOODS && item->GetTemplate()->SellPrice)
+            {
+                std::string const name = item->GetTemplate()->Name1;
+                uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
+                LOG_DEBUG("playerbots", "[Economy] {} vendored {} to free bag space ({}c)", bot->GetName(), name,
+                          earned);
+                ++queued;
+            }
             continue;
+        }
 
         // An item that has been through several full listings has been declined by the market, not
         // starved of time -- an auction runs at most 48 hours, so five attempts is ten days on the

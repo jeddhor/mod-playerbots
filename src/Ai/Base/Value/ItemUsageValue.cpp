@@ -58,11 +58,26 @@ ItemUsage ItemUsageValue::Calculate()
 
         if (needItem)
         {
-            float stacks = CurrentStacks(proto);
-            if (stacks < 1)
-                return ITEM_USAGE_SKILL;  // Buy more.
-            if (stacks < 2)
-                return ITEM_USAGE_KEEP;  // Keep current amount.
+            // Hoarding toward two full stacks is right when there is room and wrong when there is
+            // not. A bot with full bags and nineteen partial stacks stops looting, and everything
+            // downstream stops with it: no quest items, no gathering, nothing reaching the market.
+            //
+            // Under bag pressure, materials become sellable at whatever size they are. They are the
+            // one category that is safe to let go of -- reagents can be re-farmed or re-bought,
+            // whereas quest items and gear cannot.
+            bool const bagsUnderPressure =
+                bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
+            bool const isMaterial = proto->Class == ITEM_CLASS_TRADE_GOODS ||
+                                    proto->Class == ITEM_CLASS_REAGENT || proto->Class == ITEM_CLASS_MISC;
+
+            if (!bagsUnderPressure || !isMaterial)
+            {
+                float stacks = CurrentStacks(proto);
+                if (stacks < 1)
+                    return ITEM_USAGE_SKILL;  // Buy more.
+                if (stacks < 2)
+                    return ITEM_USAGE_KEEP;  // Keep current amount.
+            }
         }
     }
 

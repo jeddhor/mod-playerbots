@@ -624,8 +624,18 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
             // nonCombatEngine->addStrategy("pvp", false);
             // nonCombatEngine->addStrategy("collision");
-            // nonCombatEngine->addStrategy("group");
             // nonCombatEngine->addStrategy("guild");
+
+            // Bots have always been able to invite each other -- InviteNearbyToGroupAction, the
+            // GrouperType per bot, and a +/-2 level guard on invitations all exist -- but the
+            // strategy that drives it was commented out here, so no bot ever grouped on its own.
+            //
+            // A solo bot dying repeatedly to an elite is the most visible way the world looks
+            // broken, and P1.1's blacklist makes it worse: the quest gets written off as unworkable
+            // when the real problem was that nobody came to help.
+            if (sPlayerbotAIConfig.randomBotGroupNearby)
+                nonCombatEngine->addStrategy("group", false);
+
             nonCombatEngine->addStrategy("grind", false);
 
             if (sPlayerbotAIConfig.enableNewRpgStrategy)
