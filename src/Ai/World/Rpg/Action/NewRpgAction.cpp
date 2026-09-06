@@ -948,7 +948,12 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
 
     auto& data = *dataPtr;
 
+    // Prefer the zone the activity was started for; fall back to anything in reach so a bot whose
+    // target zone became unworkable (skill changed, bot moved maps) does not stall for the whole
+    // activity window.
     GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
+    if (!route)
+        route = sGatherRouteMgr.PickRouteWithinReach(bot);
     if (!route || route->nodes.empty())
     {
         info.ChangeToIdle();

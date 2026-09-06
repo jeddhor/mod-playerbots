@@ -273,6 +273,50 @@ std::vector<GatherRouteMgr::Route const*> GatherRouteMgr::GetRoutesFor(Player* b
     return out;
 }
 
+GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) const
+{
+    if (!bot)
+        return nullptr;
+
+    // Standing in a gathering zone already: no reason to travel.
+    if (Route const* here = PickRoute(bot, bot->GetZoneId()))
+        return here;
+
+    // How far a bot will travel to start gathering. Far enough to leave a capital for the
+    // countryside around it, short enough that it does not spend the whole activity walking.
+    constexpr float MAX_TRAVEL_DISTANCE = 1500.0f;
+    constexpr float MAX_TRAVEL_DISTANCE_SQ = MAX_TRAVEL_DISTANCE * MAX_TRAVEL_DISTANCE;
+
+    uint32 const mapId = bot->GetMapId();
+    float const botX = bot->GetPositionX();
+    float const botY = bot->GetPositionY();
+
+    std::vector<Route const*> candidates;
+    for (Route const& route : _routes)
+    {
+        if (route.nodes.empty())
+            continue;
+
+        uint32 const skill = bot->GetSkillValue(route.skillId);
+        if (!skill || skill < route.gateSkillValue)
+            continue;
+
+        Node const& first = route.nodes.front();
+        if (first.mapId != mapId)
+            continue;
+
+        float const dx = first.x - botX;
+        float const dy = first.y - botY;
+        if ((dx * dx + dy * dy) > MAX_TRAVEL_DISTANCE_SQ)
+            continue;
+
+        candidates.push_back(&route);
+    }
+
+    Route const* const* picked = RandomElement(candidates);
+    return picked ? *picked : nullptr;
+}
+
 GatherRouteMgr::Route const* GatherRouteMgr::PickRoute(Player* bot, uint32 zoneId) const
 {
     std::vector<Route const*> candidates = GetRoutesFor(bot, zoneId);

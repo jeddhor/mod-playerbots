@@ -82,6 +82,20 @@ public:
     /// Pick one route at random from those the bot qualifies for. nullptr if none.
     Route const* PickRoute(Player* bot, uint32 zoneId) const;
 
+    /**
+     * A route the bot could work, preferring its current zone but willing to travel.
+     *
+     * Bots spend a lot of time in cities -- resting at innkeepers is one of the commonest RPG
+     * activities -- and cities correctly contain nothing to gather. Over a three hour run, 904 of
+     * 1889 availability checks were refused for "no usable route in this zone", led by Dalaran,
+     * Stormwind, Shattrath and Orgrimmar. Requiring a node underfoot means a gatherer standing in a
+     * capital can never decide to go gathering, which is not how anyone plays.
+     *
+     * Restricted to the bot's current map and a distance cap so this stays "walk to the hills
+     * outside town", not "cross the world".
+     */
+    Route const* PickRouteWithinReach(Player* bot) const;
+
     uint32 GetRouteCount() const { return static_cast<uint32>(_routes.size()); }
 
 private:

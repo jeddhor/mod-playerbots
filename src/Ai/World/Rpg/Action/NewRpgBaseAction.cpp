@@ -1584,9 +1584,13 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
         }
         case RPG_GATHER:
         {
-            if (GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()))
+            if (GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRouteWithinReach(bot))
             {
-                botAI->rpgInfo.ChangeToGather(bot->GetZoneId(), route->skillId);
+                // The route's zone, not the bot's. They differ whenever the bot is somewhere with
+                // nothing to gather -- which is most of why this activity gets chosen at all -- and
+                // storing the bot's zone would send the activity looking for a route in the city it
+                // is trying to leave.
+                botAI->rpgInfo.ChangeToGather(route->zoneId, route->skillId);
                 return true;
             }
             return false;
@@ -1684,10 +1688,10 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
                 return false;
             }
 
-            if (!sGatherRouteMgr.PickRoute(bot, bot->GetZoneId()))
+            if (!sGatherRouteMgr.PickRouteWithinReach(bot))
             {
-                LOG_DEBUG("playerbots", "[GatherAvail] {} denied: no usable route in zone {}", bot->GetName(),
-                          bot->GetZoneId());
+                LOG_DEBUG("playerbots", "[GatherAvail] {} denied: no usable route within reach of zone {}",
+                          bot->GetName(), bot->GetZoneId());
                 return false;
             }
 
