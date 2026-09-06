@@ -284,7 +284,10 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
 
     // How far a bot will travel to start gathering. Far enough to leave a capital for the
     // countryside around it, short enough that it does not spend the whole activity walking.
-    constexpr float MAX_TRAVEL_DISTANCE = 1500.0f;
+    // 1500 yards was too far: availability rose from 52% to 68% but the number of bots actually
+    // reaching a waypoint did not move, because the walk consumed the activity window. At roughly
+    // 7 yards/second before pathing overhead, 800 yards is a few minutes of the fifteen.
+    constexpr float MAX_TRAVEL_DISTANCE = 800.0f;
     constexpr float MAX_TRAVEL_DISTANCE_SQ = MAX_TRAVEL_DISTANCE * MAX_TRAVEL_DISTANCE;
 
     uint32 const mapId = bot->GetMapId();

@@ -75,7 +75,9 @@ protected:
     const int32 statusTravelFlightDuration = 15 * MINUTE * IN_MILLISECONDS;
     const int32 statusVendorDuration = 5 * MINUTE * IN_MILLISECONDS;
     const int32 statusMailboxDuration = 30 * IN_MILLISECONDS;
-    const int32 statusGatherDuration = 15 * MINUTE * IN_MILLISECONDS;
+    // 25, not 15. The window covers travelling to the route as well as working it, and a bot that
+    // spends four minutes walking to the hills should still get a useful shift out of the trip.
+    const int32 statusGatherDuration = 25 * MINUTE * IN_MILLISECONDS;
     const int32 statusTrainDuration = 5 * MINUTE * IN_MILLISECONDS;
 };
 

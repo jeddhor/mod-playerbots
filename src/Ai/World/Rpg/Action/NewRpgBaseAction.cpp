@@ -1590,6 +1590,12 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
                 // nothing to gather -- which is most of why this activity gets chosen at all -- and
                 // storing the bot's zone would send the activity looking for a route in the city it
                 // is trying to leave.
+                float const travel = route->nodes.empty()
+                                         ? 0.0f
+                                         : bot->GetDistance2d(route->nodes.front().x, route->nodes.front().y);
+                LOG_DEBUG("playerbots", "[GatherStart] {} zone {} -> route zone {}, {:.0f} yards to first node",
+                          bot->GetName(), bot->GetZoneId(), route->zoneId, travel);
+
                 botAI->rpgInfo.ChangeToGather(route->zoneId, route->skillId);
                 return true;
             }
