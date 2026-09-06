@@ -61,7 +61,15 @@ public:
     {
         uint32 zoneId{0};
         uint32 skillId{0};
-        uint32 minSkillValue{0};   // highest requirement on the route: the gate to walk it at all
+        // The gate to walk the route: the MEDIAN node requirement, so a bot that takes it can
+        // harvest at least half of what it walks past.
+        //
+        // This was originally the route's highest requirement, which was wrong and silently
+        // disabled gathering entirely. Routes are clustered by position, not by tier, so a single
+        // Mithril vein among fifteen Copper nodes gated the whole route at 175 and no low-skill
+        // bot could ever take it. Zero routes were reachable in practice.
+        uint32 gateSkillValue{0};
+        uint32 maxSkillValue{0};    // hardest node, kept for reporting
         std::vector<Node> nodes;
     };
 

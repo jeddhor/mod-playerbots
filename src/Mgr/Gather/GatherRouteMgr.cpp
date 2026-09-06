@@ -108,6 +108,21 @@ void GatherRouteMgr::Load()
              ">> Loaded {} playerbot gathering routes across {} zones ({} spawn points -> {} clustered waypoints) "
              "in {} ms",
              _routes.size(), _byZone.size(), rawPoints, waypoints, GetMSTimeDiffToNow(oldMSTime));
+
+    // How many routes a bot at a given skill level can actually take. This is the number that
+    // matters: routes that exist but are gated above every bot's skill are the same as no routes at
+    // all, and that failure is invisible without printing it. A run where the low-skill buckets are
+    // zero means gathering is disabled in practice no matter what the route count says.
+    for (uint32 skill : {1u, 75u, 150u, 225u, 300u, 450u})
+    {
+        uint32 reachable = 0;
+        for (Route const& route : _routes)
+            if (skill >= route.gateSkillValue)
+                ++reachable;
+
+        LOG_INFO("server.loading", ">> Gathering: {} of {} routes reachable at skill {}", reachable,
+                 _routes.size(), skill);
+    }
 }
 
 std::vector<GatherRouteMgr::Node> GatherRouteMgr::ClusterSpawnPoints(std::vector<Node>& points) const
@@ -178,7 +193,7 @@ void GatherRouteMgr::BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::ve
         route.zoneId = zoneId;
         route.skillId = skillId;
         route.nodes.push_back(nodes[start]);
-        route.minSkillValue = nodes[start].requiredSkillValue;
+        route.maxSkillValue = nodes[start].requiredSkillValue;
         used[start] = true;
         --remaining;
 
@@ -204,14 +219,27 @@ void GatherRouteMgr::BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::ve
             if (best == nodes.size())
                 break;  // nothing close enough: this cluster is finished
 
-            route.minSkillValue = std::max(route.minSkillValue, nodes[best].requiredSkillValue);
+            route.maxSkillValue = std::max(route.maxSkillValue, nodes[best].requiredSkillValue);
             route.nodes.push_back(nodes[best]);
             used[best] = true;
             --remaining;
         }
 
         if (route.nodes.size() >= MIN_ROUTE_NODES)
+        {
+            // Median requirement, so the gate reflects what the route is mostly made of rather than
+            // its single hardest node.
+            std::vector<uint32> requirements;
+            requirements.reserve(route.nodes.size());
+            for (Node const& node : route.nodes)
+                requirements.push_back(node.requiredSkillValue);
+
+            std::nth_element(requirements.begin(), requirements.begin() + requirements.size() / 2,
+                             requirements.end());
+            route.gateSkillValue = requirements[requirements.size() / 2];
+
             _routes.push_back(std::move(route));
+        }
     }
 }
 
@@ -233,8 +261,10 @@ std::vector<GatherRouteMgr::Route const*> GatherRouteMgr::GetRoutesFor(Player* b
         if (!skill)
             continue;  // bot does not have this profession at all
 
-        // Must be able to harvest the hardest node on the route, or it walks past most of it.
-        if (skill < route.minSkillValue)
+        // Must be able to harvest the median node, i.e. at least half the route. Gating on the
+        // hardest node instead means one high-tier vein in a spatial cluster locks out every bot
+        // below it -- which disabled gathering completely.
+        if (skill < route.gateSkillValue)
             continue;
 
         out.push_back(&route);
