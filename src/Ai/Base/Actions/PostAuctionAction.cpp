@@ -119,8 +119,17 @@ bool PostAuctionAction::Execute(Event /*event*/)
         // Defer to the shared classifier for the per-bot half of the judgement. It already knows
         // this bot's quests, professions, ammo and what it is wearing, so only list what it
         // independently agrees is auction fodder rather than something the bot needs.
-        if (AI_VALUE2(ItemUsage, "item usage", item->GetEntry()) != ITEM_USAGE_AH)
+        ItemUsage const usage = AI_VALUE2(ItemUsage, "item usage", item->GetEntry());
+        if (usage != ITEM_USAGE_AH)
+        {
+            // Says why a saleable-looking item was passed over. Bots hold cloth, ore and leather
+            // and list none of it, and the difference between "never considered" and "considered
+            // and classified as something else" is not visible without printing the verdict.
+            LOG_DEBUG("playerbots", "[EconomySkip] {} holds {} (class {}) but usage is {}, not AH",
+                      bot->GetName(), item->GetTemplate()->Name1, item->GetTemplate()->Class,
+                      static_cast<uint32>(usage));
             continue;
+        }
 
         auto op = std::make_unique<PostAuctionOperation>(bot->GetGUID(), item->GetGUID());
         if (!PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(op)))

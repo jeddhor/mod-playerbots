@@ -19,10 +19,12 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // everything downstream of looting.
     triggers.push_back(new TriggerNode("often", { NextAction("vendor junk", 1.0f) }));
 
-    // "seldom" (1 in 300) rather than "often": listing is bookkeeping, not gameplay, and iterating
-    // every bot's bags on a fast trigger is a real cost at a few thousand bots.
-    triggers.push_back(new TriggerNode("seldom", { NextAction("post auctions", 1.0f) }));
-    triggers.push_back(new TriggerNode("seldom", { NextAction("buy auctions", 1.0f) }));
+    // "random" (1 in 20) rather than "often": listing is bookkeeping, not gameplay, and iterating
+    // every bot's bags on a fast trigger is a real cost at a few thousand bots. It was 1 in 300,
+    // which produced four posts across 200 bots in forty minutes -- too little to tell a working
+    // economy from a broken one.
+    triggers.push_back(new TriggerNode("random", { NextAction("post auctions", 1.0f) }));
+    triggers.push_back(new TriggerNode("random", { NextAction("buy auctions", 1.0f) }));
 }
 
 void FarmMaterialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
