@@ -55,6 +55,13 @@ bool InviteToGroupAction::Invite(Player* inviter, Player* player)
 bool InviteNearbyToGroupAction::Execute(Event /*event*/)
 {
     GuidVector nearGuids = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest friendly players")->Get();
+
+    // Counted per pass. Enabling this strategy produced one group across 200 bots in 45 minutes,
+    // and proximity, candidate source, config and GrouperType were each checked and cleared as the
+    // cause. Rather than guess a fourth time, every rejection reason is counted.
+    uint32 rejSelf = 0, rejMap = 0, rejGrouped = 0, rejSelfbot = 0, rejDnd = 0, rejPort = 0, rejSolo = 0,
+           rejMaster = 0, rejLevel = 0, rejRange = 0;
+
     for (auto& i : nearGuids)
     {
         Player* player = ObjectAccessor::FindPlayer(i);
@@ -62,24 +69,42 @@ bool InviteNearbyToGroupAction::Execute(Event /*event*/)
             continue;
 
         if (player == bot)
+        {
+            ++rejSelf;
             continue;
+        }
 
         if (player->GetMapId() != bot->GetMapId())
+        {
+            ++rejMap;
             continue;
+        }
 
         if (player->GetGroup())
+        {
+            ++rejGrouped;
             continue;
+        }
 
         if (!PlayerbotAIConfig::instance().randomBotInvitePlayer && IsSelfBot(player))
+        {
+            ++rejSelfbot;
             continue;
+        }
 
         Group* group = bot->GetGroup();
 
         if (player->isDND())
+        {
+            ++rejDnd;
             continue;
+        }
 
         if (player->IsBeingTeleported())
+        {
+            ++rejPort;
             continue;
+        }
 
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
 
@@ -87,17 +112,29 @@ bool InviteNearbyToGroupAction::Execute(Event /*event*/)
         {
             // A solo-grouper bot with no real master (regular player or selfbot master) does not invite.
             if (botAI->GetGrouperType() == GrouperType::SOLO && !botAI->HasGameClientMaster())
+            {
+                ++rejSolo;
                 continue;
+            }
 
             if (IsRealPlayer(botAI->GetMaster()))  // An active player's altbot does not auto-invite.
+            {
+                ++rejMaster;
                 continue;
+            }
         }
 
         if (abs(int32(player->GetLevel() - bot->GetLevel())) > 2)
+        {
+            ++rejLevel;
             continue;
+        }
 
         if (ServerFacade::instance().GetDistance2d(bot, player) > PlayerbotAIConfig::instance().sightDistance)
+        {
+            ++rejRange;
             continue;
+        }
 
         // When inviting the 5th member of the group convert to raid for future invites.
         if (group && botAI->GetGrouperType() > GrouperType::LEADER_5 && !group->isRaidGroup() &&
@@ -122,6 +159,12 @@ bool InviteNearbyToGroupAction::Execute(Event /*event*/)
 
         return Invite(bot, player);
     }
+
+    LOG_DEBUG("playerbots",
+              "[GroupScan] {} saw {} nearby: {} grouped, {} level, {} range, {} map, {} solo, {} master, "
+              "{} selfbot, {} dnd, {} porting",
+              bot->GetName(), nearGuids.size(), rejGrouped, rejLevel, rejRange, rejMap, rejSolo, rejMaster,
+              rejSelfbot, rejDnd, rejPort);
 
     return false;
 }
