@@ -4,6 +4,8 @@
  * or (at your option) any later version.
  */
 
+#include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "NewRpgAction.h"
 #include "GatherRouteMgr.h"
 #include "Item.h"
@@ -807,26 +809,45 @@ bool NewRpgMailboxAction::Execute(Event /*event*/)
     // Take money and items from every mail, regardless of who sent it. See the class comment for
     // why CheckMailAction cannot be reused: it drops anything not sent by a connected non-bot
     // player, which is every auction payment.
+    //
+    // Mirrors WorldSession::HandleMailTakeItem's persistence exactly. The first version of this
+    // moved items into the bags in memory only -- no transaction, no Mail::RemoveItem, no
+    // removedItems, no _SaveMail. The item therefore ended up in the bot's bags *and* still
+    // attached to its mail row in the database, which is genuine item duplication: two owners for
+    // one item_instance. It showed up as auction-won mail whose item was also sitting in the
+    // winner's inventory.
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+
     uint32 collected = 0;
     uint32 money = 0;
+    std::vector<uint32> emptied;
+    std::vector<uint32> takenItems;
+    std::vector<Mail const*> partiallyTaken;
 
-    std::vector<uint32> done;
     for (Mail* mail : bot->GetMails())
     {
         if (!mail || mail->state == MAIL_STATE_DELETED)
             continue;
+
+        // Undelivered mail is not the bot's to take yet.
+        if (mail->deliver_time > GameTime::GetGameTime().count())
+            continue;
+
+        bool changed = false;
 
         if (mail->money)
         {
             money += mail->money;
             bot->ModifyMoney(static_cast<int32>(mail->money));
             mail->money = 0;
+            changed = true;
         }
 
-        // Returned or won auction items come back as attachments; pull them into the bags if there
-        // is room, and leave the mail alone if there is not so nothing is destroyed.
+        // Copied, because Mail::RemoveItem mutates the very vector being walked.
+        MailItemInfoVec const attachments = mail->items;
+
         bool itemsPending = false;
-        for (auto const& att : mail->items)
+        for (MailItemInfo const& att : attachments)
         {
             Item* item = bot->GetMItem(att.item_guid);
             if (!item)
@@ -835,23 +856,76 @@ bool NewRpgMailboxAction::Execute(Event /*event*/)
             ItemPosCountVec dest;
             if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
             {
+                // Leave it attached rather than destroying it; the bot will come back with space.
                 itemsPending = true;
                 continue;
             }
 
-            bot->RemoveMItem(item->GetGUID().GetCounter());
+            mail->RemoveItem(att.item_guid);
+            bot->RemoveMItem(att.item_guid);
+            takenItems.push_back(att.item_guid);
+
+            // Without this the item cannot be removed from the bags later on.
+            item->SetState(ITEM_UNCHANGED);
             bot->MoveItemToInventory(dest, item, true);
-            collected++;
+
+            ++collected;
+            changed = true;
         }
 
         if (itemsPending)
+        {
+            if (changed)
+            {
+                mail->state = MAIL_STATE_CHANGED;
+                partiallyTaken.push_back(mail);
+            }
             continue;
+        }
 
         mail->state = MAIL_STATE_DELETED;
-        done.push_back(mail->messageID);
+        emptied.push_back(mail->messageID);
     }
 
-    for (uint32 id : done)
+    // Player::_SaveMail would do all of this, but it is protected and only WorldSession may call
+    // it, so the statements are issued directly -- the same approach CheckMailAction already takes.
+    for (uint32 itemGuid : takenItems)
+    {
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_ITEM);
+        stmt->SetData(0, itemGuid);
+        trans->Append(stmt);
+    }
+
+    for (uint32 id : emptied)
+    {
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_BY_ID);
+        stmt->SetData(0, id);
+        trans->Append(stmt);
+
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_ITEM_BY_ID);
+        stmt->SetData(0, id);
+        trans->Append(stmt);
+    }
+
+    // Mail that gave up its money but still holds items the bags had no room for: persist the
+    // zeroed money so a restart cannot pay the bot twice.
+    for (Mail const* mail : partiallyTaken)
+    {
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_MAIL);
+        stmt->SetData(0, uint8(!mail->items.empty()));
+        stmt->SetData(1, uint32(mail->expire_time));
+        stmt->SetData(2, uint32(mail->deliver_time));
+        stmt->SetData(3, mail->money);
+        stmt->SetData(4, mail->COD);
+        stmt->SetData(5, uint8(mail->checked));
+        stmt->SetData(6, mail->messageID);
+        trans->Append(stmt);
+    }
+
+    bot->SaveInventoryAndGoldToDB(trans);
+    CharacterDatabase.CommitTransaction(trans);
+
+    for (uint32 id : emptied)
     {
         bot->SendMailResult(id, MAIL_DELETED, MAIL_OK);
         bot->RemoveMail(id);

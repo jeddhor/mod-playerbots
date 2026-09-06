@@ -78,13 +78,23 @@ bool BuyAuctionAction::Execute(Event /*event*/)
     std::vector<BotEconomyMgr::Bargain> const bargains =
         sBotEconomyMgr.SampleBargains(bot->GetTeamId(), 15);
 
+    // Counted per pass so a run with zero purchases says which gate closed rather than leaving it
+    // to be guessed at.
+    uint32 rejOwn = 0, rejBudget = 0, rejOverpriced = 0, rejUnwanted = 0;
+
     for (BotEconomyMgr::Bargain const& bargain : bargains)
     {
         if (bargain.owner == bot->GetGUID())
+        {
+            ++rejOwn;
             continue;
+        }
 
         if (bargain.buyout > budget)
+        {
+            ++rejBudget;
             continue;
+        }
 
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(bargain.itemId);
         if (!proto)
@@ -93,7 +103,10 @@ bool BuyAuctionAction::Execute(Event /*event*/)
         // Don't overpay relative to what the item is actually worth, even if affordable.
         uint32 const value = sBotEconomyMgr.GetMarketPrice(bargain.itemId) * bargain.count;
         if (value && bargain.buyout > value * 11 / 10)
+        {
+            ++rejOverpriced;
             continue;
+        }
 
         // The shared classifier already knows this bot's class, spec, quest log, professions and
         // what it is currently wearing. Reimplementing that judgement here would drift out of sync
@@ -103,7 +116,10 @@ bool BuyAuctionAction::Execute(Event /*event*/)
                             usage == ITEM_USAGE_SKILL || usage == ITEM_USAGE_USE ||
                             usage == ITEM_USAGE_QUEST || usage == ITEM_USAGE_AMMO;
         if (!wanted)
+        {
+            ++rejUnwanted;
             continue;
+        }
 
         auto op = std::make_unique<BuyAuctionOperation>(bot->GetGUID(), bargain.auctionId, bargain.houseId);
         if (!PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(op)))
@@ -116,6 +132,10 @@ bool BuyAuctionAction::Execute(Event /*event*/)
         // a good way to corner the market by accident.
         return true;
     }
+
+    LOG_DEBUG("playerbots",
+              "[BuyScan] {} saw {} bargains, budget {}c: {} own, {} unaffordable, {} overpriced, {} unwanted",
+              bot->GetName(), bargains.size(), budget, rejOwn, rejBudget, rejOverpriced, rejUnwanted);
 
     return false;
 }
