@@ -948,12 +948,12 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
 
     auto& data = *dataPtr;
 
-    // Prefer the zone the activity was started for; fall back to anything in reach so a bot whose
-    // target zone became unworkable (skill changed, bot moved maps) does not stall for the whole
-    // activity window.
-    GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
+    // Nearest reachable route, not "any route in the stored zone". Re-picking by zone could hand
+    // the bot a route on the far side of a zone it had already travelled into, restarting the walk
+    // it just finished.
+    GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRouteWithinReach(bot);
     if (!route)
-        route = sGatherRouteMgr.PickRouteWithinReach(bot);
+        route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
     if (!route || route->nodes.empty())
     {
         info.ChangeToIdle();

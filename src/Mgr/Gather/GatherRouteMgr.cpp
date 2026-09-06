@@ -278,23 +278,24 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
     if (!bot)
         return nullptr;
 
-    // Standing in a gathering zone already: no reason to travel.
-    if (Route const* here = PickRoute(bot, bot->GetZoneId()))
-        return here;
-
-    // How far a bot will travel to start gathering. Far enough to leave a capital for the
-    // countryside around it, short enough that it does not spend the whole activity walking.
-    // 1500 yards was too far: availability rose from 52% to 68% but the number of bots actually
-    // reaching a waypoint did not move, because the walk consumed the activity window. At roughly
-    // 7 yards/second before pathing overhead, 800 yards is a few minutes of the fifteen.
+    // Distance, not zone. Preferring the bot's own zone first looks sensible and is not: zones are
+    // enormous, so a same-zone route was routinely further away than a neighbouring zone's. Measured
+    // over 64 activity starts, the chosen route averaged 962 yards and reached 2558 -- against a
+    // fifteen minute window, which is why availability could rise 16 points while the number of bots
+    // that actually reached a node stayed at one.
     constexpr float MAX_TRAVEL_DISTANCE = 800.0f;
     constexpr float MAX_TRAVEL_DISTANCE_SQ = MAX_TRAVEL_DISTANCE * MAX_TRAVEL_DISTANCE;
+
+    // Choose among the closest few rather than the single closest, so a hundred bots in one city do
+    // not all descend on the same copper vein.
+    constexpr size_t CANDIDATE_POOL = 5;
 
     uint32 const mapId = bot->GetMapId();
     float const botX = bot->GetPositionX();
     float const botY = bot->GetPositionY();
 
-    std::vector<Route const*> candidates;
+    std::vector<std::pair<float, Route const*>> reachable;
+
     for (Route const& route : _routes)
     {
         if (route.nodes.empty())
@@ -310,14 +311,21 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
 
         float const dx = first.x - botX;
         float const dy = first.y - botY;
-        if ((dx * dx + dy * dy) > MAX_TRAVEL_DISTANCE_SQ)
+        float const d2 = dx * dx + dy * dy;
+        if (d2 > MAX_TRAVEL_DISTANCE_SQ)
             continue;
 
-        candidates.push_back(&route);
+        reachable.emplace_back(d2, &route);
     }
 
-    Route const* const* picked = RandomElement(candidates);
-    return picked ? *picked : nullptr;
+    if (reachable.empty())
+        return nullptr;
+
+    size_t const pool = std::min(CANDIDATE_POOL, reachable.size());
+    std::partial_sort(reachable.begin(), reachable.begin() + pool, reachable.end(),
+                      [](auto const& a, auto const& b) { return a.first < b.first; });
+
+    return reachable[urand(0, static_cast<uint32>(pool) - 1)].second;
 }
 
 GatherRouteMgr::Route const* GatherRouteMgr::PickRoute(Player* bot, uint32 zoneId) const
