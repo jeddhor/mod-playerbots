@@ -113,6 +113,9 @@ public:
     /// This bot's archetype, assigning one on first use.
     BotArchetype GetArchetype(Player* bot);
 
+    /// Name of this bot's archetype, or "none" if it has not been assigned yet. Read-only.
+    char const* GetArchetypeLabel(Player* bot) const;
+
     /// Realm-wide archetype distribution, for `.playerbots archetypes`.
     std::string DescribeDistribution() const;
 

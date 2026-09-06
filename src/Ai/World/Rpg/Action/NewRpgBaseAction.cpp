@@ -1482,6 +1482,12 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
         }
     }
 
+    // Tagged with the archetype so the realm's activity mix can be broken down per disposition.
+    // P6.3's acceptance is "a Gatherer and a Socialite visibly differ", which is a claim about
+    // distributions and cannot be settled by watching one bot.
+    LOG_DEBUG("playerbots", "[Activity] {} [{}] chose {}", bot->GetName(), sBotAgendaMgr.GetArchetypeLabel(bot),
+              static_cast<int>(chosenStatus));
+
     switch (chosenStatus)
     {
         case RPG_WANDER_RANDOM:

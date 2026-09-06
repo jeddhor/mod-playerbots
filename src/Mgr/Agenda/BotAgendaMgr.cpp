@@ -202,6 +202,16 @@ BotArchetype BotAgendaMgr::GetArchetype(Player* bot)
     return rolled;
 }
 
+char const* BotAgendaMgr::GetArchetypeLabel(Player* bot) const
+{
+    if (!bot)
+        return "none";
+
+    std::shared_lock<std::shared_mutex> lock(_mutex);
+    auto itr = _archetypes.find(bot->GetGUID());
+    return itr != _archetypes.end() ? ArchetypeName(itr->second) : "none";
+}
+
 std::string BotAgendaMgr::DescribeDistribution() const
 {
     uint32 counts[ARCHETYPE_COUNT] = {};
