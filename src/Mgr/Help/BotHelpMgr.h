@@ -11,6 +11,7 @@
 #include "ObjectGuid.h"
 
 #include <shared_mutex>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -62,6 +63,16 @@ public:
     void RaiseRequest(Player* caller, uint32 questId);
 
     /**
+     * A bot was killed by a creature. Raises a help request once it has died repeatedly in a short
+     * window while holding quests.
+     *
+     * Death is the sensor the operator actually described -- "a bot dying to an elite over and over"
+     * -- and it fires orders of magnitude more often than the POI-exhaustion path this was first
+     * wired to, which produced three failures across a whole 45-minute run.
+     */
+    void ReportDeath(Player* bot);
+
+    /**
      * A request this bot could answer, or nullptr.
      *
      * Eligibility is anchored to the **quest's** level, not the caller's. A level 80 within two
@@ -92,6 +103,14 @@ private:
     mutable std::shared_mutex _mutex;
     std::vector<Request> _requests;
     uint32 _timer{0};
+
+    struct DeathRecord
+    {
+        uint32 count{0};
+        uint32 firstAt{0};
+    };
+
+    std::unordered_map<ObjectGuid, DeathRecord> _deaths;
 
     uint32 _raised{0};
     uint32 _answered{0};

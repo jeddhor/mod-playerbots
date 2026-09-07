@@ -64,6 +64,56 @@ void BotHelpMgr::RaiseRequest(Player* caller, uint32 questId)
               caller->GetName(), request.callerLevel, questId, request.questLevel, request.mapId);
 }
 
+void BotHelpMgr::ReportDeath(Player* bot)
+{
+    if (!bot || !sPlayerbotAIConfig.helpEnabled)
+        return;
+
+    uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
+    uint32 questId = 0;
+
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+
+        DeathRecord& record = _deaths[bot->GetGUID()];
+
+        // Deaths only count as a pattern if they are close together. A bot that dies once an hour is
+        // playing the game; one that dies three times in ten minutes is stuck on something.
+        if (!record.count || now - record.firstAt > sPlayerbotAIConfig.helpDeathWindowSeconds)
+        {
+            record.count = 1;
+            record.firstAt = now;
+            return;
+        }
+
+        if (++record.count < sPlayerbotAIConfig.helpDeathsBeforeAsking)
+            return;
+
+        record.count = 0;
+        record.firstAt = now;
+    }
+
+    // Ask about whichever quest the bot is actually carrying. Without a quest there is nothing for a
+    // responder to help *with*, and a bot dying while wandering is not a call for help.
+    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 const held = bot->GetQuestSlotQuestId(slot);
+        if (!held)
+            continue;
+
+        if (bot->GetQuestStatus(held) == QUEST_STATUS_INCOMPLETE)
+        {
+            questId = held;
+            break;
+        }
+    }
+
+    if (!questId)
+        return;
+
+    RaiseRequest(bot, questId);
+}
+
 bool BotHelpMgr::FindRequestFor(Player* responder, Request& out)
 {
     if (!responder || !sPlayerbotAIConfig.helpEnabled)

@@ -81,8 +81,22 @@ public:
         PLAYERHOOK_CAN_PLAYER_USE_GUILD_CHAT,
         PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
         PLAYERHOOK_ON_GIVE_EXP,
-        PLAYERHOOK_ON_BEFORE_TELEPORT
+        PLAYERHOOK_ON_BEFORE_TELEPORT,
+        PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE
     }) {}
+
+    /**
+     * Death is the sensor for the help signal.
+     *
+     * The first wiring hung it off QuestBlacklistMgr's failure path, which fired three times across
+     * a whole 45-minute run -- far too rare to help anyone. A bot dying repeatedly is both far more
+     * common and much closer to what the situation actually is.
+     */
+    void OnPlayerKilledByCreature(Creature* /*killer*/, Player* killed) override
+    {
+        if (killed && GET_PLAYERBOT_AI(killed))
+            sBotHelpMgr.ReportDeath(killed);
+    }
 
     void OnPlayerLogin(Player* player) override
     {

@@ -778,6 +778,8 @@ bool PlayerbotAIConfig::Initialize()
     helpMaxResponders = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxResponders", 3);
     helpMaxLevelsAbove = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxLevelsAboveQuest", 4);
     helpMaxLevelsBelow = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxLevelsBelowCaller", 3);
+    helpDeathsBeforeAsking = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.DeathsBeforeAsking", 3);
+    helpDeathWindowSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.DeathWindowSeconds", 600);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

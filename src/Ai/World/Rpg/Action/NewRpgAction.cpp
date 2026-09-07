@@ -757,6 +757,7 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
         }
 
         // e.g. Can not reward quest to gameobjects
+        sBotHelpMgr.RaiseRequest(bot, questId);
         sQuestBlacklistMgr.ReportFailure(questId);
         botAI->rpgStatistic.questAbandoned++;
         LOG_DEBUG("playerbots", "[New RPG] {} marked as abandoned quest {}", bot->GetName(), questId);
