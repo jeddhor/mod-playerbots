@@ -602,12 +602,41 @@ bool NewRpgBaseAction::IsQuestCapableDoing(Quest const* quest)
     if (highLevelQuest)
         return false;
 
-    // Elite quest and dungeon quest etc
-    if (quest->GetType() != 0)
+    // Quest::Type is QuestInfoID -- column 5 of the quest_template SELECT, not the QuestType column
+    // that shares its name. Measured across 9464 quests: 7823 are ordinary (0), 530 dungeon (81),
+    // 380 group (1), 362 raid (62), 280 PvP (41), the rest heroic and raid variants.
+    uint32 const info = quest->GetType();
+
+    bool const grouped = bot->GetGroup() != nullptr;
+
+    // Dungeon, raid, heroic and PvP content stays excluded regardless of grouping. A five-bot party
+    // wandering into a raid is not the group content this is meant to unlock, and the bots have no
+    // machinery for instances.
+    switch (info)
+    {
+        case 81:  // Dungeon
+        case 62:  // Raid
+        case 85:  // Heroic
+        case 88:  // Raid (10)
+        case 89:  // Raid (25)
+        case 41:  // PvP
+            return false;
+        default:
+            break;
+    }
+
+    // Group quests are exactly what P7.29's help signal exists to make possible: a bot that cannot
+    // solo something calls for help, responders arrive, and the group does it together. Refusing
+    // them outright meant the help signal could only ever rescue bots from content they should have
+    // managed alone.
+    //
+    // 113 of the 380 group quests suggest one player or fewer, so those are soloable regardless.
+    if (info == 1 && !grouped && quest->GetSuggestedPlayers() >= 2)
         return false;
 
-    // now we only capable of doing solo quests
-    if (quest->GetSuggestedPlayers() >= 2)
+    // Suggested party size is respected only while ungrouped. In a group the party is the answer to
+    // the suggestion.
+    if (!grouped && quest->GetSuggestedPlayers() >= 2)
         return false;
 
     return true;
@@ -742,9 +771,44 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
     if (!sObjectMgr->GetQuestPOIVector(questId))
         score -= 200.0f;
 
-    // Level fit, in both directions - grey quests and quests well above the bot both score badly.
-    int32 levelGap = static_cast<int32>(bot->GetLevel()) - static_cast<int32>(bot->GetQuestLevel(quest));
-    score -= std::abs(levelGap) * 5.0f;
+    // P7.4 corrects a P1.1 decision. The original penalised level mismatch symmetrically --
+    // abs(levelGap) * 5 -- which treats a green quest and a red quest as equally undesirable. They
+    // are not remotely equivalent.
+    //
+    // A green quest is *perishable*: it still grants experience now and will grant none once it
+    // turns grey, so its value decays with every level the bot gains. A red quest is merely
+    // difficult, and gets easier for free by waiting. Penalising the perishable one as hard as the
+    // renewable one is how bots end up carrying red quests they cannot do while green quests expire
+    // unfinished in the same log.
+    int32 const levelGap = static_cast<int32>(bot->GetLevel()) - static_cast<int32>(bot->GetQuestLevel(quest));
+
+    if (levelGap > 0)
+    {
+        // Bot outlevels the quest. Mild, and only once it is close to grey -- until then this is
+        // easy experience the bot should be finishing, not shedding.
+        int32 const greyLevel = static_cast<int32>(bot->GetQuestLevel(quest)) +
+                                static_cast<int32>(sWorld->getIntConfig(CONFIG_QUEST_LOW_LEVEL_HIDE_DIFF));
+        bool const nearlyGrey = static_cast<int32>(bot->GetLevel()) >= greyLevel - 2;
+
+        score -= nearlyGrey ? levelGap * 2.0f : 0.0f;
+
+        // Actively prefer finishing it while it still pays.
+        if (!nearlyGrey)
+            score += 60.0f;
+    }
+    else
+    {
+        // Quest is above the bot. Harder, and the penalty grows with the gap because the bot may
+        // simply be unable to survive it -- but it keeps its value while the bot levels.
+        score -= std::abs(levelGap) * 8.0f;
+    }
+
+    // P7.5 -- never select a trivial quest for dropping. A quest the bot has outlevelled is usually
+    // one interaction from a turn-in, so completing it is cheaper than dropping it and re-acquiring
+    // something else. This sits below the COMPLETE check above, which already protects finished
+    // quests outright.
+    if (bot->GetLevel() > bot->GetQuestLevel(quest) + 5 && bot->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+        score += 120.0f;
 
     // Objectives the bot can actually drive. Weighted well below progress and completion: a
     // half-finished awkward quest is still worth more than a pristine convenient one.
