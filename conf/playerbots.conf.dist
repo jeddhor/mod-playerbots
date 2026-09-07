@@ -2898,3 +2898,23 @@ AiPlayerbot.Archetype.Grinder.Share = 15
 AiPlayerbot.Archetype.Trader.Share = 12
 AiPlayerbot.Archetype.Socialite.Share = 13
 AiPlayerbot.Archetype.PvPer.Share = 5
+
+#
+#    AiPlayerbot.Help.*
+#        A bot that repeatedly fails a quest objective publishes a request for help, and eligible
+#        bots travel to it. This exists because proximity grouping cannot work at realistic bot
+#        density -- measured, bots see nobody within sight range almost all of the time -- so
+#        waiting for two bots to coincide is waiting forever. Travelling to a known caller is the
+#        only version of this that works.
+#
+#        MaxLevelsAboveQuest is anchored to the QUEST's level, not the caller's. A level 80 near a
+#        level 78 caller is fine; a level 80 answering a level 12 quest trivialises it regardless.
+#
+#        MaxResponders stops a call for help becoming a mob.
+#
+
+AiPlayerbot.Help.Enabled = 1
+AiPlayerbot.Help.RequestSeconds = 600
+AiPlayerbot.Help.MaxResponders = 3
+AiPlayerbot.Help.MaxLevelsAboveQuest = 4
+AiPlayerbot.Help.MaxLevelsBelowCaller = 3

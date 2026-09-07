@@ -429,6 +429,13 @@ public:
     uint32 archetypeShareTrader;
     uint32 archetypeShareSocialite;
     uint32 archetypeSharePvPer;
+
+    // Help signal (Phase 7).
+    bool helpEnabled;
+    uint32 helpRequestSeconds;
+    uint32 helpMaxResponders;
+    uint32 helpMaxLevelsAbove;
+    uint32 helpMaxLevelsBelow;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

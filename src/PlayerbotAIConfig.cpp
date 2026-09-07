@@ -772,6 +772,12 @@ bool PlayerbotAIConfig::Initialize()
     archetypeShareTrader = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Trader.Share", 12);
     archetypeShareSocialite = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.Socialite.Share", 13);
     archetypeSharePvPer = sConfigMgr->GetOption<uint32>("AiPlayerbot.Archetype.PvPer.Share", 5);
+
+    helpEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Help.Enabled", true);
+    helpRequestSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.RequestSeconds", 600);
+    helpMaxResponders = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxResponders", 3);
+    helpMaxLevelsAbove = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxLevelsAboveQuest", 4);
+    helpMaxLevelsBelow = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.MaxLevelsBelowCaller", 3);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

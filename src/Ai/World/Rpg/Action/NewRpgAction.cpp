@@ -27,6 +27,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotTextMgr.h"
+#include "BotHelpMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "QuestDef.h"
 #include "Random.h"
@@ -648,6 +649,10 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
                 return true;
             }
 
+            // Ask for help before giving up. QuestBlacklistMgr is about to record a failure that
+            // may only mean "not soloable", and a quest written off for that reason is a quest
+            // nobody on the realm will ever complete.
+            sBotHelpMgr.RaiseRequest(bot, questId);
             sQuestBlacklistMgr.ReportFailure(questId);
             botAI->rpgStatistic.questAbandoned++;
             LOG_DEBUG("playerbots", "[New RPG] {} marked as abandoned quest {}", bot->GetName(), questId);

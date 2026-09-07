@@ -19,6 +19,7 @@
 #include "PlayerbotWorldThreadProcessor.h"
 #include "GatherRouteMgr.h"
 #include "BotAgendaMgr.h"
+#include "BotHelpMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "RandomPlayerbotMgr.h"
@@ -381,6 +382,7 @@ public:
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
         sBotEconomyMgr.Update(diff);         // World thread only: touches AuctionHouseObject
         sBotAgendaMgr.Update(diff);          // round-robin, fixed budget per tick
+        sBotHelpMgr.Update(diff);            // expire stale help requests
     }
 };
 

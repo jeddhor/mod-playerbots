@@ -30,6 +30,7 @@
 #include "Playerbots.h"
 #include "Position.h"
 #include "BotAgendaMgr.h"
+#include "BotHelpMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "QuestDef.h"
 #include "QuestPackets.h"
@@ -351,6 +352,9 @@ bool NewRpgBaseAction::InteractWithNpcOrGameObjectForQuest(ObjectGuid guid)
             // A completion is the strongest possible evidence that this quest is workable, so it
             // clears any failure verdict other bots have built up against it.
             sQuestBlacklistMgr.ReportSuccess(quest->GetQuestId());
+
+            // Whatever was blocking this bot is resolved; stop sending people.
+            sBotHelpMgr.ClearRequest(bot->GetGUID());
             if (botAI->GetMaster())
                 botAI->TellMasterNoFacing(PlayerbotTextMgr::instance().GetBotTextOrDefault(
                     "new_rpg_quest_rewarded",
@@ -1437,6 +1441,28 @@ WorldPosition NewRpgBaseAction::SelectNearestVendorPos()
 
 bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateStatus)
 {
+    // Someone is stuck and this bot can reach them. Answering outranks the weighted roll entirely:
+    // a call for help is the one thing on the realm that is genuinely time-sensitive, and a bot that
+    // wanders off to vendor instead is the behaviour that makes the world look uninhabited.
+    //
+    // Answering is expressed as a grind at the caller's position rather than a new activity type.
+    // That is not a shortcut: travelling there co-locates the two bots, and the proximity invite
+    // from P7.8 -- which already works and only ever lacked candidates -- then forms the group
+    // without any further mechanism.
+    if (BotHelpMgr::Request request; sBotHelpMgr.FindRequestFor(bot, request))
+    {
+        WorldPosition helpPos(request.mapId, request.x, request.y, request.z);
+        if (helpPos != WorldPosition())
+        {
+            sBotHelpMgr.AcceptRequest(request.caller, bot->GetGUID());
+            LOG_DEBUG("playerbots", "[Help] {} (level {}) answering {} for quest {}", bot->GetName(),
+                      bot->GetLevel(), request.caller.GetCounter(), request.questId);
+
+            botAI->rpgInfo.ChangeToGoGrind(helpPos);
+            return true;
+        }
+    }
+
     // Base weight from config, scaled by what this bot is actually trying to achieve. Without the
     // agenda multiplier every bot on the realm draws from one global table, so a gatherer saving for
     // a mount and a fresh level-5 quester pick their next activity from identical odds.
