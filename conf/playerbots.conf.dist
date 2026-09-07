@@ -2918,5 +2918,5 @@ AiPlayerbot.Help.RequestSeconds = 600
 AiPlayerbot.Help.MaxResponders = 3
 AiPlayerbot.Help.MaxLevelsAboveQuest = 4
 AiPlayerbot.Help.MaxLevelsBelowCaller = 3
-AiPlayerbot.Help.DeathsBeforeAsking = 3
+AiPlayerbot.Help.DeathsBeforeAsking = 1
 AiPlayerbot.Help.DeathWindowSeconds = 600

@@ -72,6 +72,10 @@ void BotHelpMgr::ReportDeath(Player* bot)
     uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
     uint32 questId = 0;
 
+    // Logged unconditionally. The previous version only logged when a request was raised, so a run
+    // that raised none was indistinguishable from a run where the hook never fired at all.
+    LOG_DEBUG("playerbots", "[Help] {} died (level {})", bot->GetName(), bot->GetLevel());
+
     {
         std::unique_lock<std::shared_mutex> lock(_mutex);
 
