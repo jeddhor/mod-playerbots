@@ -82,15 +82,23 @@ void BotHelpMgr::ReportDeath(Player* bot)
         DeathRecord& record = _deaths[bot->GetGUID()];
 
         // Deaths only count as a pattern if they are close together. A bot that dies once an hour is
-        // playing the game; one that dies three times in ten minutes is stuck on something.
+        // playing the game; one that dies repeatedly in ten minutes is stuck on something.
+        //
+        // The count is updated and *then* tested. An earlier version returned unconditionally on the
+        // first death of a window, which meant a threshold of 1 could never fire -- it silently
+        // behaved as 2. Instrumentation showed ten deaths logged and zero requests raised, which is
+        // the only reason this was caught.
         if (!record.count || now - record.firstAt > sPlayerbotAIConfig.helpDeathWindowSeconds)
         {
             record.count = 1;
             record.firstAt = now;
-            return;
+        }
+        else
+        {
+            ++record.count;
         }
 
-        if (++record.count < sPlayerbotAIConfig.helpDeathsBeforeAsking)
+        if (record.count < std::max<uint32>(1, sPlayerbotAIConfig.helpDeathsBeforeAsking))
             return;
 
         record.count = 0;
