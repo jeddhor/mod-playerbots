@@ -439,6 +439,7 @@ public:
     uint32 helpDeathsBeforeAsking;
     uint32 helpDeathWindowSeconds;
     bool autoCompleteTrivialQuests;
+    float questObjectiveMaxDistance;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

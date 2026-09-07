@@ -64,6 +64,19 @@ public:
      */
     bool IsEscortQuest(uint32 questId) const;
 
+    /**
+     * How many other quests name this one as their prerequisite.
+     *
+     * Counted inbound rather than read from `NextQuestID`, which is populated on only 577 quests
+     * against 4720 that declare a `PrevQuestID`. Counting the references that actually exist gives
+     * the real branching factor; reading the sparse forward pointer would call most chain heads
+     * dead ends.
+     *
+     * This is what lets a bot follow a zone's storyline instead of doing scattered one-offs: a quest
+     * that opens three more is worth more than one that opens none, even at equal level.
+     */
+    uint32 GetUnlockCount(uint32 questId) const;
+
 private:
     QuestBlacklistMgr() = default;
     ~QuestBlacklistMgr() = default;
@@ -84,6 +97,11 @@ private:
 
     /// Resolve escort quests from the world DB. Called once by Load(); immutable afterwards.
     void LoadEscortQuests();
+
+    /// Count, for every quest, how many quests list it as their prerequisite. Immutable after load.
+    void LoadQuestChains();
+
+    std::unordered_map<uint32, uint32> _unlockCounts;
 
     // Written once during Load and only read afterwards, so it needs no synchronisation.
     std::unordered_set<uint32> _escortQuests;

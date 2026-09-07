@@ -12,6 +12,34 @@
 #include "QueryResult.h"
 #include "Timer.h"
 
+#include <cstdlib>
+
+void QuestBlacklistMgr::LoadQuestChains()
+{
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT PrevQuestID, COUNT(*) FROM quest_template_addon WHERE PrevQuestID <> 0 GROUP BY PrevQuestID"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            // PrevQuestID is signed in the schema: a negative value means "this quest must be in the
+            // log", not "completed". Either way the referenced quest is a chain link, so take the
+            // magnitude.
+            int32 const prev = fields[0].Get<int32>();
+            _unlockCounts[static_cast<uint32>(std::abs(prev))] += fields[1].Get<uint32>();
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", ">> Indexed {} quests that unlock further quests", _unlockCounts.size());
+}
+
+uint32 QuestBlacklistMgr::GetUnlockCount(uint32 questId) const
+{
+    auto itr = _unlockCounts.find(questId);
+    return itr != _unlockCounts.end() ? itr->second : 0;
+}
+
 void QuestBlacklistMgr::LoadEscortQuests()
 {
     // Escorts started by a C++ npc_escortAI creature: the quest giver has a scripted waypoint path.
@@ -75,6 +103,7 @@ void QuestBlacklistMgr::Load()
              GetMSTimeDiffToNow(oldMSTime));
 
     LoadEscortQuests();
+    LoadQuestChains();
 }
 
 void QuestBlacklistMgr::RebuildBlacklistSet()

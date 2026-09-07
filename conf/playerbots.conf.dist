@@ -2934,3 +2934,14 @@ AiPlayerbot.Help.DeathWindowSeconds = 600
 #
 
 AiPlayerbot.Quest.AutoCompleteTrivial = 1
+
+#
+#    AiPlayerbot.Quest.ObjectiveMaxDistance
+#        How far a bot will travel to a quest objective, in yards. Objectives were previously
+#        restricted to the bot's current zone, which refused points a minute's walk over a border.
+#        Distance is the honest constraint -- a bot is limited by how far it can travel, not by lines
+#        on a map. Raising this widens quest reach at the cost of time spent walking.
+#        Default: 2500
+#
+
+AiPlayerbot.Quest.ObjectiveMaxDistance = 2500

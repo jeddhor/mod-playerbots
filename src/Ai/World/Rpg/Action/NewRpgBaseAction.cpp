@@ -696,6 +696,18 @@ float NewRpgBaseAction::ScoreQuestObjectiveShape(uint32 questId, Quest const* qu
     if (sQuestBlacklistMgr.IsEscortQuest(questId))
         score -= 100.0f;
 
+    // P7.2 -- chain position. A quest that opens three more is worth more than one that opens none,
+    // because following a chain is how a bot ends up working through a zone's storyline rather than
+    // doing scattered one-offs in whatever order it stumbled across them. Capped, so a hub quest
+    // that unlocks a dozen followers does not outrank progress on something half-finished.
+    if (uint32 const unlocks = sQuestBlacklistMgr.GetUnlockCount(questId))
+        score += std::min(unlocks, 3u) * 15.0f;
+
+    // Being mid-chain is itself worth something: the bot has already done the prerequisite, so this
+    // quest is where its previous work pays off.
+    if (quest->GetPrevQuestId() != 0)
+        score += 10.0f;
+
     return score;
 }
 
@@ -1371,12 +1383,21 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
         if (bot->GetMapId() != loc.GetMapId())
             continue;
 
-        if (bot->GetExactDist(loc) > 2500.0f)
+        if (bot->GetExactDist(loc) > sPlayerbotAIConfig.questObjectiveMaxDistance)
             continue;
 
-        if (!inCity && bot->GetMap()->GetZoneId(bot->GetPhaseMask(), loc.GetPositionX(), loc.GetPositionY(),
-                                                loc.GetPositionZ()) != bot->GetZoneId())
-            continue;
+        // P7.3 -- the same-zone restriction is gone. Quest objectives routinely sit just over a zone
+        // border from their giver, and refusing those left bots holding quests they could physically
+        // walk to in a minute but were forbidden to approach. The exception for bots standing in a
+        // city was already in place, which suggests the restriction was known to be too strict.
+        //
+        // The *map* filter above stays: a point on another continent cannot be walked to, and until
+        // objectives are routed through flight paths, selecting one would be a guaranteed stall.
+        //
+        // Distance is now the actual constraint, which is the honest one -- a bot is limited by how
+        // far it can travel, not by lines drawn on a map. Configurable, because it trades quest
+        // reach against time spent walking.
+        (void)inCity;
 
         if (bot->GetExactDist(loc) < hiRange)
         {
