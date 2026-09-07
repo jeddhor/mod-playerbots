@@ -438,6 +438,7 @@ public:
     uint32 helpMaxLevelsBelow;
     uint32 helpDeathsBeforeAsking;
     uint32 helpDeathWindowSeconds;
+    bool autoCompleteTrivialQuests;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

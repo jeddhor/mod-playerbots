@@ -72,6 +72,21 @@ protected:
      * quest's fault. Of 9464 quests, 6584 are kill/collect and 2880 are not.
      */
     float ScoreQuestObjectiveShape(uint32 questId, Quest const* quest);
+
+    /**
+     * Turn in quests that have gone grey, without walking back to the giver.
+     *
+     * A grey quest grants no experience, so completing it for free costs the realm nothing in
+     * balance terms, and it is strictly better than the alternatives: dropping it throws away the
+     * work, and carrying it wastes a log slot the bot needs for quests that still pay.
+     *
+     * This matters more than it looks for era-capped bots. A bot with experience disabled at 60 or
+     * 70 never outgrows its own bracket, so everything below it is permanently grey -- without this
+     * those quests would accumulate in the log forever.
+     *
+     * @return number of quests completed this pass.
+     */
+    uint32 AutoCompleteTrivialQuests();
     void DropQuest(uint16 slot, uint32 questId, Quest const* quest);
 
 protected:

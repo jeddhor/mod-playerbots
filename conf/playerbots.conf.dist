@@ -2920,3 +2920,17 @@ AiPlayerbot.Help.MaxLevelsAboveQuest = 4
 AiPlayerbot.Help.MaxLevelsBelowCaller = 3
 AiPlayerbot.Help.DeathsBeforeAsking = 1
 AiPlayerbot.Help.DeathWindowSeconds = 600
+
+#
+#    AiPlayerbot.Quest.AutoCompleteTrivial
+#        Turn in quests that have gone grey without walking back to the quest giver, choosing a
+#        reward as if the bot had handed it in. A grey quest grants no experience, so this costs
+#        nothing in balance terms, and it beats both alternatives: dropping throws the work away,
+#        carrying wastes a log slot on something that will never pay again.
+#
+#        Matters most for era-capped bots. A bot with experience disabled at 60 or 70 never outgrows
+#        its bracket, so everything below it is permanently grey and would otherwise pile up forever.
+#        Default: 1
+#
+
+AiPlayerbot.Quest.AutoCompleteTrivial = 1

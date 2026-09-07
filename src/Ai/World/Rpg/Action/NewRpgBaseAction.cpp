@@ -609,33 +609,25 @@ bool NewRpgBaseAction::IsQuestCapableDoing(Quest const* quest)
 
     bool const grouped = bot->GetGroup() != nullptr;
 
-    // Dungeon, raid, heroic and PvP content stays excluded regardless of grouping. A five-bot party
-    // wandering into a raid is not the group content this is meant to unlock, and the bots have no
-    // machinery for instances.
-    switch (info)
-    {
-        case 81:  // Dungeon
-        case 62:  // Raid
-        case 85:  // Heroic
-        case 88:  // Raid (10)
-        case 89:  // Raid (25)
-        case 41:  // PvP
-            return false;
-        default:
-            break;
-    }
-
-    // Group quests are exactly what P7.29's help signal exists to make possible: a bot that cannot
-    // solo something calls for help, responders arrive, and the group does it together. Refusing
-    // them outright meant the help signal could only ever rescue bots from content they should have
-    // managed alone.
+    // Instance and PvP quests are allowed. An earlier version of this excluded them on the
+    // assumption that bots had no machinery for the content, which was simply false: the module
+    // ships boss strategies for ICC, Naxx, Ulduar, Karazhan, Black Temple, Molten Core, BWL, Hyjal,
+    // Gruul, Magtheridon and more, a Dungeon strategy tree, and LFG join actions. Bots already fill
+    // dungeon and battleground queues for human players; the operator wants them to do it on their
+    // own account too.
     //
-    // 113 of the 380 group quests suggest one player or fewer, so those are soloable regardless.
-    if (info == 1 && !grouped && quest->GetSuggestedPlayers() >= 2)
-        return false;
+    // What genuinely needs care is *concurrency*, not eligibility -- a thousand bots deciding to
+    // start an instance at once would take the realm down. That throttle belongs to the autonomous
+    // group-content work (Phase 13) and gates the running of instances, not the holding of quests.
+    //
+    // Note the ordering dependency: until Phase 13 lands, instance quests will be accepted and then
+    // mostly fail for want of a way in, which will push them through QuestBlacklistMgr. That is
+    // acceptable and self-correcting -- the blacklist forgets a quest the moment any bot completes
+    // it -- but it is the reason to expect instance quests to look unproductive until then.
+    (void)info;
 
     // Suggested party size is respected only while ungrouped. In a group the party is the answer to
-    // the suggestion.
+    // the suggestion, which is the whole point of P7.29 bringing one together.
     if (!grouped && quest->GetSuggestedPlayers() >= 2)
         return false;
 
@@ -821,8 +813,90 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
     return score;
 }
 
+uint32 NewRpgBaseAction::AutoCompleteTrivialQuests()
+{
+    if (!sPlayerbotAIConfig.autoCompleteTrivialQuests)
+        return 0;
+
+    uint32 completed = 0;
+    uint32 const greyDiff = sWorld->getIntConfig(CONFIG_QUEST_LOW_LEVEL_HIDE_DIFF);
+
+    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 const questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId)
+            continue;
+
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        if (!quest)
+            continue;
+
+        // Grey only. A quest that still pays experience must be earned.
+        if (bot->GetLevel() <= bot->GetQuestLevel(quest) + greyDiff)
+            continue;
+
+        QuestStatus const status = bot->GetQuestStatus(questId);
+        if (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE)
+            continue;
+
+        if (status == QUEST_STATUS_INCOMPLETE)
+            bot->CompleteQuest(questId);
+
+        // Pick a reward the bot would actually want, rather than always taking the first option.
+        // ItemUsageValue already knows this bot's class, spec and what it is wearing, so the choice
+        // is consistent with how it judges the same item from any other source.
+        uint32 choice = 0;
+        if (uint32 const choices = quest->GetRewChoiceItemsCount())
+        {
+            float best = -1.0f;
+            for (uint32 i = 0; i < choices; ++i)
+            {
+                uint32 const itemId = quest->RewardChoiceItemId[i];
+                if (!itemId)
+                    continue;
+
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+                if (!proto)
+                    continue;
+
+                ItemUsage const usage = AI_VALUE2(ItemUsage, "item usage", itemId);
+
+                // An upgrade beats everything; otherwise take whatever is worth most, since it is
+                // going to the auction house or a vendor either way.
+                float const score = (usage == ITEM_USAGE_EQUIP || usage == ITEM_USAGE_REPLACE)
+                                        ? 1000000.0f + proto->SellPrice
+                                        : static_cast<float>(proto->SellPrice);
+
+                if (score > best)
+                {
+                    best = score;
+                    choice = i;
+                }
+            }
+        }
+
+        if (!bot->CanRewardQuest(quest, choice, false))
+            continue;
+
+        // The bot itself stands in for the quest giver. Skipping the walk back is the same
+        // sanctioned abstraction as posting to the auction house without an auctioneer: the reward,
+        // the reputation and the log slot all move exactly as they would have.
+        bot->RewardQuest(quest, choice, bot, false);
+        ++completed;
+
+        LOG_DEBUG("playerbots", "[Quest] {} auto-completed trivial quest {} (quest level {}, bot level {})",
+                  bot->GetName(), questId, bot->GetQuestLevel(quest), bot->GetLevel());
+    }
+
+    return completed;
+}
+
 bool NewRpgBaseAction::OrganizeQuestLog()
 {
+    // Free slots by finishing what is already finished, before considering dropping anything.
+    if (AutoCompleteTrivialQuests())
+        return true;
+
     uint32 freeSlotNum = 0;
 
     for (uint16 i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
