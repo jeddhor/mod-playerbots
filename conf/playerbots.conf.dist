@@ -2958,3 +2958,20 @@ AiPlayerbot.Quest.ObjectiveMaxDistance = 2500
 
 AiPlayerbot.Quest.TurnInTeleport = 1
 AiPlayerbot.Quest.TurnInTeleportDistance = 800
+
+#
+#    AiPlayerbot.Safety.RecoverFromFalls
+#        Detect bots that have fallen below the world and restore them to the last ground they were
+#        demonstrably standing on, cancelling the fall so they take no damage for it.
+#
+#        Falling out of the world is a bug, not a death. Without this a bot either accelerates away
+#        as though flying, or hits a boundary, dies, and spends thirty seconds at a spirit healer for
+#        something the server did to it.
+#
+#        `.playerbots safety` reports the recovery count. A count that keeps climbing means the
+#        underlying movement problem is still there -- this catches the symptom, not the cause.
+#        Default: 1
+#
+
+AiPlayerbot.Safety.RecoverFromFalls = 1
+AiPlayerbot.Safety.CheckIntervalMs = 1000

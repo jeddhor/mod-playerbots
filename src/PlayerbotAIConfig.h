@@ -442,6 +442,10 @@ public:
     float questObjectiveMaxDistance;
     bool questTurnInTeleport;
     float questTurnInTeleportDistance;
+    bool safetyRecoverFromFalls;
+    uint32 safetyCheckIntervalMs;
+    bool remoteTrainingEnabled;
+    uint32 remoteTrainingMaxPerPass;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

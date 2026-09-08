@@ -36,6 +36,11 @@ void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // This is load-bearing for the buying side: without something that consumes them, an enchanter
     // buying cheap greens just hoards them, which is worse than not buying at all.
     triggers.push_back(new TriggerNode("random", { NextAction("disenchant random item", 1.0f) }));
+
+    // Training is what turns gathered materials into higher-tier materials, so it is the other half
+    // of the economy rather than a convenience. "seldom" because a bot only needs to check
+    // occasionally -- new ranks become available on level-up, not moment to moment.
+    triggers.push_back(new TriggerNode("seldom", { NextAction("remote train", 1.0f) }));
 }
 
 void FarmMaterialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

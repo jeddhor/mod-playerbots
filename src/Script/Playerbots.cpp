@@ -20,6 +20,7 @@
 #include "GatherRouteMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
+#include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "RandomPlayerbotMgr.h"
@@ -178,6 +179,10 @@ public:
 
         if (botAI != nullptr)
         {
+            // Before the AI runs. A bot that has fallen out of the world should be put back before
+            // it is asked to make decisions from wherever it has ended up.
+            sBotSafetyMgr.Update(player, diff);
+
             botAI->UpdateAI(diff);
         }
 

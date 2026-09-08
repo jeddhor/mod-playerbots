@@ -14,6 +14,8 @@
  */
 
 #include "InviteToGroupAction.h"
+
+#include <algorithm>
 #include "BroadcastHelper.h"
 #include "Event.h"
 #include "GuildMgr.h"
@@ -62,7 +64,35 @@ bool InviteNearbyToGroupAction::Execute(Event /*event*/)
     uint32 rejSelf = 0, rejMap = 0, rejGrouped = 0, rejSelfbot = 0, rejDnd = 0, rejPort = 0, rejSolo = 0,
            rejMaster = 0, rejLevel = 0, rejRange = 0;
 
+    // P7.20 -- prefer someone working on the same quest. A shared objective is the difference
+    // between a group and two bots standing near each other: without it the pair splits up again on
+    // the next activity roll, having gained nothing from having met.
+    auto const sharesAQuest = [this](Player* other)
+    {
+        for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+        {
+            uint32 const questId = bot->GetQuestSlotQuestId(slot);
+            if (!questId || bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+                continue;
+
+            if (other->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+                return true;
+        }
+        return false;
+    };
+
+    // Two passes over the same candidates: anyone on a shared quest first, then anyone eligible.
+    // Cheaper than sorting, and the second pass keeps the old behaviour intact when nobody matches.
+    GuidVector ordered;
+    ordered.reserve(nearGuids.size());
     for (auto& i : nearGuids)
+        if (Player* p = ObjectAccessor::FindPlayer(i); p && sharesAQuest(p))
+            ordered.push_back(i);
+    for (auto& i : nearGuids)
+        if (std::find(ordered.begin(), ordered.end(), i) == ordered.end())
+            ordered.push_back(i);
+
+    for (auto& i : ordered)
     {
         Player* player = ObjectAccessor::FindPlayer(i);
         if (!player)
@@ -163,7 +193,7 @@ bool InviteNearbyToGroupAction::Execute(Event /*event*/)
     LOG_DEBUG("playerbots",
               "[GroupScan] {} saw {} nearby: {} grouped, {} level, {} range, {} map, {} solo, {} master, "
               "{} selfbot, {} dnd, {} porting",
-              bot->GetName(), nearGuids.size(), rejGrouped, rejLevel, rejRange, rejMap, rejSolo, rejMaster,
+              bot->GetName(), ordered.size(), rejGrouped, rejLevel, rejRange, rejMap, rejSolo, rejMaster,
               rejSelfbot, rejDnd, rejPort);
 
     return false;

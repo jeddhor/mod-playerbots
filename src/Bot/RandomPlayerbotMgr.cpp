@@ -7,6 +7,7 @@
 #include "RandomPlayerbotMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
+#include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
 #include "Battleground.h"
@@ -2411,6 +2412,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "economy")
     {
         sBotEconomyMgr.PrintStats();
+        return true;
+    }
+
+    if (cmd == "safety")
+    {
+        LOG_INFO("playerbots", "{}", sBotSafetyMgr.DescribeStats());
         return true;
     }
 

@@ -784,6 +784,10 @@ bool PlayerbotAIConfig::Initialize()
     questObjectiveMaxDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.ObjectiveMaxDistance", 2500.0f);
     questTurnInTeleport = sConfigMgr->GetOption<bool>("AiPlayerbot.Quest.TurnInTeleport", true);
     questTurnInTeleportDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.TurnInTeleportDistance", 800.0f);
+    safetyRecoverFromFalls = sConfigMgr->GetOption<bool>("AiPlayerbot.Safety.RecoverFromFalls", true);
+    safetyCheckIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Safety.CheckIntervalMs", 1000);
+    remoteTrainingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Training.RemoteEnabled", true);
+    remoteTrainingMaxPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Training.MaxPerPass", 5);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
