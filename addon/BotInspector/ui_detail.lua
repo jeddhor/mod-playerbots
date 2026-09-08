@@ -10,7 +10,7 @@ local UI = BI.UI
 
 local PANE_W = UI.RIGHT_W
 local PANE_H = UI.right:GetHeight()
-local CONTENT_TOP = -72
+local CONTENT_TOP = -82
 
 local SECTION_LABEL = { CORE = "Stats", GEAR = "Gear", SKILL = "Profs", QUEST = "Quests",
                         RECIPE = "Recipes" }
@@ -53,8 +53,9 @@ fetched:SetJustifyH("RIGHT")
 local tabs = {}
 for i, section in ipairs(TABS) do
     local b = CreateFrame("Button", nil, UI.right, "UIPanelButtonTemplate")
-    b:SetWidth(84); b:SetHeight(20)
-    b:SetPoint("TOPLEFT", 10 + (i - 1) * 88, -50)
+    -- 24 rather than 20: at 20 the label sits hard against the button's own bevel.
+    b:SetWidth(84); b:SetHeight(24)
+    b:SetPoint("TOPLEFT", 10 + (i - 1) * 88, -52)
     b:SetText(SECTION_LABEL[section])
     b:SetScript("OnClick", function()
         UI.activeSection = section
@@ -119,16 +120,104 @@ end
 for i = 1, #STAT_LEFT  do statRows["L" .. i] = makeStatRow(panes.CORE, i, 12) end
 for i = 1, #STAT_RIGHT do statRows["R" .. i] = makeStatRow(panes.CORE, i, 232) end
 
-local resistLine = panes.CORE:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-resistLine:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 12)
-resistLine:SetJustifyH("LEFT")
+-- Resistances get real textures rather than inline glyphs, so they can carry the character
+-- sheet's own border art and be sized independently of the font.
+local RES_ORDER = { "fire", "nature", "frost", "shadow", "arcane" }
+local RES_ICON_SIZE = 20
+local resistLabel = panes.CORE:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+resistLabel:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 14)
+resistLabel:SetText("Resistances")
+
+local resistCells = {}
+for i, school in ipairs(RES_ORDER) do
+    local holder = CreateFrame("Frame", nil, panes.CORE)
+    holder:SetWidth(RES_ICON_SIZE + 26); holder:SetHeight(RES_ICON_SIZE)
+    holder:SetPoint("TOPLEFT", 96 + (i - 1) * (RES_ICON_SIZE + 30), -8 - 5 * 18 - 16)
+
+    local tex = holder:CreateTexture(nil, "ARTWORK")
+    tex:SetWidth(RES_ICON_SIZE); tex:SetHeight(RES_ICON_SIZE)
+    tex:SetPoint("LEFT", 0, 0)
+    if W.RES_BORDERED then
+        tex:SetTexture(W.RES_SHEET)
+        tex:SetTexCoord(W.ResCoords(school))
+    else
+        tex:SetTexture(W.RES_ICON[school])
+    end
+
+    local value = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    value:SetPoint("LEFT", tex, "RIGHT", 4, 0)
+    value:SetJustifyH("LEFT")
+
+    holder.value = value
+    holder.school = school
+    resistCells[i] = holder
+end
 
 local xpBar = W.Bar(panes.CORE, PANE_W - 40, 14)
-xpBar:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 40)
+xpBar:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 48)
 xpBar.bar:SetStatusBarColor(0.35, 0.15, 0.55)
 
 local zoneLine = panes.CORE:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-zoneLine:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 78)
+zoneLine:SetPoint("TOPLEFT", 12, -8 - 5 * 18 - 86)
+
+-- ---- GM controls ------------------------------------------------------------------------------
+--
+-- These drive the real .appear and .summon rather than a reimplementation. Those commands already
+-- handle instance binds, battlegrounds and transports correctly, and a teleport written fresh here
+-- would have to get all of that right a second time. A chat message beginning with "." is routed
+-- to the command parser server-side before it can ever be spoken aloud.
+
+local gmLabel = panes.CORE:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gmLabel:SetPoint("BOTTOMLEFT", 12, 40)
+gmLabel:SetText("Game Master")
+
+local gmNote = panes.CORE:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+gmNote:SetPoint("BOTTOMLEFT", 12, 8)
+gmNote:SetWidth(PANE_W - 40); gmNote:SetJustifyH("LEFT")
+
+local function gmButton(text, x, command, permission)
+    local b = CreateFrame("Button", nil, panes.CORE, "UIPanelButtonTemplate")
+    b:SetWidth(140); b:SetHeight(24)
+    b:SetPoint("BOTTOMLEFT", x, 14)
+    b:SetText(text)
+    b:SetScript("OnClick", function()
+        local core = UI.selectedBot and BI.detail[UI.selectedBot] and BI.detail[UI.selectedBot].CORE
+        if not core or not core.name then
+            UI:SetStatus("no bot selected")
+            return
+        end
+        SendChatMessage("." .. command .. " " .. core.name, "SAY")
+        UI:SetStatus("sent .%s %s", command, core.name)
+    end)
+    b.permission = permission
+    return b
+end
+
+local gmButtons = {
+    gmButton("Go to bot",      12,  "appear", "appear"),
+    gmButton("Bring bot to me", 160, "summon", "summon"),
+}
+
+local function paintGmButtons()
+    local any = false
+    for _, b in ipairs(gmButtons) do
+        local allowed = BI.can and BI.can[b.permission]
+        -- Disabled rather than hidden: a control that vanishes leaves the operator wondering
+        -- whether the feature exists at all, where a greyed one says "not for this account".
+        if allowed and UI.selectedBot then b:Enable() else b:Disable() end
+        any = any or allowed
+    end
+
+    if not BI.can or not (BI.can.appear or BI.can.summon) then
+        gmNote:SetText("account lacks the .appear / .summon permissions")
+    elseif not UI.selectedBot then
+        gmNote:SetText("select a bot to enable")
+    else
+        gmNote:SetText("")
+    end
+end
+
+UI.PaintGmButtons = paintGmButtons
 
 local function renderCore(core)
     for i, def in ipairs(STAT_LEFT) do
@@ -150,14 +239,10 @@ local function renderCore(core)
         row.value:SetText(vals[def[2]])
     end
 
-    -- Blizzard's own school icons rather than the school names spelled out. Same glyphs the
-    -- character sheet uses, so a resistance is recognised without being read.
     local r = core.res or {}
-    local parts = { "Resistances  " }
-    for _, school in ipairs({ "fire", "nature", "frost", "shadow", "arcane" }) do
-        table.insert(parts, string.format("%s %d", W.Icon(W.RES_ICON[school], 14), r[school] or 0))
+    for _, cell in ipairs(resistCells) do
+        cell.value:SetText(tostring(r[cell.school] or 0))
     end
-    resistLine:SetText(table.concat(parts, "  "))
 
     local xp = core.xp or { 0, 0 }
     local pct = (xp[2] or 0) > 0 and xp[1] / xp[2] or 0
@@ -512,6 +597,7 @@ function drawSection()
     if not UI.selectedBot then
         hint:Show()
         name:SetText(""); subtitle:SetText(""); fetched:SetText("")
+        paintGmButtons()
         return
     end
     hint:Hide()
@@ -540,7 +626,7 @@ function drawSection()
     end
 
     pane:Show()
-    if     UI.activeSection == "CORE"   then renderCore(data)
+    if     UI.activeSection == "CORE"   then renderCore(data); paintGmButtons()
     elseif UI.activeSection == "GEAR"   then renderGear(data)
     elseif UI.activeSection == "SKILL"  then renderSkill(data)
     elseif UI.activeSection == "QUEST"  then renderQuest(data, core and core.level or 0)
@@ -601,3 +687,5 @@ itemWatch:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 paintTabs()
+
+paintGmButtons()

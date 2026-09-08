@@ -13,6 +13,8 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "RBAC.h"
+#include "WorldSession.h"
 #include "SpellMgr.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -170,6 +172,14 @@ void BotInspectorMgr::HandleZones(Player* to)
 
         rows.push_back(Acore::StringFormat("{}:{}:{}", zoneId, count, Escape(name ? name : "?")));
     }
+
+    // What this session may actually do, so the panel can enable its GM controls honestly rather
+    // than offering buttons that fail. RBAC is the real gate on these commands -- not the security
+    // level the inspector itself checks -- so ask about the exact permissions, not a proxy for them.
+    WorldSession* session = to->GetSession();
+    rows.push_back(Acore::StringFormat("#gm:{}:{}",
+                   session && session->HasPermission(rbac::RBAC_PERM_COMMAND_APPEAR) ? 1 : 0,
+                   session && session->HasPermission(rbac::RBAC_PERM_COMMAND_SUMMON) ? 1 : 0));
 
     Reply(to, "ZONES", "0", rows);
 }

@@ -47,7 +47,7 @@ close:SetPoint("TOPRIGHT", -8, -8)
 -- Search. Typing filters what is already loaded; Enter asks the server, because the tree only holds
 -- the zones that have actually been expanded and a client-side filter cannot see the rest.
 local search, hasTemplate = W.Create("EditBox", "BotInspectorSearch", frame, "InputBoxTemplate")
-search:SetWidth(150); search:SetHeight(20)
+search:SetWidth(150); search:SetHeight(22)
 search:SetPoint("TOPRIGHT", -34, -14)
 search:SetAutoFocus(false)
 search:SetFontObject("GameFontHighlightSmall")
@@ -73,7 +73,7 @@ function UI:SetStatus(fmt, ...)
 end
 
 local refresh = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-refresh:SetWidth(80); refresh:SetHeight(20)
+refresh:SetWidth(80); refresh:SetHeight(24)
 refresh:SetPoint("BOTTOMRIGHT", -18, 16)
 refresh:SetText("Refresh")
 UI.refresh = refresh

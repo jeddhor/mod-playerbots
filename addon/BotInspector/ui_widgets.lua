@@ -237,6 +237,23 @@ W.RES_ICON = {
     arcane = SCHOOL_ICON .. "7",
 }
 W.HOLY_ICON  = SCHOOL_ICON .. "2"
+
+-- The bordered set the character sheet itself uses: a 32x256 strip of eight 32x32 cells, of which
+-- the first five are the resistances. Cell order is the school order again -- Fire, Nature, Frost,
+-- Shadow, Arcane -- confirmed by decoding each cell's dominant hue (red, green, blue, magenta,
+-- purple); cells 5-7 are empty padding.
+W.RES_SHEET = "Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons"
+W.RES_CELL  = { fire = 0, nature = 1, frost = 2, shadow = 3, arcane = 4 }
+
+--- Flip to false for the plain unbordered glyphs from SpellSchoolIcon*.
+-- Both look correct; which reads better at this size is a judgement call, and this is the switch.
+W.RES_BORDERED = true
+
+--- Texture coordinates for one cell of the bordered strip.
+function W.ResCoords(school)
+    local cell = W.RES_CELL[school] or 0
+    return 0, 1, cell / 8, (cell + 1) / 8
+end
 W.CLASS_ICONS = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
 W.QUEST_COMPLETE_ICON = "Interface\\GossipFrame\\ActiveQuestIcon"
 
@@ -251,10 +268,12 @@ end
 function W.Money(copper)
     copper = tonumber(copper) or 0
     local g, s, c = math.floor(copper / 10000), math.floor(copper % 10000 / 100), copper % 100
-    return string.format("%s%s %d%s %d%s", W.Commify(g),
-                         W.Icon("Interface\\MoneyFrame\\UI-GoldIcon", 12), s,
-                         W.Icon("Interface\\MoneyFrame\\UI-SilverIcon", 12), c,
-                         W.Icon("Interface\\MoneyFrame\\UI-CopperIcon", 12))
+    -- A space before each coin glyph. Butted straight against the digits they read as part of the
+    -- number rather than as its unit.
+    return string.format("%s %s  %d %s  %d %s", W.Commify(g),
+                         W.Icon("Interface\\MoneyFrame\\UI-GoldIcon", 13), s,
+                         W.Icon("Interface\\MoneyFrame\\UI-SilverIcon", 13), c,
+                         W.Icon("Interface\\MoneyFrame\\UI-CopperIcon", 13))
 end
 
 --- CreateFrame with a template, degrading to a bare frame if the template is absent.

@@ -9,7 +9,7 @@ local W  = BI.W
 local UI = BI.UI
 
 local ROW_H       = 15
-local VISIBLE     = math.floor((UI.left:GetHeight() - 34) / ROW_H)
+local VISIBLE     = math.floor((UI.left:GetHeight() - 40) / ROW_H)
 local SORT_CYCLE  = { "level", "name", "class" }
 
 local expanded = {}          -- zoneId -> true
@@ -26,11 +26,11 @@ end
 -- ---------------------------------------------------------------------------------------------
 
 local sortButton = CreateFrame("Button", nil, UI.left, "UIPanelButtonTemplate")
-sortButton:SetWidth(110); sortButton:SetHeight(17)
-sortButton:SetPoint("TOPLEFT", 6, -6)
+sortButton:SetWidth(110); sortButton:SetHeight(22)
+sortButton:SetPoint("TOPLEFT", 6, -5)
 
 local countLabel = UI.left:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-countLabel:SetPoint("TOPRIGHT", -8, -10)
+countLabel:SetPoint("TOPRIGHT", -8, -11)
 
 local draw   -- forward declared: the handlers below run before it is defined
 
@@ -148,7 +148,7 @@ end
 
 for i = 1, VISIBLE do
     local r = W.Row(UI.left, UI.LEFT_W - 12, ROW_H)
-    r:SetPoint("TOPLEFT", 6, -28 - (i - 1) * ROW_H)
+    r:SetPoint("TOPLEFT", 6, -33 - (i - 1) * ROW_H)
     rows[i] = r
 end
 

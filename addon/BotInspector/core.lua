@@ -37,6 +37,7 @@ BI.zoneNames = {}   -- zoneId -> name (server-sent; the client cannot resolve ar
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
 BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
 BI.lastError = nil
+BI.can       = { appear = false, summon = false }   -- filled in by the ZONES reply
 
 -- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
 -- field after a blank one and makes a row parse as something plausible but wrong -- the worst way
@@ -225,10 +226,18 @@ local function dispatch(verb, key, rows)
         BI.zones, BI.zoneNames = {}, {}
         for _, row in ipairs(rows) do
             local f = split(row, ":")
-            local id = tonumber(f[1])
-            if id then
-                BI.zones[id]     = tonumber(f[2]) or 0
-                BI.zoneNames[id] = f[3] or ("zone " .. id)
+            if f[1] == "#gm" then
+                -- What the server says this session may actually do. Asked for and answered rather
+                -- than inferred: the inspector's own GM gate is a different check from the RBAC
+                -- permissions that govern .appear and .summon, and assuming they move together
+                -- would mean offering buttons that silently fail.
+                BI.can = { appear = f[2] == "1", summon = f[3] == "1" }
+            else
+                local id = tonumber(f[1])
+                if id then
+                    BI.zones[id]     = tonumber(f[2]) or 0
+                    BI.zoneNames[id] = f[3] or ("zone " .. id)
+                end
             end
         end
         if handlers.OnZones then handlers.OnZones(BI.zones) end
