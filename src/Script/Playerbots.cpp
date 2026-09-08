@@ -24,6 +24,7 @@
 #include "BotRollMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotRepairMgr.h"
+#include "BotToolMgr.h"
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
@@ -216,6 +217,7 @@ public:
             // meant a self bot could stand at its own trainer, with money, and never be asked.
             sBotTrainingMgr.Update(player, diff);
             sBotRepairMgr.Update(player, diff);
+            sBotToolMgr.Update(player, diff);
 
             botAI->UpdateAI(diff);
         }
