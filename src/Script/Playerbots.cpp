@@ -23,6 +23,7 @@
 #include "BotInspectorMgr.h"
 #include "BotRollMgr.h"
 #include "BotSafetyMgr.h"
+#include "BotRepairMgr.h"
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
@@ -214,6 +215,7 @@ public:
             // bot regardless of which strategies it carries, and hanging it off the loot strategy
             // meant a self bot could stand at its own trainer, with money, and never be asked.
             sBotTrainingMgr.Update(player, diff);
+            sBotRepairMgr.Update(player, diff);
 
             botAI->UpdateAI(diff);
         }

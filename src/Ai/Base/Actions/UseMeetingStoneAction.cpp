@@ -187,6 +187,7 @@ bool SummonAction::Teleport(Player* summoner, Player* player, bool preserveAuras
             if (summoner->IsWithinLOS(x, y, z))
             {
                 if (sPlayerbotAIConfig.botRepairWhenSummon)  // .conf option to repair bot gear when summoned 0 = off, 1 = on
+                    if (!IsSelfBot(bot))
                     bot->DurabilityRepairAll(false, 1.0f, false);
 
                 if (summoner->IsInCombat() && !sPlayerbotAIConfig.allowSummonInCombat)

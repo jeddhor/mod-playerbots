@@ -1671,7 +1671,12 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
 
     for (NewRpgStatus status : candidateStatus)
     {
-        uint32 const base = sPlayerbotAIConfig.RpgStatusProbWeight[status];
+        // An archetype may insist on an activity the global table has switched off. That is the
+        // only way to express "nobody does this except the disposition it belongs to", since a zero
+        // weight is dropped here, before any multiplier could revive it.
+        int32 const override = sBotAgendaMgr.GetActivityBaseOverride(bot, status);
+        uint32 const base = override > 0 ? uint32(override) : sPlayerbotAIConfig.RpgStatusProbWeight[status];
+
         if (base == 0)
             continue;
 

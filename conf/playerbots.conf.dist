@@ -1407,7 +1407,8 @@ AiPlayerbot.EnableNewRpgStrategy = 1
 # TravelFlight  (Default: 15  Go to the nearest flightmaster and fly to a level-appropriate area)
 # Rest          (Default: 5   Take a break for a while and do nothing)
 # OutdoorPvp    (Default: 10  Participate in outdoor PvP capture points if already in an outdoor PvP zone)
-AiPlayerbot.RpgStatusProbWeight.WanderRandom = 15
+#    Turned off: aimless roaming is time not spent playing the game.
+AiPlayerbot.RpgStatusProbWeight.WanderRandom = 0
 #    A weight of 0 disables the activity outright: the selector skips a zero-weight status before
 #    the archetype multiplier is applied, so it can never be revived by a bot's disposition. Any
 #    non-zero value can be scaled up by that multiplier and is floored at 1, so "very rare" is not

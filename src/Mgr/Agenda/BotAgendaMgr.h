@@ -107,6 +107,16 @@ public:
      */
     float GetActivityMultiplier(Player* bot, NewRpgStatus status) const;
 
+    /**
+     * A weight this bot's archetype insists on, overriding the global table, or 0 for none.
+     *
+     * Needed because a global weight of 0 is not a small number, it is off: the selector drops a
+     * zero-weight status before the multiplier is applied, so no archetype affinity can bring it
+     * back. Socialites wandering to NPCs is exactly that case -- the activity is disabled realm
+     * wide and enabled for the one disposition it defines.
+     */
+    int32 GetActivityBaseOverride(Player* bot, NewRpgStatus status) const;
+
     /// Human-readable dump for `.playerbots agenda <name>`.
     std::string DescribeAgenda(Player* bot) const;
 

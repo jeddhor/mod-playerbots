@@ -71,19 +71,14 @@ void BotTrainingMgr::EnsureLoaded()
 
 bool BotTrainingMgr::MaySpend(Player* bot)
 {
-    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-    if (!botAI)
-        return false;
-
-    Player* master = botAI->GetMaster();
-
-    // A bot under a human's command does not spend that human's gold unasked. A self bot is its own
-    // master and so passes: it is the player's own character acting for itself, which is the whole
-    // point of self bot mode.
-    if (master && master != bot && !GET_PLAYERBOT_AI(master))
-        return false;
-
-    return true;
+    // Any bot spends its own gold on its own spells.
+    //
+    // This used to refuse alt bots on the grounds that a bot under a human's command should not
+    // spend its owner's gold unasked. That reasoning does not survive contact with what an alt bot
+    // is: the gold is in the alt's own pocket, and an alt that will not train is an alt that stays
+    // useless until its owner drives it to a trainer by hand -- which is the chore the AI exists to
+    // remove. The owner decides how much gold the alt carries; that is the real control.
+    return GET_PLAYERBOT_AI(bot) != nullptr;
 }
 
 bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)

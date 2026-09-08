@@ -267,7 +267,8 @@ bool MaintenanceAction::Execute(Event /*event*/)
             factory.ApplyEnchantAndGemsNew();
     }
 
-    bot->DurabilityRepairAll(false, 1.0f, false);
+    if (!IsSelfBot(bot))
+                    bot->DurabilityRepairAll(false, 1.0f, false);
     bot->SendTalentsInfoData(false);
 
     return true;
@@ -517,7 +518,8 @@ bool BisGearAction::Execute(Event event)
     if (bot->GetLevel() >= sPlayerbotAIConfig.minEnchantingBotLevel)
         factory.ApplyEnchantAndGemsNew();
 
-    bot->DurabilityRepairAll(false, 1.0f, false);
+    if (!IsSelfBot(bot))
+                    bot->DurabilityRepairAll(false, 1.0f, false);
 
     botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault(
         "bis_applied_msg", "BiS applied", {}));

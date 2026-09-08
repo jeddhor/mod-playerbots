@@ -428,6 +428,8 @@ public:
     uint32 archetypeShareGrinder;
     uint32 archetypeShareTrader;
     uint32 archetypeShareSocialite;
+    int32 archetypeSocialiteWanderNpcWeight{20};
+    float selfBotRepairThreshold{0.5f};
     uint32 archetypeSharePvPer;
 
     // Help signal (Phase 7).

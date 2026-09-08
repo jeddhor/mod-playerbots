@@ -734,6 +734,18 @@ bool PlayerbotAIConfig::Initialize()
 
     RpgStatusProbWeight[RPG_WANDER_RANDOM] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.WanderRandom", 15);
     RpgStatusProbWeight[RPG_WANDER_NPC] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.WanderNpc", 20);
+
+    // Socialites are the exception to a zero WanderNpc weight. Wandering to NPCs is the one
+    // activity that archetype exists to express, and a global weight of 0 cannot be revived by the
+    // archetype multiplier -- the selector skips a zero-weight status before multiplying.
+    archetypeSocialiteWanderNpcWeight =
+        sConfigMgr->GetOption<int32>("AiPlayerbot.Archetype.Socialite.WanderNpcWeight", 20);
+
+    // Self bots repair at this fraction of equipped durability remaining. Random and alt bots are
+    // repaired free well before this, since durability is a tax on the player's attention and only
+    // the character a person is actually playing should pay it.
+    selfBotRepairThreshold =
+        float(sConfigMgr->GetOption<float>("AiPlayerbot.Repair.SelfBotThreshold", 0.5f));
     RpgStatusProbWeight[RPG_GO_GRIND] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.GoGrind", 15);
     RpgStatusProbWeight[RPG_GO_CAMP] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.GoCamp", 10);
     RpgStatusProbWeight[RPG_DO_QUEST] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.DoQuest", 60);

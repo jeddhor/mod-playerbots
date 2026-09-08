@@ -434,6 +434,20 @@ void BotAgendaMgr::Evaluate(Player* bot)
         Save(bot->GetGUID(), agenda);
 }
 
+int32 BotAgendaMgr::GetActivityBaseOverride(Player* bot, NewRpgStatus status) const
+{
+    if (!bot || !sPlayerbotAIConfig.agendaEnabled || status != RPG_WANDER_NPC)
+        return 0;
+
+    std::shared_lock<std::shared_mutex> lock(_mutex);
+
+    auto profile = _archetypes.find(bot->GetGUID());
+    if (profile == _archetypes.end() || profile->second != BotArchetype::Socialite)
+        return 0;
+
+    return sPlayerbotAIConfig.archetypeSocialiteWanderNpcWeight;
+}
+
 float BotAgendaMgr::GetActivityMultiplier(Player* bot, NewRpgStatus status) const
 {
     if (!bot || !sPlayerbotAIConfig.agendaEnabled || status < 0 || status >= RPG_STATUS_END)
