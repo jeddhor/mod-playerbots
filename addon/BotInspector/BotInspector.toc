@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: Bot Inspector
+## Notes: Inspect mod-playerbots bots: roster by zone, and per-bot detail.
+## Author: mod-playerbots
+## Version: 0.1
+## SavedVariables: BotInspectorDB
+
+core.lua
+ui.lua
