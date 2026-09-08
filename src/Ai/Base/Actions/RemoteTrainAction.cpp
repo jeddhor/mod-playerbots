@@ -16,6 +16,7 @@
 #include "QueryResult.h"
 #include "SpellMgr.h"
 
+#include <algorithm>
 #include <mutex>
 #include <vector>
 
@@ -44,18 +45,37 @@ void LoadTrainableSpells()
         {
             Field* fields = result->Fetch();
 
+            // npc_trainer uses a NEGATIVE SpellID to mean "include trainer template N", not a spell.
+            // Read as uint32 those became huge values that passed the `if (entry.spellId)` check and
+            // padded the list with thousands of entries that can never match anything.
+            int32 const spellId = fields[0].Get<int32>();
+            if (spellId <= 0)
+                continue;
+
             TrainableSpell entry;
-            entry.spellId = fields[0].Get<uint32>();
+            entry.spellId = uint32(spellId);
             entry.cost = fields[1].Get<uint32>();
             entry.reqSkillLine = fields[2].Get<uint32>();
             entry.reqSkillRank = fields[3].Get<uint32>();
             entry.reqLevel = fields[4].Get<uint32>();
             entry.reqSpell = fields[5].Get<uint32>();
 
-            if (entry.spellId)
-                g_trainable.push_back(entry);
+            g_trainable.push_back(entry);
         } while (result->NextRow());
     }
+
+    // Highest requirement first, cheapest first within a rank.
+    //
+    // The list was previously walked in whatever order npc_trainer returned, and only the first few
+    // affordable spells per pass were bought. A bot could therefore spend its whole allowance on
+    // low-rank filler and never reach the rank it had just become eligible for -- which is exactly
+    // what "my paladin still has not bought Judgement" looks like from the outside.
+    std::sort(g_trainable.begin(), g_trainable.end(), [](TrainableSpell const& a, TrainableSpell const& b)
+    {
+        if (a.reqLevel != b.reqLevel)
+            return a.reqLevel > b.reqLevel;
+        return a.cost < b.cost;
+    });
 
     LOG_INFO("server.loading", ">> Loaded {} trainable spells for remote training", g_trainable.size());
 }
@@ -66,11 +86,21 @@ bool RemoteTrainAction::isUseful()
     if (!sPlayerbotAIConfig.remoteTrainingEnabled)
         return false;
 
-    // A bot under a human's command does not spend its owner's gold unasked.
+    // A bot under a human's command does not spend its owner's gold unasked. A self bot is its own
+    // master, so it passes this and trains for itself; an alt bot following a real player does not.
     if (botAI->GetMaster() && !GET_PLAYERBOT_AI(botAI->GetMaster()))
+    {
+        LOG_DEBUG("playerbots", "[Train] {} skipped: under a human master's command", bot->GetName());
         return false;
+    }
 
-    return bot->GetMoney() > 0;
+    if (!bot->GetMoney())
+    {
+        LOG_DEBUG("playerbots", "[Train] {} skipped: no money", bot->GetName());
+        return false;
+    }
+
+    return true;
 }
 
 bool RemoteTrainAction::Execute(Event /*event*/)
@@ -109,6 +139,8 @@ bool RemoteTrainAction::Execute(Event /*event*/)
         if (!spellInfo)
             continue;
 
+        // continue, not break: the list is ordered by rank, so a spell that is out of reach is
+        // followed by cheaper lower ranks that are not.
         if (spent + entry.cost > budget)
             continue;
 
@@ -118,9 +150,15 @@ bool RemoteTrainAction::Execute(Event /*event*/)
         spent += entry.cost;
         ++learned;
 
-        LOG_DEBUG("playerbots", "[Train] {} learned spell {} for {}c without visiting a trainer", bot->GetName(),
-                  entry.spellId, entry.cost);
+        LOG_DEBUG("playerbots", "[Train] {} learned spell {} (rank req {}) for {}c without visiting a trainer",
+                  bot->GetName(), entry.spellId, entry.reqLevel, entry.cost);
     }
+
+    // Silence here is the case that has been hard to diagnose from the outside: it looks identical
+    // to the action never running at all. Say which it was.
+    if (!learned)
+        LOG_DEBUG("playerbots", "[Train] {} (level {}, {}c) ran and learned nothing from {} candidates",
+                  bot->GetName(), bot->GetLevel(), budget, uint32(g_trainable.size()));
 
     return learned > 0;
 }

@@ -66,8 +66,21 @@ public:
     uint32 Calculate() override;
 
 private:
-    std::vector<NeedMoneyFor> saveMoneyFor = {NeedMoneyFor::guild, NeedMoneyFor::repair, NeedMoneyFor::ammo,
-                                              NeedMoneyFor::spells, NeedMoneyFor::travel};
+    /**
+     * Spending priority, highest first.
+     *
+     * A category reserves the money every category above it wants, so putting gear above tradeskill
+     * means a bot buys an upgrade before it buys reagents, and putting spells above both means it
+     * trains before it does either.
+     *
+     * gear and tradeskill used to be absent from this list. Absence is not neutral: a category that
+     * is not here reserves *everything* in it, so gear and tradeskill each deferred to spells --
+     * correct -- but were peers of one another, with no rule saying which won.
+     */
+    std::vector<NeedMoneyFor> saveMoneyFor = {NeedMoneyFor::guild,  NeedMoneyFor::repair,
+                                              NeedMoneyFor::ammo,   NeedMoneyFor::spells,
+                                              NeedMoneyFor::travel, NeedMoneyFor::gear,
+                                              NeedMoneyFor::tradeskill};
 };
 
 class FreeMoneyForValue : public Uint32CalculatedValue, public Qualified

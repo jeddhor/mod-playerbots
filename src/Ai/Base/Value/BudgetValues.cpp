@@ -204,16 +204,15 @@ uint32 TotalMoneyNeededForValue::Calculate()
 
     uint32 moneyWanted = AI_VALUE2(uint32, "money needed for", (uint32)needMoneyFor);
 
+    // Everything ranked above this category is reserved before it.
+    //
+    // The loop decremented before testing against begin(), so the first entry -- the highest
+    // priority of all -- was never added. With guild at the head that meant guild money was the one
+    // thing nothing ever saved for, which is precisely backwards.
     auto needPtr = std::find(saveMoneyFor.begin(), saveMoneyFor.end(), needMoneyFor);
 
-    while (needPtr != saveMoneyFor.begin())
-    {
-        needPtr--;
-
-        NeedMoneyFor alsoNeed = *needPtr;
-
-        moneyWanted = moneyWanted + AI_VALUE2(uint32, "money needed for", (uint32)alsoNeed);
-    }
+    for (auto itr = saveMoneyFor.begin(); itr != needPtr; ++itr)
+        moneyWanted += AI_VALUE2(uint32, "money needed for", (uint32)*itr);
 
     return moneyWanted;
 }
