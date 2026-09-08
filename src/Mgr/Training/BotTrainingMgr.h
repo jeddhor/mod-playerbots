@@ -96,6 +96,22 @@ private:
     /// Spells a bot paid for and did not receive. Never attempted again for that bot.
     std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _unteachable;
 
+    /// Spells each bot has already bought once, so a second attempt can be recognised.
+    std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _purchased;
+
+    /**
+     * Spells that did not survive a relog for some bot, and so will not for any.
+     *
+     * Some trainer entries teach a proficiency rather than a spellbook entry: HasSpell answers yes
+     * immediately after learning, so the purchase verifies, but nothing is written to
+     * character_spell and the next login finds the bot eligible again. Realm-wide, spell 2581 and
+     * 7414 are known by zero characters while a real spell like Judgement is known by 49.
+     *
+     * Per-bot detection would make every bot pay to discover this separately. One bot discovering
+     * it is enough for all of them.
+     */
+    std::unordered_set<uint32> _neverPersists;
+
     uint32 _refunded{0};
     uint32 _learnedTotal{0};
     uint32 _passesRun{0};

@@ -165,11 +165,33 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
         if (!Qualifies(bot, entry))
             continue;
 
+        bool repeatPurchase = false;
         {
             std::shared_lock<std::shared_mutex> guard(_mutex);
+
+            if (_neverPersists.count(entry.spellId))
+                continue;
+
             auto itr = _unteachable.find(bot->GetGUID());
             if (itr != _unteachable.end() && itr->second.count(entry.spellId))
                 continue;
+
+            auto bought = _purchased.find(bot->GetGUID());
+            repeatPurchase = bought != _purchased.end() && bought->second.count(entry.spellId);
+        }
+
+        // Buying the same spell twice means the first one did not stick, whatever HasSpell said at
+        // the time. Stop for this bot, and for every other bot too: the spell is the problem, not
+        // the buyer.
+        if (repeatPurchase)
+        {
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            _neverPersists.insert(entry.spellId);
+            _unteachable[bot->GetGUID()].insert(entry.spellId);
+
+            LOG_DEBUG("playerbots", "[Train] spell {} did not persist for {}; excluded realm-wide",
+                      entry.spellId, bot->GetName());
+            continue;
         }
 
         // continue, not break: the list runs highest rank first, so an entry that is out of reach is
@@ -209,6 +231,11 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
 
         spent += entry.cost;
         ++learned;
+
+        {
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            _purchased[bot->GetGUID()].insert(entry.spellId);
+        }
 
         LOG_DEBUG("playerbots", "[Train] {} learned spell {} (rank req {}) for {}c", bot->GetName(), entry.spellId,
                   entry.reqLevel, entry.cost);
