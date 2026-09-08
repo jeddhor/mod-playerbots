@@ -149,17 +149,27 @@ function BI.parseSkill(rows)
 end
 
 function BI.parseQuest(rows)
-    local out = {}
+    -- The array part is the quest list; .zones rides alongside it as a hash entry, so `#quests`
+    -- still counts quests and the grouping data does not need a second round trip.
+    local out = { zones = {} }
     for _, row in ipairs(rows) do
         local f = split(row, ":")
-        local id = tonumber(f[1])
-        if id then
-            -- The title is everything from field 5 on, rejoined: quest names contain colons and
-            -- splitting one into pieces would truncate every such quest at its punctuation.
-            table.insert(out, {
-                id = id, status = tonumber(f[2]) or 0, level = tonumber(f[3]) or 0,
-                objectives = f[4] or "-", title = table.concat(f, ":", 5),
-            })
+
+        if f[1] == "#z" then
+            -- Zone header: sent once per distinct zone in the log, because the client can no more
+            -- name a quest's zone than it can name its own.
+            out.zones[tonumber(f[2]) or 0] = f[3] or "Other"
+        else
+            local id = tonumber(f[1])
+            if id then
+                -- The title is everything from field 6 on, rejoined: quest names contain colons
+                -- and splitting one into pieces would truncate every such quest at its punctuation.
+                table.insert(out, {
+                    id = id, status = tonumber(f[2]) or 0, level = tonumber(f[3]) or 0,
+                    zone = tonumber(f[4]) or 0, objectives = f[5] or "-",
+                    title = table.concat(f, ":", 6),
+                })
+            end
         end
     end
     return out

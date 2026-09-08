@@ -2,8 +2,11 @@
 ## Title: Bot Inspector
 ## Notes: Inspect mod-playerbots bots: roster by zone, and per-bot detail.
 ## Author: mod-playerbots
-## Version: 0.1
+## Version: 0.4
 ## SavedVariables: BotInspectorDB
 
 core.lua
+ui_widgets.lua
 ui.lua
+ui_list.lua
+ui_detail.lua

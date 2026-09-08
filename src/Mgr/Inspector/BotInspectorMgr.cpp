@@ -21,6 +21,7 @@
 #include "Timer.h"
 
 #include <algorithm>
+#include <map>
 #include <sstream>
 
 namespace
@@ -301,6 +302,12 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
     }
     else if (section == "QUEST")
     {
+        // Distinct quest zones, emitted once each as "#z:<id>:<name>" header rows. The client groups
+        // by zone but cannot name one: the same area-id problem as ZONES, and QuestSort names are
+        // not loaded from DBC at all in this core, so negative sorts (class, seasonal, profession
+        // quests) collapse to a single "Other" bucket rather than being invented.
+        std::map<uint32, std::string> questZones;
+
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
             uint32 const questId = bot->GetQuestSlotQuestId(slot);
@@ -352,10 +359,24 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
             //
             // Title goes last because quest names contain colons ("Bring Me Shackles!: ..." and
             // friends) and the client rejoins everything past this point.
-            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}", questId,
+            int32 const sort = quest->GetZoneOrSort();
+            uint32 const questZone = sort > 0 ? static_cast<uint32>(sort) : 0;
+
+            if (questZones.find(questZone) == questZones.end())
+            {
+                AreaTableEntry const* area = questZone ? sAreaTableStore.LookupEntry(questZone) : nullptr;
+                char const* name = area ? area->area_name[LOCALE_enUS] : nullptr;
+                questZones[questZone] = name ? name : "Other";
+            }
+
+            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}:{}", questId,
                                                static_cast<uint32>(bot->GetQuestStatus(questId)),
-                                               quest->GetQuestLevel(), objectives, quest->GetTitle()));
+                                               quest->GetQuestLevel(), questZone, objectives,
+                                               quest->GetTitle()));
         }
+
+        for (auto const& [zoneId, name] : questZones)
+            rows.push_back(Acore::StringFormat("#z:{}:{}", zoneId, Escape(name)));
     }
     else
     {
