@@ -13,6 +13,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -83,6 +84,12 @@ private:
 
     /// The spell a trainer entry actually teaches, unwrapping a "learn spell" effect.
     static uint32 TaughtSpell(uint32 spellId);
+
+    /// The primary profession skill a spell teaches, or 0 if it teaches something else.
+    static uint32 PrimaryProfessionTaught(uint32 spellId);
+
+    /// The two primary professions this bot should end up with, chosen stably from its guid.
+    static std::pair<uint16, uint16> PreferredProfessions(Player* bot);
 
     /// True if this bot meets every requirement a real trainer would check for this spell.
     static bool Qualifies(Player* bot, TrainableSpell const& entry);

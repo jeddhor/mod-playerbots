@@ -14,6 +14,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotFactory.h"
 #include "Playerbots.h"
 #include "QueryResult.h"
 #include "SpellInfo.h"
@@ -100,6 +101,48 @@ uint32 BotTrainingMgr::TaughtSpell(uint32 spellId)
     return spellId;
 }
 
+uint32 BotTrainingMgr::PrimaryProfessionTaught(uint32 spellId)
+{
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info)
+        return 0;
+
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].Effect == SPELL_EFFECT_SKILL && IsPrimaryProfessionSkill(info->Effects[i].MiscValue))
+            return info->Effects[i].MiscValue;
+
+    return 0;
+}
+
+std::pair<uint16, uint16> BotTrainingMgr::PreferredProfessions(Player* bot)
+{
+    // The factory already knows what each class should take -- paladins mining and blacksmithing,
+    // mages tailoring and enchanting, and so on -- so that table is reused rather than a second
+    // opinion invented next to it.
+    std::vector<PlayerbotFactory::WeightedProfessionPair> const pairs = PlayerbotFactory::GetClassProfessionPairs(bot);
+    if (pairs.empty())
+        return {0, 0};
+
+    uint32 total = 0;
+    for (auto const& pair : pairs)
+        total += pair.weight;
+
+    if (!total)
+        return {pairs[0].firstSkill, pairs[0].secondSkill};
+
+    // Chosen from the guid rather than at random: this is asked on every training pass and must give
+    // the same answer every time, or a bot would drift toward learning one of each.
+    uint32 roll = uint32((bot->GetGUID().GetCounter() * 2654435761u) % total);
+    for (auto const& pair : pairs)
+    {
+        if (roll < pair.weight)
+            return {pair.firstSkill, pair.secondSkill};
+        roll -= pair.weight;
+    }
+
+    return {pairs[0].firstSkill, pairs[0].secondSkill};
+}
+
 bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
 {
     // Test knowledge of what is actually taught, not of the wrapper that teaches it.
@@ -114,6 +157,24 @@ bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
 
     if (entry.reqSkillLine && bot->GetBaseSkillValue(entry.reqSkillLine) < entry.reqSkillRank)
         return false;
+
+    // Primary professions are capped at two, and which two is not arbitrary.
+    //
+    // Nothing here enforced either rule, so a bot with gold learned every profession in the game --
+    // 123 bots ended up over the limit, one with eleven. The core tracks the allowance; a real
+    // trainer refuses past it and so must this.
+    if (uint32 const profession = PrimaryProfessionTaught(entry.spellId))
+    {
+        if (!bot->HasSkill(profession))
+        {
+            if (!bot->GetFreePrimaryProfessionPoints())
+                return false;
+
+            auto const [first, second] = PreferredProfessions(bot);
+            if (profession != first && profession != second)
+                return false;
+        }
+    }
 
     // Only what this class or race can actually use. Without this a bot would learn every trainable
     // spell in the game, which is both nonsense and a way to make one bot capable of everything.

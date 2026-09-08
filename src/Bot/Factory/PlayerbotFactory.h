@@ -51,6 +51,17 @@ enum spec : uint8
 class PlayerbotFactory
 {
 public:
+    struct WeightedProfessionPair
+    {
+        uint16 firstSkill;
+        uint16 secondSkill;
+        uint32 weight;
+    };
+
+    /// The professions a class should take, weighted. Shared with BotTrainingMgr so a bot learning
+    /// a profession at a trainer picks the same pair the factory would have given it.
+    static std::vector<WeightedProfessionPair> GetClassProfessionPairs(Player* bot);
+
     PlayerbotFactory(Player* bot, uint32 level, uint32 itemQuality = 0, uint32 gearScoreLimit = 0);
 
     static ObjectGuid GetRandomBot();
@@ -145,12 +156,6 @@ private:
         Class = 2
     };
 
-    struct WeightedProfessionPair
-    {
-        uint16 firstSkill;
-        uint16 secondSkill;
-        uint32 weight;
-    };
 
     void Prepare();
     // void InitSecondEquipmentSet();
@@ -161,7 +166,6 @@ private:
     static bool IsGatheringTradeSkill(uint16 skillId);
     static bool IsCraftingTradeSkill(uint16 skillId);
     static uint32 GetProfessionStarterSpell(uint16 skillId);
-    static std::vector<WeightedProfessionPair> GetClassProfessionPairs(Player* bot);
     static std::vector<WeightedProfessionPair> GetRandomProfessionPairs();
     static std::pair<uint16, uint16> ChooseProfessionPair(std::vector<WeightedProfessionPair> const& professionPairs);
     static bool HasProfessionPair(std::vector<WeightedProfessionPair> const& professionPairs,

@@ -166,56 +166,44 @@ uint32 PlayerbotFactory::GetProfessionStarterSpell(uint16 skillId)
 
 std::vector<PlayerbotFactory::WeightedProfessionPair> PlayerbotFactory::GetClassProfessionPairs(Player* bot)
 {
+    // Professions follow armour type, with two deliberate exceptions.
+    //
+    //   plate   blacksmithing + mining
+    //   mail    leatherworking + skinning
+    //   leather leatherworking + skinning
+    //   cloth   tailoring + enchanting
+    //
+    // Hunters take engineering instead of skinning, for scopes, and buy their leather off the
+    // auction house. Rogues take alchemy and herbalism for Thistle Tea. Both are cases where what
+    // the class actually wants beats what its armour suggests.
+    //
+    // One pair per class rather than a weighted spread: the realm still gets variety because the
+    // classes do, and a bot that might roll any of four pairs is a bot whose profession is not a
+    // fact about it.
     switch (bot->getClass())
     {
         case CLASS_WARRIOR:
-            return {{SKILL_MINING, SKILL_BLACKSMITHING, 45},
-                    {SKILL_MINING, SKILL_ENGINEERING, 30},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 15},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 10}};
         case CLASS_PALADIN:
-            return {{SKILL_MINING, SKILL_BLACKSMITHING, 45},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 30},
-                    {SKILL_MINING, SKILL_ENGINEERING, 15},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 10}};
         case CLASS_DEATH_KNIGHT:
-            return {{SKILL_MINING, SKILL_BLACKSMITHING, 45},
-                    {SKILL_MINING, SKILL_ENGINEERING, 35},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 20}};
+            return {{SKILL_MINING, SKILL_BLACKSMITHING, 100}};
+
         case CLASS_HUNTER:
-            return {{SKILL_SKINNING, SKILL_LEATHERWORKING, 45},
-                    {SKILL_MINING, SKILL_ENGINEERING, 35},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 10},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 10}};
+            // Engineering for scopes; leather is bought rather than skinned.
+            return {{SKILL_LEATHERWORKING, SKILL_ENGINEERING, 100}};
+
         case CLASS_ROGUE:
-            return {{SKILL_SKINNING, SKILL_LEATHERWORKING, 35},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 25},
-                    {SKILL_MINING, SKILL_ENGINEERING, 25},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 10},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 5}};
-        case CLASS_DRUID:
-            return {{SKILL_SKINNING, SKILL_LEATHERWORKING, 35},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 35},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 20},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 10}};
+            // Thistle Tea.
+            return {{SKILL_HERBALISM, SKILL_ALCHEMY, 100}};
+
         case CLASS_SHAMAN:
-            return {{SKILL_HERBALISM, SKILL_ALCHEMY, 35},
-                    {SKILL_SKINNING, SKILL_LEATHERWORKING, 25},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 25},
-                    {SKILL_MINING, SKILL_JEWELCRAFTING, 15}};
+        case CLASS_DRUID:
+            return {{SKILL_SKINNING, SKILL_LEATHERWORKING, 100}};
+
         case CLASS_PRIEST:
-            return {{SKILL_TAILORING, SKILL_ENCHANTING, 45},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 30},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 25}};
         case CLASS_MAGE:
-            return {{SKILL_TAILORING, SKILL_ENCHANTING, 50},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 25},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 25}};
         case CLASS_WARLOCK:
         default:
-            return {{SKILL_TAILORING, SKILL_ENCHANTING, 50},
-                    {SKILL_HERBALISM, SKILL_ALCHEMY, 25},
-                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 25}};
+            return {{SKILL_TAILORING, SKILL_ENCHANTING, 100}};
     }
 }
 
