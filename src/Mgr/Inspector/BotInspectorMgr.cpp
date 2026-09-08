@@ -121,7 +121,7 @@ void BotInspectorMgr::HandleZones(Player* to)
     std::unordered_map<uint32, uint32> counts;
 
     for (auto const& [guid, bot] : sRandomPlayerbotMgr.GetAllBotsRef())
-        if (bot && bot->IsInWorld())
+        if (bot && bot->IsInWorld() && sRandomPlayerbotMgr.IsRandomBot(bot))
             ++counts[bot->GetZoneId()];
 
     std::vector<std::string> rows;
@@ -139,6 +139,10 @@ void BotInspectorMgr::HandleList(Player* to, uint32 zoneId)
     for (auto const& [guid, bot] : sRandomPlayerbotMgr.GetAllBotsRef())
     {
         if (!bot || !bot->IsInWorld() || bot->GetZoneId() != zoneId)
+            continue;
+
+        // Listing an altbot would expose a player's alt by name and level even without DETAIL.
+        if (!sRandomPlayerbotMgr.IsRandomBot(bot))
             continue;
 
         // guid:name:level:class:race:gold
@@ -166,7 +170,7 @@ void BotInspectorMgr::HandleFind(Player* to, std::string const& needle)
 
     for (auto const& [guid, bot] : sRandomPlayerbotMgr.GetAllBotsRef())
     {
-        if (!bot || !bot->IsInWorld())
+        if (!bot || !bot->IsInWorld() || !sRandomPlayerbotMgr.IsRandomBot(bot))
             continue;
 
         std::string name = bot->GetName();
@@ -198,11 +202,17 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
         return;
     }
 
-    // The gate that matters. Without it this is a general player-inspection tool rather than a bot
-    // debugger, and pointing it at a human would return their inventory.
-    if (!GET_PLAYERBOT_AI(bot))
+    // The gate that matters, and it is narrower than "is a bot".
+    //
+    // GET_PLAYERBOT_AI is true for altbots and selfbots as well as random bots, and an altbot is a
+    // human player's own alt being driven by the AI. Dumping its gear, quests and gold is inspecting
+    // that player, not debugging the realm -- the same line we declined to cross for ordinary
+    // characters, reached by a different route.
+    //
+    // Random bots are server-owned and have no such claim, so those are the only ones answered for.
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
     {
-        SendError(to, 403, "not a bot");
+        SendError(to, 403, "not a random bot -- altbots and selfbots belong to a player");
         return;
     }
 
