@@ -278,6 +278,8 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
     if (msg.rfind(std::string(PROTOCOL) + "\t", 0) != 0)
         return false;  // not ours
 
+    LOG_DEBUG("playerbots", "[Inspector] request from {}: {}", sender ? sender->GetName() : "?", msg);
+
     if (!IsAllowed(sender))
     {
         // Answered rather than ignored: an addon that gets silence cannot tell "refused" from

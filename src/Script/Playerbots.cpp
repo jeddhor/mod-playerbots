@@ -105,7 +105,12 @@ public:
      */
     void OnPlayerBeforeSendChatMessage(Player* player, uint32& type, uint32& lang, std::string& msg) override
     {
-        if (type == CHAT_MSG_ADDON && lang == LANG_ADDON && sBotInspectorMgr.HandleMessage(player, msg))
+        // Keyed on the LANGUAGE, not the message type. SendAddonMessage(prefix, body, "WHISPER", who)
+        // arrives as CHAT_MSG_WHISPER with lang == LANG_ADDON -- ChatHandler's own switch lists
+        // WHISPER, PARTY, RAID, GUILD and BATTLEGROUND as the types that may carry LANG_ADDON, and
+        // CHAT_MSG_ADDON is not among them. Testing for CHAT_MSG_ADDON meant this never fired at all:
+        // the query reached the server and the handler simply never looked at it.
+        if (lang == LANG_ADDON && sBotInspectorMgr.HandleMessage(player, msg))
         {
             // Consumed. Blanking it stops an inspector query being relayed on as chat, which would
             // put protocol text in front of other players.

@@ -132,6 +132,11 @@ BI:SetHandler("OnFind",   function(list, matched)
     status:SetText(string.format("showing %d of %d matches", #list, matched))
 end)
 BI:SetHandler("OnError",  function(_, text) status:SetText("error: " .. text) end)
+BI:SetHandler("OnTimeout", function(id)
+    -- Names the likely cause rather than just reporting failure. The commonest reason by far is a
+    -- server without the responder built in, which looks identical to a hang from the client side.
+    status:SetText("no reply to " .. id .. " -- server has no inspector, or refused (needs GM 2)")
+end)
 
 function BI:Toggle()
     if frame:IsShown() then

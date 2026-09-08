@@ -44,13 +44,23 @@ function BI:Send(...)
     SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
 end
 
-function BI:RequestZones()          self:Send("ZONES") end
-function BI:RequestList(zoneId)     self:Send("LIST", zoneId) end
-function BI:RequestFind(needle)     self:Send("FIND", needle) end
-function BI:RequestDetail(guid, section) self:Send("DETAIL", guid, section) end
+function BI:RequestZones()
+    self:Send("ZONES"); self:MarkSent("ZONES", "0")
+end
+function BI:RequestList(zoneId)
+    self:Send("LIST", zoneId); self:MarkSent("LIST", tostring(zoneId))
+end
+function BI:RequestFind(needle)
+    self:Send("FIND", needle); self:MarkSent("FIND", needle)
+end
+function BI:RequestDetail(guid, section)
+    self:Send("DETAIL", guid, section); self:MarkSent("DETAIL", guid .. ":" .. section)
+end
 
 --- Called once a multi-chunk response is fully assembled.
 local function dispatch(verb, key, rows)
+    clearInflight(verb, key)
+
     if verb == "ERR" then
         BI.lastError = rows[1] or "unknown error"
         if handlers.OnError then handlers.OnError(key, BI.lastError) end
@@ -134,6 +144,39 @@ local function receive(body)
         dispatch(verb, key, buf.rows)
     end
 end
+
+--- Time out a request that never gets an answer.
+--
+-- Without this the panel waits forever, which is indistinguishable from a slow reply and hides the
+-- most common real cause: the server has no inspector responder, or refused silently. A debugging
+-- tool that cannot tell "waiting" from "nobody is listening" is not much of one.
+local REQUEST_TIMEOUT = 5
+
+local inflight = {}
+
+function BI:MarkSent(verb, key)
+    inflight[verb .. ":" .. (key or "")] = GetTime()
+end
+
+local function clearInflight(verb, key)
+    inflight[verb .. ":" .. (key or "")] = nil
+end
+
+local watchdog = CreateFrame("Frame")
+watchdog:SetScript("OnUpdate", function(self, elapsed)
+    self.acc = (self.acc or 0) + elapsed
+    if self.acc < 1 then return end
+    self.acc = 0
+
+    local now = GetTime()
+    for id, sentAt in pairs(inflight) do
+        if now - sentAt > REQUEST_TIMEOUT then
+            inflight[id] = nil
+            pending[id] = nil
+            if handlers.OnTimeout then handlers.OnTimeout(id) end
+        end
+    end
+end)
 
 function BI:SetHandler(name, fn) handlers[name] = fn end
 
