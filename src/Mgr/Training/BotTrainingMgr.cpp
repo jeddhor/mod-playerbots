@@ -19,9 +19,11 @@
 #include "QueryResult.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "World.h"
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <array>
 
 namespace
 {
@@ -163,17 +165,37 @@ bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
     // Nothing here enforced either rule, so a bot with gold learned every profession in the game --
     // 123 bots ended up over the limit, one with eleven. The core tracks the allowance; a real
     // trainer refuses past it and so must this.
-    if (uint32 const profession = PrimaryProfessionTaught(entry.spellId))
-    {
-        if (!bot->HasSkill(profession))
-        {
-            if (!bot->GetFreePrimaryProfessionPoints())
-                return false;
+    //
+    // Asked of the taught spell as well as the trainer's wrapper. Looking only at the wrapper let
+    // a paladin who already had blacksmithing and mining go on to learn herbalism and alchemy: the
+    // wrapper carries no SPELL_EFFECT_SKILL, so the profession went undetected and the gate never
+    // ran at all.
+    uint32 profession = PrimaryProfessionTaught(entry.spellId);
+    if (!profession)
+        profession = PrimaryProfessionTaught(TaughtSpell(entry.spellId));
 
-            auto const [first, second] = PreferredProfessions(bot);
-            if (profession != first && profession != second)
-                return false;
-        }
+    if (profession && !bot->HasSkill(profession))
+    {
+        // Counted from the skills the bot actually holds rather than read from
+        // GetFreePrimaryProfessionPoints. That counter is maintained by add/remove of spells, and a
+        // realm where professions have been edited underneath it -- as they have been here -- can
+        // leave it disagreeing with the character sheet. The skills are the truth.
+        static constexpr std::array<uint32, 11> PRIMARY_SKILLS = {
+            SKILL_BLACKSMITHING, SKILL_LEATHERWORKING, SKILL_ALCHEMY, SKILL_HERBALISM, SKILL_MINING,
+            SKILL_TAILORING, SKILL_ENGINEERING, SKILL_ENCHANTING, SKILL_SKINNING, SKILL_JEWELCRAFTING,
+            SKILL_INSCRIPTION};
+
+        uint32 held = 0;
+        for (uint32 skill : PRIMARY_SKILLS)
+            if (bot->HasSkill(skill))
+                ++held;
+
+        if (held >= sWorld->getIntConfig(CONFIG_MAX_PRIMARY_TRADE_SKILL))
+            return false;
+
+        auto const [first, second] = PreferredProfessions(bot);
+        if (profession != first && profession != second)
+            return false;
     }
 
     // Only what this class or race can actually use. Without this a bot would learn every trainable
