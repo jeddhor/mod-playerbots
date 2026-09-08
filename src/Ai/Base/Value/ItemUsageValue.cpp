@@ -86,6 +86,12 @@ ItemUsage ItemUsageValue::Calculate()
 
     const uint32_t maxCount = proto->MaxCount;
 
+    // P7.8 -- buff food is worth carrying and actually eating; plain food is not, because bots
+    // already eat without consuming anything. Keeping ordinary bread would be hoarding an item
+    // whose only function the bot gets for free.
+    if (GrantsWellFed(proto))
+        return ITEM_USAGE_USE;
+
     if (proto->Class == ITEM_CLASS_CONSUMABLE &&
         (maxCount == 0 || bot->GetItemCount(itemId, false) < maxCount))
     {
@@ -891,6 +897,60 @@ bool ItemUsageValue::SpellGivesSkillUp(uint32 spellId, Player* bot)
                                 (skill->TrivialSkillLineRankHigh + skill->TrivialSkillLineRankLow) / 2,
                                 skill->TrivialSkillLineRankLow) > 0)
                 return true;
+        }
+    }
+
+    return false;
+}
+
+bool ItemUsageValue::GrantsWellFed(ItemTemplate const* proto)
+{
+    if (!proto || proto->Class != ITEM_CLASS_CONSUMABLE)
+        return false;
+
+    auto const isBuffAura = [](uint32 aura)
+    {
+        switch (aura)
+        {
+            case SPELL_AURA_MOD_STAT:
+            case SPELL_AURA_MOD_RATING:
+            case SPELL_AURA_MOD_DAMAGE_DONE:
+            case SPELL_AURA_MOD_HEALING_DONE:
+            case SPELL_AURA_MOD_ATTACK_POWER:
+            case SPELL_AURA_MOD_RANGED_ATTACK_POWER:
+            case SPELL_AURA_MOD_INCREASE_HEALTH_2:
+            case SPELL_AURA_MOD_POWER_REGEN:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+    {
+        uint32 const spellId = proto->Spells[i].SpellId;
+        if (!spellId)
+            continue;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+            continue;
+
+        for (uint8 e = 0; e < MAX_SPELL_EFFECTS; ++e)
+        {
+            if (isBuffAura(spellInfo->Effects[e].ApplyAuraName))
+                return true;
+
+            // Buff food usually applies its aura through a triggered spell rather than directly,
+            // so one level of indirection has to be followed. One level only -- deeper chains are
+            // not food, and unbounded recursion here would be a poor trade for a lookup this hot.
+            if (uint32 const triggered = spellInfo->Effects[e].TriggerSpell)
+            {
+                if (SpellInfo const* trigInfo = sSpellMgr->GetSpellInfo(triggered))
+                    for (uint8 t = 0; t < MAX_SPELL_EFFECTS; ++t)
+                        if (isBuffAura(trigInfo->Effects[t].ApplyAuraName))
+                            return true;
+            }
         }
     }
 

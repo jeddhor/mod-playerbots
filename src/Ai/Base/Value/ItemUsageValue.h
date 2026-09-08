@@ -68,6 +68,19 @@ public:
     static bool SpellGivesSkillUp(uint32 spellId, Player* bot);
 
     static std::string const GetConsumableType(ItemTemplate const* proto, bool hasMana);
+
+    /**
+     * True if eating this item grants a stat buff -- "Well Fed" and its equivalents.
+     *
+     * Walks the item's spells and the spells they trigger, looking for an aura that modifies a stat,
+     * a combat rating or damage/healing done. Resolved through SpellInfo rather than by reading
+     * Spell.dbc directly, because the core has already parsed the effect layout correctly and a
+     * hand-rolled reader gets the field offsets wrong in ways that are hard to notice.
+     *
+     * Deliberately not an item id list: those go stale, and the operator's requirement is that bots
+     * eat buff food *when they have it*, which is a property of the item, not of a curated set.
+     */
+    static bool GrantsWellFed(ItemTemplate const* proto);
 };
 
 class ItemUpgradeValue : public ItemUsageValue

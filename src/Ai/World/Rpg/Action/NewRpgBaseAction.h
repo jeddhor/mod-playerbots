@@ -87,6 +87,19 @@ protected:
      * @return number of quests completed this pass.
      */
     uint32 AutoCompleteTrivialQuests();
+
+    /**
+     * Teleport an ungrouped bot to a distant quest turn-in it would otherwise spend the whole
+     * activity walking to.
+     *
+     * Kept separate from MoveFarTo's stuck recovery on purpose, and logged under its own tag. The
+     * two look identical in a log -- both end with a bot somewhere it was not a moment ago -- and
+     * conflating them would hide a rising stuck-rate behind deliberate travel.
+     *
+     * Never for a grouped bot: vanishing mid-quest is exactly the behaviour that makes a party bot
+     * feel broken, and a grouped bot has company that would be left behind.
+     */
+    bool TeleportToDistantTurnIn(uint32 questId, WorldPosition const& pos);
     void DropQuest(uint16 slot, uint32 questId, Quest const* quest);
 
 protected:

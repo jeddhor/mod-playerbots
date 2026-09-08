@@ -762,6 +762,18 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
             score += 300.0f * (done / required);
     }
 
+    // P7.6 -- an unfinished quest in the bot's current zone is worth holding onto, because leaving
+    // a zone with work still in it is how bots end up with a log full of half-done quests spread
+    // across a continent. This reinforces the existing same-zone preference rather than replacing
+    // it, and is deliberately smaller than the progress term: a half-finished quest elsewhere still
+    // beats an untouched one here.
+    if (bot->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+    {
+        int32 const zoneOrSortHere = quest->GetZoneOrSort();
+        if (zoneOrSortHere > 0 && static_cast<uint32>(zoneOrSortHere) == bot->GetZoneId())
+            score += 40.0f;
+    }
+
     // Prefer quests the bot can act on where it currently is. This used to be a hard drop rule,
     // which meant a bot discarded its in-progress quests every time it crossed a zone border (or
     // got teleported by the MoveFarTo stuck recovery). It is a preference now, not a kill switch.
@@ -823,6 +835,34 @@ float NewRpgBaseAction::ScoreQuestForKeeping(uint32 questId, Quest const* quest)
         score -= 600.0f;
 
     return score;
+}
+
+bool NewRpgBaseAction::TeleportToDistantTurnIn(uint32 questId, WorldPosition const& pos)
+{
+    if (!sPlayerbotAIConfig.questTurnInTeleport)
+        return false;
+
+    // Grouped bots walk. A party member that teleports away mid-quest is the single most
+    // bot-looking thing a bot can do.
+    if (bot->GetGroup())
+        return false;
+
+    if (bot->IsInCombat() || bot->isDead() || bot->IsBeingTeleported())
+        return false;
+
+    if (pos == WorldPosition() || pos.GetMapId() != bot->GetMapId())
+        return false;
+
+    float const distance = bot->GetExactDist(pos);
+    if (distance < sPlayerbotAIConfig.questTurnInTeleportDistance)
+        return false;
+
+    LOG_DEBUG("playerbots", "[QuestTeleport] {} skipping {:.0f} yards to turn in quest {}", bot->GetName(),
+              distance, questId);
+
+    bot->TeleportTo(pos.GetMapId(), pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(),
+                    bot->GetOrientation());
+    return true;
 }
 
 uint32 NewRpgBaseAction::AutoCompleteTrivialQuests()

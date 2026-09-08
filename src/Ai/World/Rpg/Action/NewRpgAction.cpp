@@ -728,6 +728,11 @@ bool NewRpgDoQuestAction::DoCompletedQuest(NewRpgInfo::DoQuest& data)
 
     if (bot->GetDistance(data.pos) > 10.0f && !data.lastReachPOI)
     {
+        // A solo bot facing a long walk back to a turn-in skips it. Walking half a continent to hand
+        // in one quest burns an entire activity window for a single interaction.
+        if (TeleportToDistantTurnIn(data.questId, data.pos))
+            return true;
+
         if (MoveFarTo(data.pos))
             return true;
         return MoveRandomNear(10.0f);

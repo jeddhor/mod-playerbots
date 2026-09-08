@@ -782,6 +782,8 @@ bool PlayerbotAIConfig::Initialize()
     helpDeathWindowSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Help.DeathWindowSeconds", 600);
     autoCompleteTrivialQuests = sConfigMgr->GetOption<bool>("AiPlayerbot.Quest.AutoCompleteTrivial", true);
     questObjectiveMaxDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.ObjectiveMaxDistance", 2500.0f);
+    questTurnInTeleport = sConfigMgr->GetOption<bool>("AiPlayerbot.Quest.TurnInTeleport", true);
+    questTurnInTeleportDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.TurnInTeleportDistance", 800.0f);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

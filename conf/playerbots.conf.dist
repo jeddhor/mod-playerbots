@@ -2945,3 +2945,16 @@ AiPlayerbot.Quest.AutoCompleteTrivial = 1
 #
 
 AiPlayerbot.Quest.ObjectiveMaxDistance = 2500
+
+#
+#    AiPlayerbot.Quest.TurnInTeleport / TurnInTeleportDistance
+#        An ungrouped bot facing a long walk back to a quest giver teleports instead. Walking half a
+#        continent for one interaction burns an entire activity window.
+#
+#        Never applies to grouped bots: a party member vanishing mid-quest is the most bot-looking
+#        thing a bot can do, and it would leave its group behind.
+#        Defaults: 1, 800
+#
+
+AiPlayerbot.Quest.TurnInTeleport = 1
+AiPlayerbot.Quest.TurnInTeleportDistance = 800
