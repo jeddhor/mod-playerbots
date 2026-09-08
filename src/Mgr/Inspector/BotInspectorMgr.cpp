@@ -8,6 +8,7 @@
 
 #include "AccountMgr.h"
 #include "Chat.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -136,8 +137,18 @@ void BotInspectorMgr::HandleZones(Player* to)
 
     std::vector<std::string> rows;
     rows.reserve(counts.size());
+
     for (auto const& [zoneId, count] : counts)
-        rows.push_back(Acore::StringFormat("{}:{}", zoneId, count));
+    {
+        // The name has to come from here. Item ids resolve against the client's own cache, but a
+        // 3.3.5 client has no Lua call that turns an area id into a name -- GetMapZones works off
+        // map indices, not area ids, and nothing maps one to the other. Sending it costs about
+        // fifteen bytes per zone and is the difference between "Stormwind City" and "zone 1519".
+        AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId);
+        char const* name = area ? area->area_name[LOCALE_enUS] : nullptr;
+
+        rows.push_back(Acore::StringFormat("{}:{}:{}", zoneId, count, Escape(name ? name : "?")));
+    }
 
     Reply(to, "ZONES", "0", rows);
 }
@@ -231,6 +242,12 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
 
     if (section == "CORE")
     {
+        // Identity is repeated here even though LIST carries it, because a bot can be selected
+        // straight out of FIND without its zone roster ever being fetched. A detail pane that can
+        // only label itself when you arrived by one particular route is a bug waiting to happen.
+        rows.push_back(Acore::StringFormat("name:{}", bot->GetName()));
+        rows.push_back(Acore::StringFormat("class:{}", static_cast<uint32>(bot->getClass())));
+        rows.push_back(Acore::StringFormat("race:{}", static_cast<uint32>(bot->getRace())));
         rows.push_back(Acore::StringFormat("level:{}", bot->GetLevel()));
         rows.push_back(Acore::StringFormat("xp:{}:{}", bot->GetUInt32Value(PLAYER_XP),
                                            bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP)));
@@ -242,6 +259,12 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
         rows.push_back(Acore::StringFormat("int:{}", static_cast<uint32>(bot->GetStat(STAT_INTELLECT))));
         rows.push_back(Acore::StringFormat("spi:{}", static_cast<uint32>(bot->GetStat(STAT_SPIRIT))));
         rows.push_back(Acore::StringFormat("armor:{}", bot->GetArmor()));
+        rows.push_back(Acore::StringFormat("res:{}:{}:{}:{}:{}",
+                                           bot->GetResistance(SPELL_SCHOOL_FIRE),
+                                           bot->GetResistance(SPELL_SCHOOL_NATURE),
+                                           bot->GetResistance(SPELL_SCHOOL_FROST),
+                                           bot->GetResistance(SPELL_SCHOOL_SHADOW),
+                                           bot->GetResistance(SPELL_SCHOOL_ARCANE)));
         rows.push_back(Acore::StringFormat("gold:{}", bot->GetMoney()));
         rows.push_back(Acore::StringFormat("zone:{}", bot->GetZoneId()));
     }
@@ -255,8 +278,11 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
             if (!item)
                 continue;
 
-            rows.push_back(Acore::StringFormat("{}:{}:{}", slot, item->GetEntry(),
-                                               item->GetItemRandomPropertyId()));
+            // Permanent enchant only. Temporary enchants and gems are noise for "why is this bot
+            // underperforming"; the permanent one answers whether the bot ever enchanted at all.
+            rows.push_back(Acore::StringFormat("{}:{}:{}:{}", slot, item->GetEntry(),
+                                               item->GetItemRandomPropertyId(),
+                                               item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT)));
         }
     }
     else if (section == "SKILL")
@@ -281,7 +307,54 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
             if (!questId)
                 continue;
 
-            rows.push_back(Acore::StringFormat("{}:{}", questId, static_cast<uint32>(bot->GetQuestStatus(questId))));
+            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+            if (!quest)
+                continue;
+
+            // Objective progress is the reason this section exists. "Bot has quest 1234" tells you
+            // nothing; "bot has killed 0/8 for six hours" tells you the spawn is unreachable, the
+            // mob is tapped by something else, or the bot is standing in the wrong place entirely.
+            std::string objectives;
+
+            for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
+            {
+                if (!quest->RequiredNpcOrGo[i] || !quest->RequiredNpcOrGoCount[i])
+                    continue;
+
+                if (!objectives.empty())
+                    objectives += ',';
+
+                objectives += Acore::StringFormat("{}/{}", bot->GetQuestSlotCounter(slot, i),
+                                                  quest->RequiredNpcOrGoCount[i]);
+            }
+
+            // Item objectives are counted from the bag rather than the quest log: the four slot
+            // counters track creatures and objects only, and reading them for an item objective
+            // reports a confident zero forever.
+            for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+            {
+                if (!quest->RequiredItemId[i] || !quest->RequiredItemCount[i])
+                    continue;
+
+                if (!objectives.empty())
+                    objectives += ',';
+
+                objectives += Acore::StringFormat("{}/{}", bot->GetItemCount(quest->RequiredItemId[i], true),
+                                                  quest->RequiredItemCount[i]);
+            }
+
+            if (objectives.empty())
+                objectives = "-";
+
+            // The title has to travel. Item ids resolve against the client's own cache, but there is
+            // no client-side database of quests it has never taken, and no Lua call to ask the
+            // server for one -- so unlike GEAR, sending only ids here would render 25 blank lines.
+            //
+            // Title goes last because quest names contain colons ("Bring Me Shackles!: ..." and
+            // friends) and the client rejoins everything past this point.
+            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}", questId,
+                                               static_cast<uint32>(bot->GetQuestStatus(questId)),
+                                               quest->GetQuestLevel(), objectives, quest->GetTitle()));
         }
     }
     else

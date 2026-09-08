@@ -664,8 +664,20 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     {
         std::string response = HandleRemoteCommand(filtered.substr(6));
         WorldPacket data;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, response.c_str(), LANG_ADDON, CHAT_TAG_NONE, bot->GetGUID(),
-                                     bot->GetName());
+        // CHAT_MSG_ADDON is the event the client raises for addon traffic, not a channel it can
+        // receive on. Sending it as the message type is fatal: the 3.3.5 client has no inbound case
+        // for it and dies with ERROR #134 the instant the packet lands. Whispering `debug <cmd>` to
+        // a bot therefore crashed the sender's client every time.
+        //
+        // The type says which channel carried the message; the language marks it as addon data. So
+        // reply as a whisper either way, and only tag it LANG_ADDON when the request itself came in
+        // over the `#a ` addon prefix -- a human who typed `debug ...` wants to read the answer, and
+        // LANG_ADDON would hide it from them.
+        bool const addonReply = currentChat.first == CHAT_MSG_ADDON;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response.c_str(),
+                                     addonReply ? LANG_ADDON : LANG_UNIVERSAL, CHAT_TAG_NONE,
+                                     bot->GetGUID(), bot->GetName(),
+                                     fromPlayer.GetGUID(), fromPlayer.GetName());
         ServerFacade::instance().SendPacket(&fromPlayer, &data);
         return;
     }

@@ -32,14 +32,18 @@ local handlers = {}
 local inflight = {}
 local clearInflight
 
-BI.zones   = {}   -- zoneId -> bot count
+BI.zones     = {}   -- zoneId -> bot count
+BI.zoneNames = {}   -- zoneId -> name (server-sent; the client cannot resolve area ids itself)
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
 BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
 BI.lastError = nil
 
+-- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
+-- field after a blank one and makes a row parse as something plausible but wrong -- the worst way
+-- for a debugging tool to fail. Appending the separator lets the trailing field match too.
 local function split(str, sep)
     local out = {}
-    for piece in string.gmatch(str, "([^" .. sep .. "]+)") do
+    for piece in string.gmatch(str .. sep, "([^" .. sep .. "]*)" .. sep) do
         table.insert(out, piece)
     end
     return out
@@ -68,6 +72,103 @@ function BI:RequestDetail(guid, section)
     self:Send("DETAIL", guid, section); self:MarkSent("DETAIL", guid .. ":" .. section)
 end
 
+BI.SECTIONS = { "CORE", "GEAR", "SKILL", "QUEST" }
+
+--- Request every eagerly-loaded section for one bot.
+-- RECIPE is deliberately absent: it is an order of magnitude larger than the rest and is fetched
+-- only when its tab is opened (A5).
+function BI:RequestBot(guid)
+    -- Hold exactly one bot's detail at a time. Two reasons, both found by testing rather than
+    -- reasoning: nothing can then render a previous bot's data by mistake, and clicking through a
+    -- few hundred bots over a session cannot quietly accumulate all of their detail. The cache was
+    -- never read across bots anyway -- a re-select always refetches -- so keeping the rest bought
+    -- nothing but a leak.
+    self.detail = {}
+    for _, section in ipairs(self.SECTIONS) do
+        self:RequestDetail(guid, section)
+    end
+end
+
+--- DETAIL section parsers.
+--
+-- These live in the transport layer rather than the UI so they can be exercised offline against the
+-- exact bytes the server emits, without a running client. Every one of them takes the raw row list
+-- dispatch() assembled and returns a plain table.
+
+local CORE_SCALAR = {
+    level = true, class = true, race = true, armor = true, gold = true, zone = true,
+    str = true, agi = true, sta = true, int = true, spi = true,
+}
+local CORE_PAIR = { xp = true, hp = true, mana = true }
+
+function BI.parseCore(rows)
+    local core = { res = {} }
+    for _, row in ipairs(rows) do
+        local f = split(row, ":")
+        local k = f[1]
+        if k == "name" then
+            core.name = f[2]
+        elseif CORE_SCALAR[k] then
+            core[k] = tonumber(f[2])
+        elseif CORE_PAIR[k] then
+            core[k] = { tonumber(f[2]) or 0, tonumber(f[3]) or 0 }
+        elseif k == "res" then
+            core.res = {
+                fire   = tonumber(f[2]) or 0, nature = tonumber(f[3]) or 0,
+                frost  = tonumber(f[4]) or 0, shadow = tonumber(f[5]) or 0,
+                arcane = tonumber(f[6]) or 0,
+            }
+        end
+    end
+    return core
+end
+
+function BI.parseGear(rows)
+    local out = {}
+    for _, row in ipairs(rows) do
+        local f = split(row, ":")
+        local slot, item = tonumber(f[1]), tonumber(f[2])
+        if slot and item then
+            table.insert(out, { slot = slot, item = item,
+                                suffix = tonumber(f[3]) or 0, enchant = tonumber(f[4]) or 0 })
+        end
+    end
+    return out
+end
+
+function BI.parseSkill(rows)
+    local out = {}
+    for _, row in ipairs(rows) do
+        local f = split(row, ":")
+        local id = tonumber(f[1])
+        if id then
+            table.insert(out, { id = id, value = tonumber(f[2]) or 0, max = tonumber(f[3]) or 0 })
+        end
+    end
+    return out
+end
+
+function BI.parseQuest(rows)
+    local out = {}
+    for _, row in ipairs(rows) do
+        local f = split(row, ":")
+        local id = tonumber(f[1])
+        if id then
+            -- The title is everything from field 5 on, rejoined: quest names contain colons and
+            -- splitting one into pieces would truncate every such quest at its punctuation.
+            table.insert(out, {
+                id = id, status = tonumber(f[2]) or 0, level = tonumber(f[3]) or 0,
+                objectives = f[4] or "-", title = table.concat(f, ":", 5),
+            })
+        end
+    end
+    return out
+end
+
+BI.PARSERS = {
+    CORE = BI.parseCore, GEAR = BI.parseGear, SKILL = BI.parseSkill, QUEST = BI.parseQuest,
+}
+
 --- Called once a multi-chunk response is fully assembled.
 local function dispatch(verb, key, rows)
     clearInflight(verb, key)
@@ -79,10 +180,14 @@ local function dispatch(verb, key, rows)
     end
 
     if verb == "ZONES" then
-        BI.zones = {}
+        BI.zones, BI.zoneNames = {}, {}
         for _, row in ipairs(rows) do
             local f = split(row, ":")
-            if f[1] then BI.zones[tonumber(f[1])] = tonumber(f[2]) or 0 end
+            local id = tonumber(f[1])
+            if id then
+                BI.zones[id]     = tonumber(f[2]) or 0
+                BI.zoneNames[id] = f[3] or ("zone " .. id)
+            end
         end
         if handlers.OnZones then handlers.OnZones(BI.zones) end
 
@@ -117,10 +222,15 @@ local function dispatch(verb, key, rows)
     elseif verb == "DETAIL" then
         local f = split(key, ":")
         local guid, section = tonumber(f[1]), f[2]
-        BI.detail[guid] = BI.detail[guid] or {}
-        BI.detail[guid][section] = rows
-        BI.detail[guid].fetchedAt = GetTime()
-        if handlers.OnDetail then handlers.OnDetail(guid, section, rows) end
+        local parse = BI.PARSERS[section]
+
+        BI.detail[guid] = BI.detail[guid] or { fetchedAt = {} }
+        BI.detail[guid][section]   = parse and parse(rows) or rows
+        -- Per-section timestamps, not one per bot. Sections arrive separately and can be refreshed
+        -- separately, so a single stamp would label three fresh sections with the age of the fourth.
+        BI.detail[guid].fetchedAt[section] = GetTime()
+
+        if handlers.OnDetail then handlers.OnDetail(guid, section, BI.detail[guid][section]) end
     end
 end
 
