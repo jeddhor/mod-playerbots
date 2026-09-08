@@ -448,6 +448,9 @@ public:
     uint32 remoteTrainingMaxPerPass;
     uint32 lootRollDelayMinMs;
     uint32 lootRollDelayMaxMs;
+    bool inspectorEnabled;
+    uint32 inspectorMinSecurity;
+    uint32 inspectorMinIntervalMs;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

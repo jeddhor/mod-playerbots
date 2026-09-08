@@ -2992,3 +2992,17 @@ AiPlayerbot.Safety.CheckIntervalMs = 1000
 
 AiPlayerbot.Loot.RollDelayMinMs = 1500
 AiPlayerbot.Loot.RollDelayMaxMs = 4000
+
+#
+#    AiPlayerbot.Inspector.*
+#        Answers queries from the Bot Inspector addon over addon chat.
+#
+#        MinSecurityLevel gates who may ask (2 = GM). The responder additionally refuses any target
+#        that is not a bot -- without that check this is a general player-inspection tool rather than
+#        a bot debugger, which is a different feature with different consent implications.
+#        Defaults: 1, 2, 100
+#
+
+AiPlayerbot.Inspector.Enabled = 1
+AiPlayerbot.Inspector.MinSecurityLevel = 2
+AiPlayerbot.Inspector.MinIntervalMs = 100

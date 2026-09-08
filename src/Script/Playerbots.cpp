@@ -20,6 +20,7 @@
 #include "GatherRouteMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
+#include "BotInspectorMgr.h"
 #include "BotRollMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
@@ -84,7 +85,8 @@ public:
         PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
         PLAYERHOOK_ON_GIVE_EXP,
         PLAYERHOOK_ON_BEFORE_TELEPORT,
-        PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE
+        PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE,
+        PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE
     }) {}
 
     /**
@@ -94,6 +96,23 @@ public:
      * a whole 45-minute run -- far too rare to help anyone. A bot dying repeatedly is both far more
      * common and much closer to what the situation actually is.
      */
+    /**
+     * Intercepts Bot Inspector addon traffic.
+     *
+     * PlayerbotAI::HandleCommand returns early on CHAT_MSG_ADDON, so bot command handling never sees
+     * these. This hook fires before chat is dispatched anywhere, which is the one place a query can
+     * be answered without disturbing either path.
+     */
+    void OnPlayerBeforeSendChatMessage(Player* player, uint32& type, uint32& lang, std::string& msg) override
+    {
+        if (type == CHAT_MSG_ADDON && lang == LANG_ADDON && sBotInspectorMgr.HandleMessage(player, msg))
+        {
+            // Consumed. Blanking it stops an inspector query being relayed on as chat, which would
+            // put protocol text in front of other players.
+            msg.clear();
+        }
+    }
+
     void OnPlayerKilledByCreature(Creature* /*killer*/, Player* killed) override
     {
         if (killed && GET_PLAYERBOT_AI(killed))

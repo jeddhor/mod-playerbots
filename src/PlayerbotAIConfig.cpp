@@ -790,6 +790,9 @@ bool PlayerbotAIConfig::Initialize()
     remoteTrainingMaxPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Training.MaxPerPass", 5);
     lootRollDelayMinMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Loot.RollDelayMinMs", 1500);
     lootRollDelayMaxMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Loot.RollDelayMaxMs", 4000);
+    inspectorEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Inspector.Enabled", true);
+    inspectorMinSecurity = sConfigMgr->GetOption<uint32>("AiPlayerbot.Inspector.MinSecurityLevel", 2);
+    inspectorMinIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Inspector.MinIntervalMs", 100);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);

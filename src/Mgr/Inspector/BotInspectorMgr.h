@@ -1,0 +1,91 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
+#ifndef PLAYERBOTS_BOTINSPECTORMGR_H
+#define PLAYERBOTS_BOTINSPECTORMGR_H
+
+#include "Define.h"
+#include "ObjectGuid.h"
+
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+class Player;
+
+/**
+ * Answers queries from the Bot Inspector addon.
+ *
+ * A WoW addon cannot read the server. Everything it displays must have been sent to it, so this is
+ * the half of that tool that lives server-side; the addon is the smaller half.
+ *
+ * Everything is on demand and nothing is pushed. The addon asks for the zones that have bots, then
+ * for one zone's roster, then for one bot's detail. That shape exists because the naive design --
+ * send every bot and filter client-side -- is about 125 chunks for 500 bots at the 255-byte addon
+ * message limit, and it would have been re-sent on a timer. Asking per zone keeps every response
+ * small and makes the realm's size stop mattering: a 3000-bot server costs no more per interaction
+ * than a 200-bot one, because nothing ever asks for "all bots".
+ *
+ * It is a debugging tool. Nothing here needs to be live, which is what allows the roster diff, the
+ * refresh timer and the cache invalidation to be omitted entirely -- and with them the class of bug
+ * where the panel confidently shows data from thirty seconds ago.
+ */
+class BotInspectorMgr
+{
+public:
+    static BotInspectorMgr& instance()
+    {
+        static BotInspectorMgr instance;
+        return instance;
+    }
+
+    /**
+     * Handle one addon message. Returns true if it was ours and has been dealt with.
+     *
+     * `msg` is the raw addon payload; the caller has already established it came over an addon
+     * channel.
+     */
+    bool HandleMessage(Player* sender, std::string const& msg);
+
+private:
+    BotInspectorMgr() = default;
+    ~BotInspectorMgr() = default;
+
+    BotInspectorMgr(BotInspectorMgr const&) = delete;
+    BotInspectorMgr& operator=(BotInspectorMgr const&) = delete;
+
+    /// Send one logical response, split across as many addon messages as it needs.
+    void Reply(Player* to, std::string const& verb, std::string const& key,
+               std::vector<std::string> const& rows);
+
+    void SendError(Player* to, uint32 code, std::string const& text);
+
+    void HandleZones(Player* to);
+    void HandleList(Player* to, uint32 zoneId);
+    void HandleFind(Player* to, std::string const& needle);
+    void HandleDetail(Player* to, ObjectGuid::LowType botGuid, std::string const& section);
+
+    /**
+     * True if this account may inspect bots at all.
+     *
+     * Two gates, and the second matters more than the first: requests are honoured only above a
+     * configured GM level, **and** only for targets that are actually bots. Without the second
+     * check this becomes a general player-inspection tool, which is a different feature with
+     * different consent implications, and not one anybody asked for.
+     */
+    bool IsAllowed(Player* sender) const;
+
+    /// Crude per-account rate limit, so a held-down key cannot turn into a realm scan per keystroke.
+    bool RateLimit(Player* sender);
+
+    std::mutex _mutex;
+    std::unordered_map<uint32, uint32> _lastRequestMs;
+};
+
+#define sBotInspectorMgr BotInspectorMgr::instance()
+
+#endif
