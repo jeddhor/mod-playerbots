@@ -32,6 +32,9 @@ local handlers = {}
 local inflight = {}
 local clearInflight
 
+-- Ceiling on rows in a single assembly. See the check in receive().
+local MAX_ASSEMBLY_ROWS = 2000
+
 BI.zones     = {}   -- zoneId -> bot count
 BI.zoneNames = {}   -- zoneId -> name (server-sent; the client cannot resolve area ids itself)
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
@@ -61,16 +64,20 @@ function BI:Send(...)
 end
 
 function BI:RequestZones()
-    self:Send("ZONES"); self:MarkSent("ZONES", "0")
+    self:Send("ZONES")
+    self:MarkSent("ZONES", "0", function() BI:RequestZones() end)
 end
 function BI:RequestList(zoneId)
-    self:Send("LIST", zoneId); self:MarkSent("LIST", tostring(zoneId))
+    self:Send("LIST", zoneId)
+    self:MarkSent("LIST", tostring(zoneId), function() BI:RequestList(zoneId) end)
 end
 function BI:RequestFind(needle)
-    self:Send("FIND", needle); self:MarkSent("FIND", needle)
+    self:Send("FIND", needle)
+    self:MarkSent("FIND", needle, function() BI:RequestFind(needle) end)
 end
 function BI:RequestDetail(guid, section)
-    self:Send("DETAIL", guid, section); self:MarkSent("DETAIL", guid .. ":" .. section)
+    self:Send("DETAIL", guid, section)
+    self:MarkSent("DETAIL", guid .. ":" .. section, function() BI:RequestDetail(guid, section) end)
 end
 
 BI.SECTIONS = { "CORE", "GEAR", "SKILL", "QUEST" }
@@ -303,12 +310,26 @@ local function receive(body)
     local id = verb .. ":" .. (key or "")
     local buf = pending[id]
     if not buf or seq == 1 then
-        buf = { rows = {}, total = total }
+        -- startedAt lets the sweep below reclaim an assembly whose last chunk never lands. Without
+        -- it a buffer was only ever freed by completion or by a timeout on a request still marked
+        -- in flight, so a truncated response left rows behind for the rest of the session.
+        buf = { rows = {}, total = total, startedAt = GetTime() }
         pending[id] = buf
     end
 
     for i = 6, #fields do
         if fields[i] ~= "" then table.insert(buf.rows, fields[i]) end
+    end
+
+    -- A response is bounded by what the server will send: RECIPE caps at 400 rows and everything
+    -- else is far smaller. Anything past this is a malformed or hostile stream, and growing a table
+    -- to match it is how an addon turns a bad packet into a client that has to be restarted.
+    if #buf.rows > MAX_ASSEMBLY_ROWS then
+        pending[id] = nil
+        clearInflight(verb, key)
+        BI.lastError = "response too large, discarded"
+        if handlers.OnError then handlers.OnError(key, BI.lastError) end
+        return
     end
 
     if seq >= total then
@@ -333,8 +354,18 @@ end
 -- tool that cannot tell "waiting" from "nobody is listening" is not much of one.
 local REQUEST_TIMEOUT = 5
 
-function BI:MarkSent(verb, key)
-    inflight[verb .. ":" .. (key or "")] = GetTime()
+-- Retries, not attempts. One means: send, and if that is not answered, send once more, then report.
+local MAX_RETRIES = 1
+
+--- Note a request as outstanding, remembering how to reissue it.
+--
+-- `tries` is carried across from any existing entry, because a retry goes back through the same
+-- Request* call that lands here -- without that the counter would reset on every attempt and a
+-- dead server would be retried forever.
+function BI:MarkSent(verb, key, resend)
+    local id = verb .. ":" .. (key or "")
+    local prev = inflight[id]
+    inflight[id] = { at = GetTime(), tries = (prev and prev.tries) or 0, resend = resend }
 end
 
 function clearInflight(verb, key)
@@ -348,14 +379,45 @@ watchdog:SetScript("OnUpdate", function(self, elapsed)
     self.acc = 0
 
     local now = GetTime()
-    for id, sentAt in pairs(inflight) do
-        if now - sentAt > REQUEST_TIMEOUT then
-            inflight[id] = nil
+
+    for id, entry in pairs(inflight) do
+        if now - entry.at > REQUEST_TIMEOUT then
+            if entry.tries < MAX_RETRIES and entry.resend then
+                -- One silent retry. A single dropped message is common enough that reporting a
+                -- failure on the first miss trains the operator to ignore the message.
+                entry.tries = entry.tries + 1
+                entry.at    = now
+                pending[id] = nil
+                local ok = pcall(entry.resend)
+                if not ok then
+                    inflight[id] = nil
+                    if handlers.OnTimeout then handlers.OnTimeout(id) end
+                end
+            else
+                inflight[id] = nil
+                pending[id]  = nil
+                if handlers.OnTimeout then handlers.OnTimeout(id) end
+            end
+        end
+    end
+
+    -- Sweep assemblies nothing is waiting on any more. An unsolicited or truncated response is
+    -- never in `inflight`, so the loop above cannot reclaim it; over a long session those are the
+    -- buffers that accumulate.
+    for id, buf in pairs(pending) do
+        if not inflight[id] and now - (buf.startedAt or now) > REQUEST_TIMEOUT * 2 then
             pending[id] = nil
-            if handlers.OnTimeout then handlers.OnTimeout(id) end
         end
     end
 end)
+
+--- Counts held by the assembly layer, for tests and for /bi debug.
+function BI:Stats()
+    local p, i = 0, 0
+    for _ in pairs(pending)  do p = p + 1 end
+    for _ in pairs(inflight) do i = i + 1 end
+    return p, i
+end
 
 function BI:SetHandler(name, fn) handlers[name] = fn end
 

@@ -79,6 +79,22 @@ bool BotInspectorMgr::RateLimit(Player* sender, std::string const& verb, std::st
 
     std::lock_guard<std::mutex> guard(_mutex);
 
+    // Reclaim buckets for accounts that have stopped asking. One entry per account that ever used
+    // the inspector is small, but it is unbounded over an uptime measured in weeks, and a map that
+    // only ever grows is the kind of thing that is fine until it is not. Swept opportunistically so
+    // there is no timer to own.
+    if (_buckets.size() > 64)
+    {
+        constexpr uint32 IDLE_MS = 10 * 60 * 1000;
+        for (auto itr = _buckets.begin(); itr != _buckets.end();)
+        {
+            if (itr->first != account && getMSTimeDiff(itr->second.lastMs, now) > IDLE_MS)
+                itr = _buckets.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
     Bucket& bucket = _buckets[account];
     if (bucket.lastMs == 0)
         bucket.tokens = CAPACITY;

@@ -649,9 +649,24 @@ function UI:SelectBot(guid, bot)
     self:SetStatus("requesting detail for %s...", (bot and bot.name) or ("bot " .. guid))
 end
 
-BI:SetHandler("OnDetail", function(guid, section)
+--- Ask the client for every gear item the moment the list arrives.
+--
+-- GetItemInfo is not only a lookup: calling it on an uncached item is what asks the server for that
+-- item. Waiting until the Gear tab was opened meant the queries started at the instant their
+-- answers were needed, so the first render was always question marks. GEAR is fetched eagerly on
+-- selection, so priming here gives the round trip the seconds it takes to click a tab.
+--
+-- Nothing is done with the return value; the call itself is the point.
+local function primeItemCache(gear)
+    for _, g in ipairs(gear or {}) do
+        if g.item and g.item ~= 0 then GetItemInfo(g.item) end
+    end
+end
+
+BI:SetHandler("OnDetail", function(guid, section, data)
     -- A reply for a bot the operator has already clicked away from must not redraw this pane.
     if guid ~= UI.selectedBot then return end
+    if section == "GEAR" then primeItemCache(data) end
     if section == UI.activeSection or section == "CORE" then drawSection() end
 end)
 
@@ -678,11 +693,14 @@ local itemWatch = CreateFrame("Frame")
 itemWatch:SetScript("OnUpdate", function(self, elapsed)
     if not gearPending then return end
     self.acc = (self.acc or 0) + elapsed
-    if self.acc < 0.5 then return end
+    if self.acc < 0.1 then return end
     self.acc = 0
 
+    -- 0.1s rather than 0.5s. GET_ITEM_INFO_RECEIVED does not exist on 3.3.5 -- verified by looking
+    -- for the string in Wow.exe, it is not there -- so polling is the only route, and half a second
+    -- was long enough to be visible as a question mark that "fixed itself".
     gearRetries = gearRetries + 1
-    if gearRetries > 20 then gearPending = false; return end
+    if gearRetries > 100 then gearPending = false; return end
     if UI.activeSection == "GEAR" then drawSection() end
 end)
 
