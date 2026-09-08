@@ -111,7 +111,19 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
         if (unit->ToCreature())
             aggroRange = std::min(30.0f, unit->ToCreature()->GetAggroRange(bot) + 10.0f);
         bool outOfAggro = unit->ToCreature() && bot->GetDistance(unit) > aggroRange;
-        if (inactiveGrindStatus && outOfAggro)
+
+        // The aggro-range exemption exists so a bot on an errand does not walk past something that
+        // is about to attack it anyway -- fight it now rather than be jumped mid-route.
+        //
+        // A neutral creature is never about to attack: it has to be struck first. Treating "close"
+        // as "about to fight me" therefore turned every neutral mob along a route into a detour.
+        // That is how a bot clears an entire platform of Mana Wyrms while the quest object it walked
+        // there for sits untouched in the middle, and only collects it once nothing is left to kill.
+        //
+        // So for a neutral creature the quest filter always applies: no quest needs it, no fight.
+        bool const wouldAttackFirst = unit->IsHostileTo(bot);
+
+        if (inactiveGrindStatus && (outOfAggro || !wouldAttackFirst))
         {
             if (needForQuestMap.find(unit->GetEntry()) == needForQuestMap.end())
                 needForQuestMap[unit->GetEntry()] = needForQuest(unit);
