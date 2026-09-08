@@ -446,6 +446,8 @@ public:
     uint32 safetyCheckIntervalMs;
     bool remoteTrainingEnabled;
     uint32 remoteTrainingMaxPerPass;
+    uint32 lootRollDelayMinMs;
+    uint32 lootRollDelayMaxMs;
     uint32 gatheringMinFreeBagSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;

@@ -2975,3 +2975,20 @@ AiPlayerbot.Quest.TurnInTeleportDistance = 800
 
 AiPlayerbot.Safety.RecoverFromFalls = 1
 AiPlayerbot.Safety.CheckIntervalMs = 1000
+
+#
+#    AiPlayerbot.Loot.RollDelayMinMs / RollDelayMaxMs
+#        How long a bot waits before answering a loot roll.
+#
+#        Bots previously voted from inside the handler for the roll-start packet, deciding in zero
+#        milliseconds. For a selfbot -- where bot AI drives a real player's session -- the roll could
+#        be resolved and torn down before that client had finished building the roll frame, leaving
+#        the need/greed dialog on screen permanently, outliving even its own progress bar.
+#
+#        The delay gives the client time to receive the roll, draw the frame, and then receive the
+#        resolution that closes it. Jittered so a group of bots does not answer in unison.
+#        Defaults: 1500, 4000
+#
+
+AiPlayerbot.Loot.RollDelayMinMs = 1500
+AiPlayerbot.Loot.RollDelayMaxMs = 4000

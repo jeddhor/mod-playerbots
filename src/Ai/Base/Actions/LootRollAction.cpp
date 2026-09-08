@@ -4,6 +4,7 @@
  * or (at your option) any later version.
  */
 
+#include "BotRollMgr.h"
 #include "LootRollAction.h"
 #include "Event.h"
 #include "Group.h"
@@ -97,10 +98,10 @@ bool LootRollAction::Execute(Event /*event*/)
         {
             case MASTER_LOOT:
             case FREE_FOR_ALL:
-                group->CountRollVote(bot->GetGUID(), guid, PASS);
+                sBotRollMgr.QueueRoll(bot, guid, PASS);
                 break;
             default:
-                group->CountRollVote(bot->GetGUID(), guid, vote);
+                sBotRollMgr.QueueRoll(bot, guid, vote);
                 break;
         }
         voted = true;
@@ -177,7 +178,7 @@ bool MasterLootRollAction::Execute(Event event)
     if (!group)
         return false;
 
-    group->CountRollVote(bot->GetGUID(), creatureGuid, CalculateRollVote(proto));
+    sBotRollMgr.QueueRoll(bot, creatureGuid, CalculateRollVote(proto));
 
     return true;
 }

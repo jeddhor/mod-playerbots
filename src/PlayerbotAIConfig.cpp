@@ -788,6 +788,8 @@ bool PlayerbotAIConfig::Initialize()
     safetyCheckIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Safety.CheckIntervalMs", 1000);
     remoteTrainingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Training.RemoteEnabled", true);
     remoteTrainingMaxPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Training.MaxPerPass", 5);
+    lootRollDelayMinMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Loot.RollDelayMinMs", 1500);
+    lootRollDelayMaxMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Loot.RollDelayMaxMs", 4000);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
