@@ -14,6 +14,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Player;
@@ -80,6 +81,9 @@ private:
     /// True if this bot may spend its own gold on training.
     static bool MaySpend(Player* bot);
 
+    /// The spell a trainer entry actually teaches, unwrapping a "learn spell" effect.
+    static uint32 TaughtSpell(uint32 spellId);
+
     /// True if this bot meets every requirement a real trainer would check for this spell.
     static bool Qualifies(Player* bot, TrainableSpell const& entry);
 
@@ -89,6 +93,10 @@ private:
     mutable std::shared_mutex _mutex;
     std::unordered_map<ObjectGuid, uint32> _timers;
 
+    /// Spells a bot paid for and did not receive. Never attempted again for that bot.
+    std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _unteachable;
+
+    uint32 _refunded{0};
     uint32 _learnedTotal{0};
     uint32 _passesRun{0};
 };

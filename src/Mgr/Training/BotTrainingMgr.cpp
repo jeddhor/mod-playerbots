@@ -14,6 +14,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "QueryResult.h"
+#include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "StringFormat.h"
 
@@ -81,9 +82,26 @@ bool BotTrainingMgr::MaySpend(Player* bot)
     return GET_PLAYERBOT_AI(bot) != nullptr;
 }
 
+uint32 BotTrainingMgr::TaughtSpell(uint32 spellId)
+{
+    // npc_trainer's SpellID is sometimes the spell the trainer *casts*, whose effect teaches the
+    // real one. Asking HasSpell about the wrapper then answers "no" forever, however many times it
+    // is bought.
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info)
+        return spellId;
+
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].Effect == SPELL_EFFECT_LEARN_SPELL && info->Effects[i].TriggerSpell)
+            return info->Effects[i].TriggerSpell;
+
+    return spellId;
+}
+
 bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
 {
-    if (bot->HasSpell(entry.spellId))
+    // Test knowledge of what is actually taught, not of the wrapper that teaches it.
+    if (bot->HasSpell(TaughtSpell(entry.spellId)) || bot->HasSpell(entry.spellId))
         return false;
 
     if (entry.reqLevel && bot->GetLevel() < entry.reqLevel)
@@ -128,13 +146,47 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
         if (!Qualifies(bot, entry))
             continue;
 
+        {
+            std::shared_lock<std::shared_mutex> guard(_mutex);
+            auto itr = _unteachable.find(bot->GetGUID());
+            if (itr != _unteachable.end() && itr->second.count(entry.spellId))
+                continue;
+        }
+
         // continue, not break: the list runs highest rank first, so an entry that is out of reach is
         // followed by cheaper lower ranks that are not.
         if (spent + entry.cost > budget)
             continue;
 
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(entry.spellId);
+        uint32 const taught = TaughtSpell(entry.spellId);
+
         bot->ModifyMoney(-int32(entry.cost));
-        bot->learnSpell(entry.spellId);
+
+        // Same branch a real trainer purchase takes: a spell whose effect is to teach must be cast,
+        // not added to the spellbook. Adding the wrapper directly is what made every pass buy the
+        // same spells again.
+        if (info && info->HasEffect(SPELL_EFFECT_LEARN_SPELL))
+            bot->CastSpell(bot, entry.spellId, true);
+        else
+            bot->learnSpell(entry.spellId, false);
+
+        // Verify, refund and blacklist. Charging for something that does not stick is a loop that
+        // empties a bot's purse thirty seconds at a time, so no purchase is trusted to have worked
+        // just because it was made. This is the guard that makes the class of bug survivable, not
+        // merely the one instance of it that was found.
+        if (!bot->HasSpell(taught) && !bot->HasSpell(entry.spellId))
+        {
+            bot->ModifyMoney(int32(entry.cost));
+
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            _unteachable[bot->GetGUID()].insert(entry.spellId);
+            ++_refunded;
+
+            LOG_DEBUG("playerbots", "[Train] {} could not learn spell {}; refunded {}c and will not retry",
+                      bot->GetName(), entry.spellId, entry.cost);
+            continue;
+        }
 
         spent += entry.cost;
         ++learned;
