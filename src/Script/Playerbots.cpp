@@ -23,6 +23,7 @@
 #include "BotInspectorMgr.h"
 #include "BotRollMgr.h"
 #include "BotSafetyMgr.h"
+#include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "RandomPlayerbotMgr.h"
@@ -208,6 +209,11 @@ public:
             // it is asked to make decisions from wherever it has ended up.
             sBotSafetyMgr.Update(player, diff);
             sBotRollMgr.Update(player, diff);
+
+            // Training runs here rather than from a strategy trigger. It has to happen for every
+            // bot regardless of which strategies it carries, and hanging it off the loot strategy
+            // meant a self bot could stand at its own trainer, with money, and never be asked.
+            sBotTrainingMgr.Update(player, diff);
 
             botAI->UpdateAI(diff);
         }

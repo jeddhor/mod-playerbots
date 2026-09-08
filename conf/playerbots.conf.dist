@@ -1408,7 +1408,12 @@ AiPlayerbot.EnableNewRpgStrategy = 1
 # Rest          (Default: 5   Take a break for a while and do nothing)
 # OutdoorPvp    (Default: 10  Participate in outdoor PvP capture points if already in an outdoor PvP zone)
 AiPlayerbot.RpgStatusProbWeight.WanderRandom = 15
-AiPlayerbot.RpgStatusProbWeight.WanderNpc = 20
+#    A weight of 0 disables the activity outright: the selector skips a zero-weight status before
+#    the archetype multiplier is applied, so it can never be revived by a bot's disposition. Any
+#    non-zero value can be scaled up by that multiplier and is floored at 1, so "very rare" is not
+#    reachable for a Socialite -- 0 or a real weight are the honest choices.
+#    Turned off here: five minutes per episode loitering near NPCs is time not spent questing.
+AiPlayerbot.RpgStatusProbWeight.WanderNpc = 0
 AiPlayerbot.RpgStatusProbWeight.GoGrind = 15
 AiPlayerbot.RpgStatusProbWeight.GoCamp = 10
 AiPlayerbot.RpgStatusProbWeight.DoQuest = 60
