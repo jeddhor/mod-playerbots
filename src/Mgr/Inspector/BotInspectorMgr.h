@@ -79,11 +79,29 @@ private:
      */
     bool IsAllowed(Player* sender) const;
 
-    /// Crude per-account rate limit, so a held-down key cannot turn into a realm scan per keystroke.
-    bool RateLimit(Player* sender);
+    /**
+     * Per-account token bucket, so a held-down key cannot turn into a realm scan per keystroke.
+     *
+     * A minimum interval between requests was the obvious thing and it was wrong. Selecting a bot
+     * fires four section requests from one Lua loop, which arrive inside the same world tick; a
+     * 100ms floor rejected three of them, and because a rejection was silent the panel reported it
+     * as "server has no inspector". A bucket admits that burst by design and still throttles a
+     * sustained flood, which is the behaviour actually wanted.
+     *
+     * Cost is per verb: the cheap listings are one token, FIND is three because it is the only
+     * request whose cost scales with bot count, and RECIPE is five because it is the only response
+     * measured in tens of messages.
+     */
+    bool RateLimit(Player* sender, std::string const& verb, std::string const& section);
+
+    struct Bucket
+    {
+        float tokens = 0.0f;
+        uint32 lastMs = 0;
+    };
 
     std::mutex _mutex;
-    std::unordered_map<uint32, uint32> _lastRequestMs;
+    std::unordered_map<uint32, Bucket> _buckets;
 };
 
 #define sBotInspectorMgr BotInspectorMgr::instance()

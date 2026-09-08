@@ -189,6 +189,7 @@ function draw()
             row:Show()
             if item.kind == "zone" then
                 local z = item.zone
+                W.SetRowClassIcon(row, nil, 4)   -- rows are recycled; clear a previous bot's icon
                 row.text:SetText(string.format("%s %s", expanded[z.id] and "-" or "+", z.name))
                 row.text:SetTextColor(1, 0.82, 0)
                 row.right:SetText(tostring(z.n))
@@ -197,13 +198,15 @@ function draw()
             elseif item.kind == "bot" then
                 local b = item.bot
                 local r, g, bl = W.ClassColor(b.class)
-                row.text:SetText("    " .. (b.name or "?"))
+                W.SetRowClassIcon(row, b.class, 16)
+                row.text:SetText(b.name or "?")
                 row.text:SetTextColor(r, g, bl)
                 row.right:SetText(tostring(b.level or 0))
                 row:SetScript("OnClick", function() UI:SelectBot(b.guid, b) end)
 
             else
-                row.text:SetText("    " .. item.text)
+                W.SetRowClassIcon(row, nil, 16)
+                row.text:SetText(item.text)
                 row.text:SetTextColor(0.6, 0.6, 0.6)
                 row:SetScript("OnClick", nil)
             end

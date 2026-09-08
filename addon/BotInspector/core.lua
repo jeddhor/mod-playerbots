@@ -74,6 +74,19 @@ end
 
 BI.SECTIONS = { "CORE", "GEAR", "SKILL", "QUEST" }
 
+--- Sections fetched only when their tab is opened.
+-- RECIPE is an order of magnitude larger than the rest -- a maxed crafter runs to tens of messages
+-- where every other section is one or two -- and most sessions never look at it.
+BI.LAZY_SECTIONS = { RECIPE = true }
+
+--- Fetch one lazy section, unless it is already held for this bot.
+function BI:RequestLazy(guid, section)
+    local d = self.detail[guid]
+    if d and d[section] then return false end
+    self:RequestDetail(guid, section)
+    return true
+end
+
 --- Request every eagerly-loaded section for one bot.
 -- RECIPE is deliberately absent: it is an order of magnitude larger than the rest and is fetched
 -- only when its tab is opened (A5).
@@ -175,8 +188,27 @@ function BI.parseQuest(rows)
     return out
 end
 
+function BI.parseRecipe(rows)
+    -- .truncated rides alongside the array part, like parseQuest's .zones.
+    local out = { truncated = nil }
+    for _, row in ipairs(rows) do
+        local f = split(row, ":")
+        if f[1] == "#more" then
+            out.truncated = tonumber(f[2]) or 0
+        else
+            local skill, spell = tonumber(f[1]), tonumber(f[2])
+            if skill and spell then
+                table.insert(out, { skill = skill, spell = spell,
+                                    min = tonumber(f[3]) or 0, grey = tonumber(f[4]) or 0 })
+            end
+        end
+    end
+    return out
+end
+
 BI.PARSERS = {
     CORE = BI.parseCore, GEAR = BI.parseGear, SKILL = BI.parseSkill, QUEST = BI.parseQuest,
+    RECIPE = BI.parseRecipe,
 }
 
 --- Called once a multi-chunk response is fully assembled.

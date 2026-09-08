@@ -12,7 +12,12 @@ local PANE_W = UI.RIGHT_W
 local PANE_H = UI.right:GetHeight()
 local CONTENT_TOP = -72
 
-local SECTION_LABEL = { CORE = "Stats", GEAR = "Gear", SKILL = "Profs", QUEST = "Quests" }
+local SECTION_LABEL = { CORE = "Stats", GEAR = "Gear", SKILL = "Profs", QUEST = "Quests",
+                        RECIPE = "Recipes" }
+
+-- Tab order, which is not BI.SECTIONS: that list is what a bot selection fetches eagerly, and
+-- RECIPE deliberately is not in it.
+local TABS = { "CORE", "GEAR", "SKILL", "QUEST", "RECIPE" }
 local QUEST_STATUS  = { [0] = "none", [1] = "COMPLETE", [3] = "in progress", [5] = "FAILED", [6] = "rewarded" }
 
 -- Blizzard's own paperdoll order. Weapons sit across the bottom; the 3D model the operator did not
@@ -46,13 +51,20 @@ fetched:SetPoint("TOPRIGHT", -12, -32)
 fetched:SetJustifyH("RIGHT")
 
 local tabs = {}
-for i, section in ipairs(BI.SECTIONS) do
+for i, section in ipairs(TABS) do
     local b = CreateFrame("Button", nil, UI.right, "UIPanelButtonTemplate")
     b:SetWidth(84); b:SetHeight(20)
     b:SetPoint("TOPLEFT", 10 + (i - 1) * 88, -50)
     b:SetText(SECTION_LABEL[section])
     b:SetScript("OnClick", function()
         UI.activeSection = section
+        -- Opening the tab is what fetches a lazy section. Nothing else asks for it, and a second
+        -- visit reuses what arrived the first time.
+        if BI.LAZY_SECTIONS[section] and UI.selectedBot then
+            if BI:RequestLazy(UI.selectedBot, section) then
+                UI:SetStatus("fetching recipes -- this is the large one, give it a moment")
+            end
+        end
         drawSection()
     end)
     tabs[section] = b
@@ -82,7 +94,8 @@ local function contentFrame()
     return f
 end
 
-local panes = { CORE = contentFrame(), GEAR = contentFrame(), SKILL = contentFrame(), QUEST = contentFrame() }
+local panes = { CORE = contentFrame(), GEAR = contentFrame(), SKILL = contentFrame(),
+                QUEST = contentFrame(), RECIPE = contentFrame() }
 
 local hint = UI.right:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 hint:SetPoint("CENTER", UI.right, "CENTER", 0, 0)
@@ -137,9 +150,14 @@ local function renderCore(core)
         row.value:SetText(vals[def[2]])
     end
 
+    -- Blizzard's own school icons rather than the school names spelled out. Same glyphs the
+    -- character sheet uses, so a resistance is recognised without being read.
     local r = core.res or {}
-    resistLine:SetText(string.format("Resistances   fire %d   nature %d   frost %d   shadow %d   arcane %d",
-                       r.fire or 0, r.nature or 0, r.frost or 0, r.shadow or 0, r.arcane or 0))
+    local parts = { "Resistances  " }
+    for _, school in ipairs({ "fire", "nature", "frost", "shadow", "arcane" }) do
+        table.insert(parts, string.format("%s %d", W.Icon(W.RES_ICON[school], 14), r[school] or 0))
+    end
+    resistLine:SetText(table.concat(parts, "  "))
 
     local xp = core.xp or { 0, 0 }
     local pct = (xp[2] or 0) > 0 and xp[1] / xp[2] or 0
@@ -354,9 +372,15 @@ local function renderQuest(quests, botLevel)
 
             local right = (q.objectives ~= "-" and q.objectives ~= "")
                           and q.objectives or (QUEST_STATUS[q.status] or "")
+
+            -- The same "?" Blizzard puts over a turn-in NPC, so a finished quest is spotted by
+            -- shape rather than by reading the whole line.
+            local marker = q.status == 1 and W.Icon(W.QUEST_COMPLETE_ICON, 12) or "  "
+
             table.insert(questItems, {
                 kind = "quest", r = r, g = g, b = b, right = right,
-                text = string.format("   [%d] %s", q.level, q.title ~= "" and q.title or ("quest " .. q.id)),
+                text = string.format("  %s [%d] %s", marker, q.level,
+                                     q.title ~= "" and q.title or ("quest " .. q.id)),
             })
         end
     end
@@ -366,6 +390,115 @@ end
 
 W.MakeScrollable(panes.QUEST, function() return #questItems end,
                  function() return QUEST_VISIBLE end, drawQuestRows)
+
+-- ---- Recipes ---------------------------------------------------------------------------------
+
+local RECIPE_ROW_H = 14
+local recipeRows, recipeItems = {}, {}
+local RECIPE_VISIBLE = math.floor((PANE_H + CONTENT_TOP - 16) / RECIPE_ROW_H)
+
+for i = 1, RECIPE_VISIBLE do
+    local r = W.Row(panes.RECIPE, PANE_W - 24, RECIPE_ROW_H)
+    r:SetPoint("TOPLEFT", 8, -6 - (i - 1) * RECIPE_ROW_H)
+    recipeRows[i] = r
+end
+
+local function drawRecipeRows()
+    local offset = panes.RECIPE.offset or 0
+    if offset > math.max(0, #recipeItems - RECIPE_VISIBLE) then
+        offset = math.max(0, #recipeItems - RECIPE_VISIBLE)
+        panes.RECIPE.offset = offset
+    end
+
+    for i = 1, RECIPE_VISIBLE do
+        local row, item = recipeRows[i], recipeItems[i + offset]
+        row.right:SetText("")
+        row.link = nil
+        if not item then
+            row.text:SetText("")
+            row:Hide()
+        else
+            row:Show()
+            row.text:SetText(item.text)
+            row.text:SetTextColor(item.r, item.g, item.b)
+            row.right:SetText(item.right or "")
+            row.link = item.link
+        end
+    end
+end
+
+--- Trade-skill colouring, from the client's own convention.
+-- A recipe is grey once the bot's skill has passed the rank at which it stops giving skill-ups,
+-- which is the single fact that answers "why has this crafter stopped levelling".
+local function recipeColor(botSkill, grey)
+    if grey > 0 and botSkill >= grey then return 0.5, 0.5, 0.5, "trivial" end
+    if grey > 0 and botSkill >= grey - 15 then return 0.25, 0.75, 0.25, "green" end
+    if grey > 0 and botSkill >= grey - 30 then return 1.0, 1.0, 0.0, "yellow" end
+    return 1.0, 0.5, 0.25, "orange"
+end
+
+local function renderRecipe(recipes, skills)
+    recipeItems = {}
+
+    -- The bot's current rank per skill, so each recipe can be coloured against it.
+    local rank = {}
+    for _, sk in ipairs(skills or {}) do rank[sk.id] = sk.value end
+
+    if #recipes == 0 then
+        recipeItems = { { text = "no crafting recipes known", r = 0.6, g = 0.6, b = 0.6 } }
+        drawRecipeRows()
+        return
+    end
+
+    local bySkill = {}
+    for _, r in ipairs(recipes) do
+        bySkill[r.skill] = bySkill[r.skill] or {}
+        table.insert(bySkill[r.skill], r)
+    end
+
+    local order = {}
+    for skillId, list in pairs(bySkill) do table.insert(order, { id = skillId, list = list }) end
+    table.sort(order, function(a, b) return #a.list > #b.list end)
+
+    for _, group in ipairs(order) do
+        local known = rank[group.id]
+        table.insert(recipeItems, {
+            text = string.format("%s (%d)", SKILL_NAME[group.id] or ("skill " .. group.id), #group.list),
+            r = 1, g = 0.82, b = 0,
+            right = known and tostring(known) or "",
+        })
+
+        table.sort(group.list, function(a, b)
+            if a.grey ~= b.grey then return a.grey > b.grey end
+            return a.spell < b.spell
+        end)
+
+        for _, rec in ipairs(group.list) do
+            -- GetSpellInfo resolves locally: every spell is in the client's own Spell.dbc, which is
+            -- why the server sends bare ids here and nothing larger.
+            local spellName = GetSpellInfo(rec.spell)
+            local r, g, b, tier = recipeColor(known or 0, rec.grey)
+            table.insert(recipeItems, {
+                text = "   " .. (spellName or ("spell " .. rec.spell)),
+                r = r, g = g, b = b,
+                right = rec.grey > 0 and tostring(rec.grey) or "",
+                link = "spell:" .. rec.spell,
+            })
+        end
+    end
+
+    if recipes.truncated then
+        table.insert(recipeItems, {
+            text = string.format("   ...list capped at %d", recipes.truncated),
+            r = 0.7, g = 0.7, b = 0.7,
+        })
+    end
+
+    drawRecipeRows()
+end
+
+W.MakeScrollable(panes.RECIPE, function() return #recipeItems end,
+                 function() return RECIPE_VISIBLE end, drawRecipeRows)
 
 -- ---------------------------------------------------------------------------------------------
 -- Orchestration
@@ -407,10 +540,11 @@ function drawSection()
     end
 
     pane:Show()
-    if     UI.activeSection == "CORE"  then renderCore(data)
-    elseif UI.activeSection == "GEAR"  then renderGear(data)
-    elseif UI.activeSection == "SKILL" then renderSkill(data)
-    elseif UI.activeSection == "QUEST" then renderQuest(data, core and core.level or 0) end
+    if     UI.activeSection == "CORE"   then renderCore(data)
+    elseif UI.activeSection == "GEAR"   then renderGear(data)
+    elseif UI.activeSection == "SKILL"  then renderSkill(data)
+    elseif UI.activeSection == "QUEST"  then renderQuest(data, core and core.level or 0)
+    elseif UI.activeSection == "RECIPE" then renderRecipe(data, d.SKILL) end
 
     local at = d.fetchedAt and d.fetchedAt[UI.activeSection]
     fetched:SetText(at and string.format("fetched %ds ago", math.floor(GetTime() - at)) or "")
@@ -422,7 +556,8 @@ function UI:SelectBot(guid, bot)
     self.selectedBot   = guid
     self.selectedName  = bot and bot.name
     self.activeSection = "CORE"
-    panes.QUEST.offset = 0
+    panes.QUEST.offset  = 0
+    panes.RECIPE.offset = 0
     BI:RequestBot(guid)
     drawSection()
     self:SetStatus("requesting detail for %s...", (bot and bot.name) or ("bot " .. guid))

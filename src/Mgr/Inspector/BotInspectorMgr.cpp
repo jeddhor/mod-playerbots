@@ -13,6 +13,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "SpellMgr.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace
@@ -57,18 +59,36 @@ bool BotInspectorMgr::IsAllowed(Player* sender) const
            sender->GetSession()->GetSecurity() >= sPlayerbotAIConfig.inspectorMinSecurity;
 }
 
-bool BotInspectorMgr::RateLimit(Player* sender)
+bool BotInspectorMgr::RateLimit(Player* sender, std::string const& verb, std::string const& section)
 {
+    // Ten tokens is a little over two bot selections back to back, which is what an operator
+    // clicking through a roster actually does. Refill is one token per configured interval.
+    constexpr float CAPACITY = 10.0f;
+
+    float cost = 1.0f;
+    if (verb == "FIND")
+        cost = 3.0f;
+    else if (verb == "DETAIL" && section == "RECIPE")
+        cost = 5.0f;
+
     uint32 const account = sender->GetSession()->GetAccountId();
     uint32 const now = getMSTime();
+    uint32 const interval = std::max<uint32>(1, sPlayerbotAIConfig.inspectorMinIntervalMs);
 
     std::lock_guard<std::mutex> guard(_mutex);
 
-    auto itr = _lastRequestMs.find(account);
-    if (itr != _lastRequestMs.end() && GetMSTimeDiffToNow(itr->second) < sPlayerbotAIConfig.inspectorMinIntervalMs)
+    Bucket& bucket = _buckets[account];
+    if (bucket.lastMs == 0)
+        bucket.tokens = CAPACITY;
+    else
+        bucket.tokens = std::min(CAPACITY, bucket.tokens + float(getMSTimeDiff(bucket.lastMs, now)) / float(interval));
+
+    bucket.lastMs = now;
+
+    if (bucket.tokens < cost)
         return false;
 
-    _lastRequestMs[account] = now;
+    bucket.tokens -= cost;
     return true;
 }
 
@@ -378,6 +398,61 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
         for (auto const& [zoneId, name] : questZones)
             rows.push_back(Acore::StringFormat("#z:{}:{}", zoneId, Escape(name)));
     }
+    else if (section == "RECIPE")
+    {
+        // The one response big enough to misbehave, which is why the client fetches it only when
+        // its tab is opened. A maxed crafter with two professions knows several hundred recipes.
+        //
+        // Spell ids only. Unlike quests, the client can name any spell it is handed -- every spell
+        // is in its own Spell.dbc -- so this is the "ids, never names" rule working as intended,
+        // and it is what keeps a 300-recipe list to a few thousand bytes.
+        constexpr uint32 MAX_RECIPES = 400;
+
+        static std::set<uint32> const professions = {
+            SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+            SKILL_INSCRIPTION, SKILL_JEWELCRAFTING, SKILL_LEATHERWORKING, SKILL_TAILORING,
+            SKILL_COOKING, SKILL_FIRST_AID
+        };
+
+        uint32 found = 0;
+        bool truncated = false;
+
+        for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+        {
+            if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+                continue;
+
+            // Every class ability has a skill line too, so the filter is on the skill being a
+            // crafting profession -- without it this would return the bot's entire spellbook.
+            SkillLineAbilityMapBounds bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+            for (auto itr = bounds.first; itr != bounds.second; ++itr)
+            {
+                SkillLineAbilityEntry const* ability = itr->second;
+                if (!ability || professions.find(ability->SkillLine) == professions.end())
+                    continue;
+
+                if (found >= MAX_RECIPES)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                // skill : spell : required rank : rank at which it stops giving skill-ups. The last
+                // lets the client grey out trivial recipes exactly as the trade skill window does.
+                rows.push_back(Acore::StringFormat("{}:{}:{}:{}", ability->SkillLine, spellId,
+                                                   ability->MinSkillLineRank,
+                                                   ability->TrivialSkillLineRankHigh));
+                ++found;
+                break;   // one row per spell, even where several skill lines teach it
+            }
+
+            if (truncated)
+                break;
+        }
+
+        if (truncated)
+            rows.push_back(Acore::StringFormat("#more:{}", MAX_RECIPES));
+    }
     else
     {
         SendError(to, 400, "unknown section");
@@ -403,9 +478,6 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
         return true;
     }
 
-    if (!RateLimit(sender))
-        return true;
-
     std::vector<std::string> parts;
     std::istringstream stream(msg);
     std::string field;
@@ -417,6 +489,16 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
         return true;
 
     std::string const& verb = parts[2];
+
+    // Parsed before the limiter runs, because the limiter prices requests by verb and a RECIPE
+    // fetch must not cost the same as a zone listing.
+    if (!RateLimit(sender, verb, parts.size() >= 5 ? parts[4] : std::string()))
+    {
+        // Answered, not dropped. A silent rejection is indistinguishable at the client from a
+        // server with no inspector at all, and that mistaken diagnosis has already cost time here.
+        SendError(sender, 429, "rate limited -- slow down");
+        return true;
+    }
 
     if (verb == "ZONES")
         HandleZones(sender);

@@ -141,6 +141,12 @@ function W.Row(parent, width, height)
     hl:SetBlendMode("ADD")
     hl:SetAlpha(0.4)
 
+    local classIcon = btn:CreateTexture(nil, "ARTWORK")
+    classIcon:SetWidth(12); classIcon:SetHeight(12)
+    classIcon:SetPoint("LEFT", 4, 0)
+    classIcon:Hide()
+    btn.classIcon = classIcon
+
     local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     text:SetPoint("LEFT", 4, 0)
     text:SetJustifyH("LEFT")
@@ -208,10 +214,47 @@ function W.Commify(n)
     return (out:gsub("^,", ""))
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- Blizzard art
+--
+-- Every path below was read out of the client's own MPQ listfiles rather than recalled, because a
+-- texture path that does not resolve renders as nothing at all -- no error, no placeholder, just an
+-- empty space. Guessing here would produce exactly the kind of silent wrongness this addon has
+-- already lost time to.
+--
+-- The spell-school icons are numbered by school with physical omitted: 2 Holy, 3 Fire, 4 Nature,
+-- 5 Frost, 6 Shadow, 7 Arcane. Confirmed by decoding each icon's DXT blocks and reading off its
+-- dominant hue -- gold, red, green, blue, violet, lavender in that order.
+-- ---------------------------------------------------------------------------------------------
+
+local SCHOOL_ICON = "Interface\\PaperDollInfoFrame\\SpellSchoolIcon"
+
+W.RES_ICON = {
+    fire   = SCHOOL_ICON .. "3",
+    nature = SCHOOL_ICON .. "4",
+    frost  = SCHOOL_ICON .. "5",
+    shadow = SCHOOL_ICON .. "6",
+    arcane = SCHOOL_ICON .. "7",
+}
+W.HOLY_ICON  = SCHOOL_ICON .. "2"
+W.CLASS_ICONS = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
+W.QUEST_COMPLETE_ICON = "Interface\\GossipFrame\\ActiveQuestIcon"
+
+--- An inline texture for a FontString.
+-- Only the simple |Tpath:size|t form is used. The extended form that takes texture coordinates
+-- exists, but the simple one is beyond doubt on 3.3.5 and anything needing coordinates gets a real
+-- Texture region instead.
+function W.Icon(path, size)
+    return string.format("|T%s:%d|t", path, size or 14)
+end
+
 function W.Money(copper)
     copper = tonumber(copper) or 0
-    return string.format("%dg %ds %dc", math.floor(copper / 10000),
-                         math.floor(copper % 10000 / 100), copper % 100)
+    local g, s, c = math.floor(copper / 10000), math.floor(copper % 10000 / 100), copper % 100
+    return string.format("%s%s %d%s %d%s", W.Commify(g),
+                         W.Icon("Interface\\MoneyFrame\\UI-GoldIcon", 12), s,
+                         W.Icon("Interface\\MoneyFrame\\UI-SilverIcon", 12), c,
+                         W.Icon("Interface\\MoneyFrame\\UI-CopperIcon", 12))
 end
 
 --- CreateFrame with a template, degrading to a bare frame if the template is absent.
@@ -225,4 +268,27 @@ function W.Create(kind, name, parent, template)
         if ok and f then return f, true end
     end
     return CreateFrame(kind, name, parent), false
+end
+
+--- Show the class portrait on a row, or hide it when the class is unknown.
+--
+-- CLASS_ICON_TCOORDS is a client global holding each class's rectangle within the shared sprite
+-- sheet. It has been present since well before 3.3.5, but it is read defensively: if it were
+-- missing the icon simply does not appear, rather than the row failing to draw.
+function W.SetRowClassIcon(row, classId, indent)
+    local token = CLASS_TOKEN[classId or 0]
+    local coords = token and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[token]
+
+    if not coords then
+        row.classIcon:Hide()
+        row.text:SetPoint("LEFT", indent or 4, 0)
+        return false
+    end
+
+    row.classIcon:SetTexture(W.CLASS_ICONS)
+    row.classIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+    row.classIcon:SetPoint("LEFT", indent or 4, 0)
+    row.classIcon:Show()
+    row.text:SetPoint("LEFT", (indent or 4) + 15, 0)
+    return true
 end
