@@ -6,6 +6,8 @@
 
 #include "BotTrainingMgr.h"
 
+#include "BudgetValues.h"
+
 #include "DatabaseEnv.h"
 #include "Field.h"
 #include "Log.h"
@@ -131,7 +133,24 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
 
     EnsureLoaded();
 
-    uint32 const budget = bot->GetMoney();
+    // Spend from the budget, not from the purse.
+    //
+    // "free money for spells" is what is left after everything ranked above spells has been set
+    // aside -- guild dues, repairs, ammo. Reading GetMoney() instead meant a bot could train away
+    // the gold it was holding for a repair, which is exactly the ordering the budget exists to
+    // enforce and which I claimed was being honoured while this spent straight from the pocket.
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI || !botAI->GetAiObjectContext())
+        return 0;
+
+    // Clamped rather than trusted: the budget is derived from the purse, so it should never exceed
+    // it, but spending more than the bot holds would be a far worse failure than training less.
+    uint32 const budget = std::min(bot->GetMoney(),
+                                   botAI->GetAiObjectContext()
+                                       ->GetValue<uint32>("free money for",
+                                                          std::to_string(uint32(NeedMoneyFor::spells)))
+                                       ->Get());
+
     if (!budget)
         return 0;
 

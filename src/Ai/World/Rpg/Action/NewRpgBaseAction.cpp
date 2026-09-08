@@ -44,6 +44,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <vector>
+#include <mutex>
+#include <tuple>
 
 QuestStatusData const* NewRpgBaseAction::GetQuestStatusData(uint32 questId) const
 {
@@ -1302,6 +1304,75 @@ void NewRpgBaseAction::AddPoiCandidates(QuestPOI const& qPoi, std::vector<POIInf
         poiInfo.push_back(submerged);
 }
 
+namespace
+{
+/// entry -> every place that entry is spawned, indexed once on first use.
+using SpawnIndex = std::unordered_map<uint32, std::vector<std::tuple<uint16, float, float, float>>>;
+
+SpawnIndex g_creatureSpawns;
+SpawnIndex g_objectSpawns;
+std::once_flag g_spawnIndexOnce;
+
+void BuildSpawnIndex()
+{
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+    {
+        // id2 and id3 are alternates from creature_multispawn; a quest target can be any of them.
+        for (uint32 entry : {data.id, data.id2, data.id3})
+            if (entry)
+                g_creatureSpawns[entry].emplace_back(data.mapid, data.posX, data.posY, data.posZ);
+    }
+
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
+        if (data.id)
+            g_objectSpawns[data.id].emplace_back(data.mapid, data.posX, data.posY, data.posZ);
+
+    LOG_INFO("server.loading", ">> Indexed spawns for {} creatures and {} objects for quest routing",
+             g_creatureSpawns.size(), g_objectSpawns.size());
+}
+}  // namespace
+
+bool NewRpgBaseAction::AddSpawnCandidates(Quest const* quest, int32 objectiveIdx, std::vector<POIInfo>& poiInfo)
+{
+    // Only creature and object objectives have spawns to aim at. Item objectives that drop from mobs
+    // are covered by the creature entry; item objectives with no source fall back to the map pin.
+    if (objectiveIdx < 0 || objectiveIdx >= QUEST_OBJECTIVES_COUNT)
+        return false;
+
+    int32 const npcOrGo = quest->RequiredNpcOrGo[objectiveIdx];
+    if (!npcOrGo)
+        return false;
+
+    std::call_once(g_spawnIndexOnce, BuildSpawnIndex);
+
+    // A negative RequiredNpcOrGo means a game object, positive means a creature.
+    SpawnIndex const& index = npcOrGo > 0 ? g_creatureSpawns : g_objectSpawns;
+    auto itr = index.find(uint32(std::abs(npcOrGo)));
+    if (itr == index.end())
+        return false;
+
+    size_t const before = poiInfo.size();
+
+    for (auto const& [mapId, x, y, z] : itr->second)
+    {
+        if (mapId != bot->GetMapId())
+            continue;
+
+        // Same reach the pin sampler uses, so this does not send a bot across a continent.
+        if (bot->GetDistance2d(x, y) >= 1500.0f)
+            continue;
+
+        POIInfo info;
+        info.pos = G3D::Vector2(x, y);
+        info.objectiveIdx = objectiveIdx;
+        info.z = z;
+        info.hasZ = true;
+        poiInfo.push_back(info);
+    }
+
+    return poiInfo.size() > before;
+}
+
 bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete)
 {
     Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
@@ -1366,6 +1437,19 @@ bool NewRpgBaseAction::GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector
         if (q_status.ItemCount[i] < quest->RequiredItemCount[i])
             incompleteObjectiveIdx.push_back(QUEST_OBJECTIVES_COUNT + i);
     }
+
+    // Prefer the objective's real spawn positions over the map pin.
+    //
+    // quest_poi_points has no Z, so a pin can only ever say "somewhere around here on the ground".
+    // Where the objective is above or below that ground -- a tower platform, a cave -- the bot
+    // arrives at a place the pin describes correctly in two dimensions and finds nothing, then
+    // patrols it indefinitely. The spawn tables know exactly where the targets are, height
+    // included, so when they can answer they answer first.
+    for (int32 objective : incompleteObjectiveIdx)
+        AddSpawnCandidates(quest, objective, poiInfo);
+
+    if (!poiInfo.empty())
+        return true;
 
     // Get POIs to go
     for (const QuestPOI& qPoi : *poiVector)

@@ -23,6 +23,17 @@ struct POIInfo
 {
     G3D::Vector2 pos;
     int32 objectiveIdx;
+
+    /**
+     * The objective's real height, when it was taken from a spawn rather than from the map pin.
+     *
+     * quest_poi_points stores X and Y only -- there is no Z column -- so a destination derived from
+     * it has to guess the height from the terrain under the pin. That guess is wrong wherever the
+     * objective is not at ground level: a bot sent to Felendren the Banished patrols beneath the
+     * tower its targets stand on, and one sent to Skull Rock walks the hillside above the cave.
+     */
+    float z{0.0f};
+    bool hasZ{false};
 };
 
 /// A base (composition) class for all new rpg actions
@@ -104,6 +115,9 @@ protected:
 
 protected:
     bool GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete = false);
+
+    /// Real spawn positions for an objective's creature or object, nearest first. Empty if unknown.
+    bool AddSpawnCandidates(Quest const* quest, int32 objectiveIdx, std::vector<POIInfo>& poiInfo);
     /// Turns one quest POI polygon into up to `poiSamplesPerArea` standable candidate points and
     /// appends the ones that pass the cheap terrain checks to `poiInfo`.
     void AddPoiCandidates(QuestPOI const& qPoi, std::vector<POIInfo>& poiInfo);

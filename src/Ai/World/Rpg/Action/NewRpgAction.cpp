@@ -578,13 +578,24 @@ bool NewRpgDoQuestAction::DoIncompleteQuest(NewRpgInfo::DoQuest& data)
 
         float dx = picked->pos.x, dy = picked->pos.y;
         int32 objectiveIdx = picked->objectiveIdx;
+        float dz;
 
-        // z = MAX_HEIGHT as we do not know accurate z
-        float dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
+        if (picked->hasZ)
+        {
+            // Taken from the objective's own spawn, so it is the height of the thing being sought
+            // rather than of the ground beneath the map pin.
+            dz = picked->z;
+        }
+        else
+        {
+            // No spawn to go on: fall back to the terrain under the pin, which is right whenever the
+            // objective is at ground level and wrong in exactly the cases the spawn lookup covers.
+            dz = std::max(bot->GetMap()->GetHeight(dx, dy, MAX_HEIGHT), bot->GetMap()->GetWaterLevel(dx, dy));
 
-        // double check for GetQuestPOIPosAndObjectiveIdx
-        if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
-            return false;
+            // double check for GetQuestPOIPosAndObjectiveIdx
+            if (dz == INVALID_HEIGHT || dz == VMAP_INVALID_HEIGHT_VALUE)
+                return false;
+        }
 
         WorldPosition pos(bot->GetMapId(), dx, dy, dz);
         data.lastReachPOI = 0;
