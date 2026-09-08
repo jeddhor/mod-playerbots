@@ -359,6 +359,24 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemTemplate const* itemProto, 
             // uint32 oldStatWeight = sRandomItemMgr.GetLiveStatWeight(bot, oldItemProto->ItemId);
             if (itemScore || oldScore)
                 shouldEquipInSlot = itemScore > oldScore * sPlayerbotAIConfig.equipUpgradeThreshold;
+
+            // Statless gear needs a different comparison.
+            //
+            // Most low level armour carries no stats at all, so its entire score is base armour
+            // times a 0.001 weight -- a tiebreaker, not a signal -- and the 10% upgrade threshold
+            // then rejects pieces that are strictly better. A Green Chain Vest at 67 armour over a
+            // Shoddy Chain Vest at 63 is 6% better and was refused, leaving a bot in starter gear
+            // it had already replaced in its bags.
+            //
+            // When neither piece has a stat to weigh, compare the one number that distinguishes
+            // them. Anything with stats keeps the scored comparison, so nothing changes at level 80.
+            if (!itemProto->StatsCount && !oldItemProto->StatsCount &&
+                itemProto->Class == ITEM_CLASS_ARMOR && oldItemProto->Class == ITEM_CLASS_ARMOR &&
+                itemProto->InventoryType == oldItemProto->InventoryType &&
+                itemProto->Armor > oldItemProto->Armor)
+            {
+                shouldEquipInSlot = true;
+            }
         }
 
         // Bigger quiver
