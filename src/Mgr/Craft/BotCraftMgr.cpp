@@ -7,6 +7,7 @@
 #include "BotCraftMgr.h"
 
 #include "BotEconomyMgr.h"
+#include "BudgetValues.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
@@ -20,6 +21,7 @@
 #include "SpellMgr.h"
 #include "StringFormat.h"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -118,7 +120,114 @@ bool BotCraftMgr::IsToolBlank(uint32 itemId)
     return _toolBlanks.count(itemId) != 0;
 }
 
-bool BotCraftMgr::CraftOne(Player* bot, uint32 spellId, uint32 itemId)
+uint32 BotCraftMgr::ReagentReserve(Player* bot, uint32 itemId)
+{
+    // Enough for a handful of crafts, not a hoard. A bot that keeps everything never supplies the
+    // market; one that keeps nothing cannot practise its own trade.
+    constexpr uint32 RESERVE_CRAFTS = 5;
+
+    uint32 perCraft = 0;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        // Only recipes the bot could actually perform: a spell it knows but has no skill for
+        // reserves nothing.
+        for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+            if (info->Reagent[i] > 0 && uint32(info->Reagent[i]) == itemId)
+                perCraft = std::max(perCraft, info->ReagentCount[i]);
+    }
+
+    return perCraft * RESERVE_CRAFTS;
+}
+
+uint32 BotCraftMgr::RefineMaterials(Player* bot)
+{
+    EnsureLoaded();
+
+    uint32 made = 0;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        // Smelting and its equivalents: a gathering profession's recipe that turns what was picked
+        // up into what is actually traded. Ore is worth less than the bar it becomes, and a bot
+        // that never smelts floods the house with ore nobody wants.
+        uint32 const skill = SkillLineOf(spellId);
+        if (!skill || !PlayerbotFactory::IsGatheringTradeSkill(skill))
+            continue;
+
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            uint32 const product = info->Effects[i].ItemType;
+            if (info->Effects[i].Effect != SPELL_EFFECT_CREATE_ITEM || !product)
+                continue;
+
+            // Up to a few per pass so a full stack of ore is worked through over a few minutes
+            // rather than all at once.
+            for (uint32 attempt = 0; attempt < 5; ++attempt)
+            {
+                if (!CraftOne(bot, spellId, product, false))
+                    break;
+
+                ++made;
+            }
+        }
+    }
+
+    return made;
+}
+
+bool BotCraftMgr::BuyReagent(Player* bot, uint32 itemId, uint32 needed)
+{
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI || !botAI->GetAiObjectContext())
+        return false;
+
+    uint32 const budget = std::min(bot->GetMoney(),
+                                   botAI->GetAiObjectContext()
+                                       ->GetValue<uint32>("free money for",
+                                                          std::to_string(uint32(NeedMoneyFor::tradeskill)))
+                                       ->Get());
+
+    if (!budget)
+        return false;
+
+    for (BotEconomyMgr::Bargain const& bargain : sBotEconomyMgr.SampleBargains(bot->GetTeamId(), 60))
+    {
+        if (bargain.itemId != itemId || bargain.owner == bot->GetGUID())
+            continue;
+
+        if (!bargain.buyout || bargain.buyout > budget)
+            continue;
+
+        if (sBotEconomyMgr.BuyoutAuction(bot, bargain.auctionId, bargain.houseId))
+        {
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            ++_reagentsBought;
+
+            LOG_DEBUG("playerbots", "[Craft] {} bought {} x{} off the auction house for {}c", bot->GetName(), itemId,
+                      bargain.count, bargain.buyout);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool BotCraftMgr::CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket)
 {
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
     if (!info)
@@ -156,8 +265,10 @@ bool BotCraftMgr::CraftOne(Player* bot, uint32 spellId, uint32 itemId)
         ++_crafted;
     }
 
-    // Straight to the auction house: this was made for the market, not for the bag it is sitting in.
-    if (sBotEconomyMgr.PostAuction(bot, made))
+    // A blank made to supply the market goes straight to the house. A smelted bar does not: the bot
+    // may want it, and whether the surplus is worth listing is the economy's decision, made against
+    // the reserve rather than here.
+    if (forMarket && sBotEconomyMgr.PostAuction(bot, made))
     {
         std::unique_lock<std::shared_mutex> guard(_mutex);
         ++_listed;
@@ -189,6 +300,10 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
 
     EnsureLoaded();
 
+    // Refine before supplying: the bars a smelter just made may be exactly what its rod recipe
+    // wanted, and there is no sense buying what is already in the bag as ore.
+    RefineMaterials(bot);
+
     for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
     {
         if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
@@ -212,8 +327,23 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
             if (sBotEconomyMgr.GetListingDepth(itemId) >= TARGET_LISTING_DEPTH)
                 continue;
 
-            if (CraftOne(bot, spellId, itemId))
+            if (CraftOne(bot, spellId, itemId, true))
                 return;  // one per pass, so a single bot does not corner the whole tool market
+
+            // Short a reagent. Buying it is the point of having an auction house: a blacksmith who
+            // cannot mine can still make rods if some miner listed the bars.
+            for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+            {
+                if (info->Reagent[r] <= 0 || !info->ReagentCount[r])
+                    continue;
+
+                uint32 const reagent = uint32(info->Reagent[r]);
+                if (bot->GetItemCount(reagent, false) >= info->ReagentCount[r])
+                    continue;
+
+                if (BuyReagent(bot, reagent, info->ReagentCount[r]))
+                    return;
+            }
         }
     }
 }

@@ -48,6 +48,18 @@ public:
     /// True if this item is a reagent of some tool-creating recipe, and so worth stocking.
     bool IsToolBlank(uint32 itemId);
 
+    /**
+     * How many of an item this bot should keep back for its own crafting.
+     *
+     * A miner who smelts his ore into bars and then auctions every bar has done his blacksmithing
+     * no favours. Anything a known recipe consumes is reserved up to a few crafts' worth; the
+     * surplus above that is what the economy is allowed to sell.
+     */
+    uint32 ReagentReserve(Player* bot, uint32 itemId);
+
+    /// Turn raw materials into the refined form the bot can actually use or sell. Returns crafts made.
+    uint32 RefineMaterials(Player* bot);
+
     std::string DescribeStats() const;
 
 private:
@@ -60,8 +72,11 @@ private:
     /// Walk every spell once to find which items are tools, and what those tools are made from.
     void EnsureLoaded();
 
+    /// Buy a missing reagent off the auction house. False if none listed or unaffordable.
+    bool BuyReagent(Player* bot, uint32 itemId, uint32 needed);
+
     /// Craft one unit of the item this spell makes, consuming its reagents. False if short.
-    bool CraftOne(Player* bot, uint32 spellId, uint32 itemId);
+    bool CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket);
 
     std::once_flag _loadOnce;
 
@@ -74,6 +89,7 @@ private:
     uint32 _crafted{0};
     uint32 _listed{0};
     uint32 _shortReagents{0};
+    uint32 _reagentsBought{0};
 };
 
 #define sBotCraftMgr BotCraftMgr::instance()

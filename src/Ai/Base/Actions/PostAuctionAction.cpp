@@ -6,6 +6,8 @@
 
 #include "PostAuctionAction.h"
 
+#include "BotCraftMgr.h"
+
 #include "BotEconomyMgr.h"
 #include "Item.h"
 #include "ItemTemplate.h"
@@ -64,6 +66,18 @@ public:
         // Re-check rather than trusting the queueing thread's decision: depth may have risen past
         // the target, or the bot may have equipped the item, since this was queued.
         if (!sBotEconomyMgr.ShouldPost(item))
+            return false;
+
+        // Keep back what this bot's own recipes consume.
+        //
+        // ShouldPost answers a question about the market and says so: whether a *particular* bot
+        // needs a particular item is a per-bot question it cannot answer. This is that question. A
+        // miner who smelts his ore and then auctions every bar has supplied the realm and stranded
+        // his own blacksmithing, so a stack is only listed if the reserve survives its going.
+        uint32 const entry = item->GetTemplate()->ItemId;
+        uint32 const reserve = sBotCraftMgr.ReagentReserve(bot, entry);
+
+        if (reserve && bot->GetItemCount(entry, false) - item->GetCount() < reserve)
             return false;
 
         return sBotEconomyMgr.PostAuction(bot, item);
