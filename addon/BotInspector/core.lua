@@ -21,6 +21,17 @@ BI.VERSION = 1
 local pending  = {}
 local handlers = {}
 
+-- Forward declarations.
+--
+-- Lua binds a `local function` name only from its definition onward. A local defined further down
+-- this file is therefore a *global* lookup -- and so nil -- inside any function written above it.
+-- dispatch() calls clearInflight(), which used to be declared near the watchdog at the bottom: the
+-- call compiled to a nil global and every reply died on dispatch's first line. From the outside
+-- that was indistinguishable from the server never answering, because the watchdog then reported a
+-- timeout. luac sees nothing wrong with it; only running it can find it. Declare here, define below.
+local inflight = {}
+local clearInflight
+
 BI.zones   = {}   -- zoneId -> bot count
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
 BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
@@ -141,7 +152,16 @@ local function receive(body)
 
     if seq >= total then
         pending[id] = nil
-        dispatch(verb, key, buf.rows)
+
+        -- Run dispatch under pcall. An error in an event handler is swallowed by the client unless
+        -- scriptErrors is on, so without this a broken parser looks exactly like a dead server --
+        -- which is precisely how the clearInflight bug above hid for two rounds of testing.
+        local ok, err = pcall(dispatch, verb, key, buf.rows)
+        if not ok then
+            clearInflight(verb, key)
+            BI.lastError = "addon error: " .. tostring(err)
+            if handlers.OnError then handlers.OnError(key, BI.lastError) end
+        end
     end
 end
 
@@ -152,13 +172,11 @@ end
 -- tool that cannot tell "waiting" from "nobody is listening" is not much of one.
 local REQUEST_TIMEOUT = 5
 
-local inflight = {}
-
 function BI:MarkSent(verb, key)
     inflight[verb .. ":" .. (key or "")] = GetTime()
 end
 
-local function clearInflight(verb, key)
+function clearInflight(verb, key)
     inflight[verb .. ":" .. (key or "")] = nil
 end
 
