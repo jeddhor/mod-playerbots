@@ -102,9 +102,19 @@ void BotInspectorMgr::Reply(Player* to, std::string const& verb, std::string con
         std::string const payload = Acore::StringFormat("{}\t{}\t{}\t{}\t{}\t{}\t{}", PROTOCOL, PROTOCOL_VERSION,
                                                         verb, key, i + 1, total, chunks[i]);
 
+        // CHAT_MSG_WHISPER, not CHAT_MSG_ADDON.
+        //
+        // CHAT_MSG_ADDON is the *event* the client raises after it recognises addon traffic; it is
+        // not a channel, and the 3.3.5 client has no inbound case for it. Sending it crashed the
+        // client outright with ERROR #134 the moment a reply arrived.
+        //
+        // The inbound direction already told us the right answer and I did not read it across:
+        // ChatHandler accepts LANG_ADDON only on WHISPER, PARTY, RAID, GUILD and BATTLEGROUND. The
+        // language marks the traffic as addon data; the type says which channel carried it. A reply
+        // whispered back from the player to themselves mirrors exactly what the addon sent.
         WorldPacket data;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, payload.c_str(), LANG_ADDON, CHAT_TAG_NONE,
-                                     to->GetGUID(), to->GetName());
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, payload.c_str(), LANG_ADDON, CHAT_TAG_NONE,
+                                     to->GetGUID(), to->GetName(), to->GetGUID(), to->GetName());
         to->SendDirectMessage(&data);
     }
 }
