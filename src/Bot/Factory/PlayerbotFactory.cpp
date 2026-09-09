@@ -3786,16 +3786,43 @@ void PlayerbotFactory::InitMounts()
             fast = {35025, 35025, 35027};
             break;
         default:
+            // The comments were right and the values were swapped: Horde was handed the human list
+            // and Alliance the orc one. Compare against RACE_HUMAN and RACE_ORC above.
             if (bot->GetTeamId() == TEAM_HORDE)
             { // Orc mounts
-                slow = {470, 6648, 458, 472};
-                fast = {23228, 23227, 23229};
-            }
-            else // Human mounts
-            {
                 slow = {6654, 6653, 580};
                 fast = {23250, 23252, 23251};
             }
+            else // Human mounts
+            {
+                slow = {470, 6648, 458, 472};
+                fast = {23228, 23227, 23229};
+            }
+    }
+
+    // Class mounts, granted rather than quested.
+    //
+    // A paladin or warlock earns these from a long quest chain no bot will ever run, so without
+    // this they are the only classes that never get their signature mount -- and, more practically,
+    // travel on foot while everyone else rides. Granted the same way racial mounts are.
+    //
+    // Faction matters here: a blood elf paladin rides a Thalassian Warhorse, not the Alliance one.
+    if (bot->getClass() == CLASS_PALADIN)
+    {
+        bool const bloodElf = bot->getRace() == RACE_BLOODELF;
+
+        if (bot->GetLevel() >= 40)
+            slow.push_back(bloodElf ? 34767 : 13819);   // Thalassian Warhorse / Warhorse
+        if (bot->GetLevel() >= 60)
+            fast.push_back(bloodElf ? 34769 : 23214);   // Thalassian Charger / Charger
+    }
+    else if (bot->getClass() == CLASS_WARLOCK)
+    {
+        // Not faction split: both sides summon the same steeds.
+        if (bot->GetLevel() >= 40)
+            slow.push_back(5784);                       // Felsteed
+        if (bot->GetLevel() >= 60)
+            fast.push_back(23161);                      // Dreadsteed
     }
 
     switch (bot->GetTeamId())

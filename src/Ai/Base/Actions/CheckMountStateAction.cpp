@@ -14,6 +14,10 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+
+#include <mutex>
+#include "ItemTemplate.h"
+#include "ObjectMgr.h"
 #include "ServerFacade.h"
 #include "SpellAuraEffects.h"
 
@@ -23,6 +27,71 @@ static constexpr float PARACHUTE_LAND_THRESHOLD = 15.0f;
 // Define the static map / init bool for caching bot preferred mount data globally
 std::unordered_map<uint32, PreferredMountCache> CheckMountStateAction::mountCache;
 bool CheckMountStateAction::preferredMountTableChecked = false;
+
+namespace
+{
+/// mount spell -> the races allowed to learn it, from the item that teaches it. 0 = unrestricted.
+std::unordered_map<uint32, uint32> g_mountRaces;
+std::once_flag g_mountRacesOnce;
+
+void LoadMountRaces()
+{
+    // The teaching item carries the restriction, not the spell: Alliance mounts are AllowableRace
+    // 1101 (human, dwarf, night elf, gnome, draenei) and Horde 690 (orc, undead, tauren, troll,
+    // blood elf). Reading it from the data means no hand-maintained list of which mount is whose.
+    for (auto const& [entry, proto] : *sObjectMgr->GetItemTemplateStore())
+    {
+        if (proto.AllowableRace <= 0)
+            continue;
+
+        for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        {
+            uint32 const spellId = proto.Spells[i].SpellId;
+            if (!spellId)
+                continue;
+
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            if (!info)
+                continue;
+
+            // The teaching spell wraps the mount spell it grants.
+            for (uint8 e = 0; e < MAX_SPELL_EFFECTS; ++e)
+                if (info->Effects[e].Effect == SPELL_EFFECT_LEARN_SPELL && info->Effects[e].TriggerSpell)
+                    g_mountRaces[info->Effects[e].TriggerSpell] = uint32(proto.AllowableRace);
+
+            g_mountRaces[spellId] = uint32(proto.AllowableRace);
+        }
+    }
+
+    // Class mounts are quest rewards, not items, so nothing in item_template restricts them and the
+    // scan above cannot see them. That is not academic: 46 blood elf paladins were riding the
+    // Alliance Warhorse, which no amount of item data would have flagged.
+    //
+    // Paladin mounts: human, dwarf and draenei ride the Warhorse and Charger; blood elves have
+    // their own Thalassian pair. Warlock steeds are shared by both factions and need no entry.
+    constexpr uint32 ALLIANCE_PALADIN = (1 << (RACE_HUMAN - 1)) | (1 << (RACE_DWARF - 1)) | (1 << (RACE_DRAENEI - 1));
+    constexpr uint32 BLOODELF = 1 << (RACE_BLOODELF - 1);
+
+    g_mountRaces[13819] = ALLIANCE_PALADIN;  // Warhorse
+    g_mountRaces[23214] = ALLIANCE_PALADIN;  // Charger
+    g_mountRaces[34767] = BLOODELF;          // Thalassian Warhorse
+    g_mountRaces[34769] = BLOODELF;          // Thalassian Charger
+
+    LOG_INFO("server.loading", ">> Indexed race restrictions for {} mount-teaching spells", g_mountRaces.size());
+}
+
+/// False when this mount belongs to the other faction, or another race entirely.
+bool MountSuitsRace(Player const* bot, uint32 spellId)
+{
+    std::call_once(g_mountRacesOnce, LoadMountRaces);
+
+    auto itr = g_mountRaces.find(spellId);
+    if (itr == g_mountRaces.end() || !itr->second)
+        return true;  // nothing said otherwise
+
+    return (itr->second & bot->getRaceMask()) != 0;
+}
+}  // namespace
 
 MountData CollectMountData(const Player* bot)
 {
@@ -35,6 +104,12 @@ MountData CollectMountData(const Player* bot)
             continue;
 
         if (entry.second->State == PLAYERSPELL_REMOVED || !entry.second->Active || spellInfo->IsPassive())
+            continue;
+
+        // Ranked by speed alone, this would put a Horde bot on an Alliance mount the moment one was
+        // faster -- and bots acquire spells from more places than the factory, so "it was never
+        // granted" is not a guarantee.
+        if (!MountSuitsRace(bot, spellId))
             continue;
 
         int32 effect1 = spellInfo->Effects[1].BasePoints;
