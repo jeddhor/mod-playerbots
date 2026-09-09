@@ -1044,7 +1044,8 @@ std::vector<uint32> const& RandomItemMgr::GetEnchantmentPool(uint32 entry) const
     return it->second;
 }
 
-bool RandomItemMgr::CanEquipArmor(ItemTemplate const* proto, uint8 clazz, uint32 level) const
+bool RandomItemMgr::CanEquipArmor(ItemTemplate const* proto, uint8 clazz, uint32 level,
+                                  bool enforceArmorType) const
 {
     // skip null proto or invalid class
     if (!proto || clazz >= MAX_CLASSES)
@@ -1070,6 +1071,10 @@ bool RandomItemMgr::CanEquipArmor(ItemTemplate const* proto, uint8 clazz, uint32
     {
         if (clazz == CLASS_WARRIOR || clazz == CLASS_PALADIN)
             return level >= 40 ? ITEM_SUBCLASS_ARMOR_PLATE : ITEM_SUBCLASS_ARMOR_MAIL;
+        // Death knights start at 55 and are trained in plate from the moment they exist. Without
+        // this case they fell through to the cloth default below, which built them a cloth wardrobe.
+        if (clazz == CLASS_DEATH_KNIGHT)
+            return ITEM_SUBCLASS_ARMOR_PLATE;
         if (clazz == CLASS_HUNTER || clazz == CLASS_SHAMAN)
             return level >= 40 ? ITEM_SUBCLASS_ARMOR_MAIL : ITEM_SUBCLASS_ARMOR_LEATHER;
         if (clazz == CLASS_DRUID || clazz == CLASS_ROGUE)
@@ -1077,9 +1082,15 @@ bool RandomItemMgr::CanEquipArmor(ItemTemplate const* proto, uint8 clazz, uint32
         return ITEM_SUBCLASS_ARMOR_CLOTH; // mage/warlock/priest
     }();
 
-    // skip armor of wrong subclass (cloaks are exempt)
-    if (proto->InventoryType != INVTYPE_CLOAK && proto->SubClass != requiredSubClass)
-        return false;
+    // Armour subclasses are ordered cloth < leather < mail < plate, so anything heavier than the
+    // class is trained in at this level simply cannot be worn. Lighter armour can be, and when
+    // enforceArmorType is off we allow it and leave the choice to StatsWeightCalculator, which marks
+    // off-type gear down by spec rather than banning it outright. Cloaks are cloth for everyone.
+    if (proto->InventoryType != INVTYPE_CLOAK)
+    {
+        if (enforceArmorType ? proto->SubClass != requiredSubClass : proto->SubClass > requiredSubClass)
+            return false;
+    }
 
     // skip stats calculation for poor/normal quality items (grey/white)
     if (proto->Quality < ITEM_QUALITY_UNCOMMON)

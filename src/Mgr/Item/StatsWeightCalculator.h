@@ -52,6 +52,7 @@ public:
     float ApplyPreferredSpecWeapons(ItemTemplate const* proto, int32 slot);
 
     bool NotBestArmorType(uint32 item_subclass_armor);
+    float ArmorTypePreferenceFactor() const;
 
     void ApplyOverflowPenalty(Player* player);
     void ApplyWeightFinetune(Player* player);

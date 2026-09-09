@@ -32,6 +32,20 @@ constexpr uint32 SPELL_POLEAXE_SPECIALIZATION = 12785;
 constexpr uint32 SPELL_NERVES_OF_COLD_STEEL = 50138;
 constexpr uint32 SPELL_SHADOW_FOCUS = 15835;
 constexpr uint32 SPELL_ARCANE_FOCUS = 12840;
+
+// Talents that turn armour directly into attack power, so wearing the heaviest armour the class can
+// use is a damage gain and not just a survivability one.
+constexpr uint32 SPELL_ARMORED_TO_THE_TEETH_RANKS[] = { 61216, 61221, 61222 };
+constexpr uint32 SPELL_BLADED_ARMOR_RANKS[] = { 48978, 49390, 49391, 49392, 49393 };
+
+// How much an item of the wrong armour class is marked down. Wrath has no blanket "wear your own
+// armour type or lose stats" rule -- that arrived in Cataclysm -- so these are preferences, not
+// vetoes: a genuinely far better off-type item still wins. The multiplier sets how much better it
+// has to be (0.70 means it needs to beat the on-type option by roughly 43%).
+constexpr float ARMOR_PENALTY_STRONG = 0.70f;    // plate tanks: armour is most of the point
+constexpr float ARMOR_PENALTY_NOTABLE = 0.82f;   // armour scales into attack power, or bear form
+constexpr float ARMOR_PENALTY_MODERATE = 0.90f;  // melee generally: armour helps, stats matter more
+constexpr float ARMOR_PENALTY_MILD = 0.96f;      // healers and casters: stats dominate outright
 }
 
 template <size_t Size>
@@ -628,12 +642,15 @@ void StatsWeightCalculator::CalculateSocketBonus(Player* /*player*/, ItemTemplat
 
 void StatsWeightCalculator::CalculateItemTypePenalty(ItemTemplate const* proto)
 {
-    // // penalty for different type armor
-    // if (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass >= ITEM_SUBCLASS_ARMOR_CLOTH &&
-    //     proto->SubClass <= ITEM_SUBCLASS_ARMOR_PLATE && NotBestArmorType(proto->SubClass))
-    // {
-    //     weight_ *= 1.0;
-    // }
+    // Penalty for armour below the heaviest type the bot is trained in. Cloaks, tabards and shirts
+    // are cloth for every class, so they are never "the wrong type" and must be exempt.
+    if (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass >= ITEM_SUBCLASS_ARMOR_CLOTH &&
+        proto->SubClass <= ITEM_SUBCLASS_ARMOR_PLATE && proto->InventoryType != INVTYPE_CLOAK &&
+        proto->InventoryType != INVTYPE_TABARD && proto->InventoryType != INVTYPE_BODY &&
+        NotBestArmorType(proto->SubClass))
+    {
+        weight_ *= ArmorTypePreferenceFactor();
+    }
     if (proto->Class == ITEM_CLASS_WEAPON)
     {
         // double hand
@@ -718,6 +735,42 @@ void StatsWeightCalculator::CalculateItemTypePenalty(ItemTemplate const* proto)
         bool slowDelay = proto->Delay > 2500;
         if (cls == CLASS_SHAMAN && tab == SHAMAN_TAB_ENHANCEMENT && slowDelay)
             weight_ *= 1.1;
+    }
+}
+
+// How strongly this bot should stay in its own armour class. Keyed off spec, because the same class
+// wants very different things: a protection warrior is wearing plate for the armour itself, while a
+// holy paladin is wearing it mostly because that is where its stats happen to be.
+float StatsWeightCalculator::ArmorTypePreferenceFactor() const
+{
+    switch (cls)
+    {
+        case CLASS_WARRIOR:
+            if (tab == WARRIOR_TAB_PROTECTION)
+                return ARMOR_PENALTY_STRONG;
+            return HasAnySpell(player_, SPELL_ARMORED_TO_THE_TEETH_RANKS) ? ARMOR_PENALTY_NOTABLE
+                                                                          : ARMOR_PENALTY_MODERATE;
+        case CLASS_DEATH_KNIGHT:
+            // Blood is the tanking tree, and Bladed Armor pays every death knight for wearing plate.
+            if (tab == DEATH_KNIGHT_TAB_BLOOD)
+                return ARMOR_PENALTY_STRONG;
+            return HasAnySpell(player_, SPELL_BLADED_ARMOR_RANKS) ? ARMOR_PENALTY_NOTABLE
+                                                                  : ARMOR_PENALTY_MODERATE;
+        case CLASS_PALADIN:
+            if (tab == PALADIN_TAB_PROTECTION)
+                return ARMOR_PENALTY_STRONG;
+            return tab == PALADIN_TAB_HOLY ? ARMOR_PENALTY_MILD : ARMOR_PENALTY_MODERATE;
+        case CLASS_DRUID:
+            // Bear armour comes off the leather itself; moonkin and tree do not care nearly as much.
+            return tab == DRUID_TAB_FERAL ? ARMOR_PENALTY_NOTABLE : ARMOR_PENALTY_MILD;
+        case CLASS_SHAMAN:
+            return tab == SHAMAN_TAB_ENHANCEMENT ? ARMOR_PENALTY_MODERATE : ARMOR_PENALTY_MILD;
+        case CLASS_HUNTER:
+        case CLASS_ROGUE:
+            return ARMOR_PENALTY_MODERATE;
+        default:
+            // Priest, mage and warlock top out at cloth, so NotBestArmorType never fires for them.
+            return ARMOR_PENALTY_MILD;
     }
 }
 
