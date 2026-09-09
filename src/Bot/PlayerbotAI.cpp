@@ -1570,12 +1570,12 @@ void PlayerbotAI::DoNextAction(bool min)
             if (!bot->isMoving() && distance < 10.0f)
                 bot->SetStandState(UNIT_STAND_STATE_SIT);
         }
-        else if (nextAICheckDelay < 1000)
+        else if (nextAICheckDelay < 1000 && !IsFeasting(bot))
             bot->SetStandState(UNIT_STAND_STATE_STAND);
     }
     else if (bot->m_movementInfo.HasMovementFlag(MOVEMENTFLAG_WALKING))
         bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_WALKING);
-    else if ((nextAICheckDelay < 1000) && bot->IsSitState())
+    else if ((nextAICheckDelay < 1000) && bot->IsSitState() && !IsFeasting(bot))
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     bool hasMountAura = bot->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED) ||
@@ -4425,6 +4425,28 @@ bool IsRealPlayer(Player* player)
     // controlling their character manually through the client.
     // "player" check needed, otherwise GET_PLAYERBOT_AI(nullptr) reads as a "real player".
     return player && !GET_PLAYERBOT_AI(player);
+}
+
+bool IsFeasting(Player* player)
+{
+    // Eating and drinking are, mechanically, "an aura that standing up would cancel". The core says
+    // so itself in Player::RegenerateAll: food is SPELL_AURA_MOD_REGEN and drink is
+    // SPELL_AURA_MOD_POWER_REGEN, both carrying AURA_INTERRUPT_FLAG_NOT_SEATED.
+    //
+    // Asking that question rather than keeping a list of food item ids means anything that requires
+    // sitting is respected, including whatever a future patch adds.
+    if (!player || !player->IsSitState())
+        return false;
+
+    for (AuraEffect const* effect : player->GetAuraEffectsByType(SPELL_AURA_MOD_REGEN))
+        if (effect->GetSpellInfo()->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_SEATED)
+            return true;
+
+    for (AuraEffect const* effect : player->GetAuraEffectsByType(SPELL_AURA_MOD_POWER_REGEN))
+        if (effect->GetSpellInfo()->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_SEATED)
+            return true;
+
+    return false;
 }
 
 bool IsSelfBot(Player* player)

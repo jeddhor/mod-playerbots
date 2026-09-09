@@ -78,6 +78,8 @@ enum BotState
 };
 
 bool IsRealPlayer(Player* player);
+/// True while the bot is eating or drinking -- an aura that standing would cancel.
+bool IsFeasting(Player* player);
 bool IsSelfBot(Player* player);
 bool IsAlliance(uint8 race);
 
