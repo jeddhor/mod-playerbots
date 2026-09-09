@@ -84,6 +84,32 @@ uint8 AiFactory::GetPlayerSpecTab(Player* bot)
     }
     else
     {
+        // No talents spent yet, so the tree cannot say what this bot is. Ask what it has been told
+        // to be before falling back to a class default.
+        //
+        // This is why a low level protection warrior carried a two-hander. Gear scoring penalises
+        // 2H heavily for protection specs -- weight x0.5 then x0.1 -- but keys that on the talent
+        // tab, and with no talents a warrior fell through to tab 0, which is Arms, which wants a
+        // two-hander. Setting the tank strategies made no difference because nothing consulted
+        // them. IsTank(bot, false) reads exactly those strategies, and does not call back into this
+        // function, so it is safe to ask here.
+        if (PlayerbotAI::IsTank(bot, false))
+        {
+            switch (bot->getClass())
+            {
+                case CLASS_WARRIOR:
+                    return WARRIOR_TAB_PROTECTION;
+                case CLASS_PALADIN:
+                    return PALADIN_TAB_PROTECTION;
+                case CLASS_DEATH_KNIGHT:
+                    return DEATH_KNIGHT_TAB_BLOOD;
+                case CLASS_DRUID:
+                    return DRUID_TAB_FERAL;
+                default:
+                    break;
+            }
+        }
+
         uint8 tab = 0;
 
         switch (bot->getClass())

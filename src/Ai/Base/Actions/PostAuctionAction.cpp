@@ -75,6 +75,29 @@ public:
         // needs a particular item is a per-bot question it cannot answer. This is that question. A
         // miner who smelts his ore and then auctions every bar has supplied the realm and stranded
         // his own blacksmithing, so a stack is only listed if the reserve survives its going.
+        // A shield tank keeps one two-hander for when it goes back to dealing damage.
+        //
+        // Warriors and paladins only. They are the tanks that put a shield in the off hand, so for
+        // them the two-hander is an off-spec weapon the gear scorer now values at a twentieth and
+        // the economy would happily sell -- and replacing it costs far more than carrying it.
+        // Death knights and druids tank *with* a two-hander; theirs is the main weapon, kept
+        // equipped by the ordinary gear logic, and needs no special case here.
+        ItemTemplate const* proto = item->GetTemplate();
+        bool const shieldTank = bot->getClass() == CLASS_WARRIOR || bot->getClass() == CLASS_PALADIN;
+
+        if (shieldTank && proto->Class == ITEM_CLASS_WEAPON && proto->InventoryType == INVTYPE_2HWEAPON &&
+            PlayerbotAI::IsTank(bot, false) && bot->BotCanUseItem(proto) == EQUIP_ERR_OK)
+        {
+            uint32 held = 0;
+            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+                if (Item* carried = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    if (carried->GetTemplate()->InventoryType == INVTYPE_2HWEAPON)
+                        ++held;
+
+            if (held <= 1)
+                return false;
+        }
+
         // Never auction a tool the bot's own trade needs.
         //
         // The tool manager buys a Virtuoso Inking Set for 750c and the economy promptly listed it:
