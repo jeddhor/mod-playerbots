@@ -19,6 +19,11 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "CharacterCache.h"
+#include "DatabaseEnv.h"
+#include "Group.h"
+#include "GroupMgr.h"
+#include "PlayerbotMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "StringFormat.h"
 #include "Timer.h"
@@ -39,6 +44,15 @@ namespace
 
     constexpr uint32 FIND_LIMIT = 40;
     constexpr uint32 FIND_MIN_CHARS = 3;
+
+    // A party holds five, one of which is the player, so four is the most alts that can ever join.
+    // Enforced server-side as well as in the panel: the panel's count is a convenience, not a rule.
+    constexpr uint32 MAX_PARTY_ALTS = 4;
+
+    // How long to keep retrying a queued invite. A bot login normally lands within a couple of
+    // seconds; well past that it has failed, and holding the entry forever would mean a bot that
+    // logs in much later gets yanked into a party the player has long since stopped thinking about.
+    constexpr uint32 INVITE_WAIT_MS = 30000;
 
     std::string Escape(std::string const& in)
     {
@@ -488,6 +502,238 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
     Reply(to, "DETAIL", key, rows);
 }
 
+void BotInspectorMgr::HandleAlts(Player* to)
+{
+    if (!to || !to->GetSession())
+        return;
+
+    // Straight from the character table rather than from anything in memory, because the whole
+    // point is to show characters that are *not* logged in -- an offline alt exists nowhere else.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT guid, name, level, class, race FROM characters "
+        "WHERE account = {} AND deleteInfos_Account IS NULL ORDER BY level DESC, name ASC",
+        to->GetSession()->GetAccountId());
+
+    std::vector<std::string> rows;
+
+    if (result)
+    {
+        Group const* group = to->GetGroup();
+
+        do
+        {
+            Field* fields = result->Fetch();
+            ObjectGuid::LowType const low = fields[0].Get<uint32>();
+
+            // The character being played is not one of its own alts.
+            if (low == to->GetGUID().GetCounter())
+                continue;
+
+            ObjectGuid const guid = ObjectGuid::Create<HighGuid::Player>(low);
+            Player* const online = ObjectAccessor::FindPlayer(guid);
+
+            // Four states, because the panel offers a different action for each: nothing to do for
+            // one already in the party, "invite" for a bot that is up but elsewhere, "add" for an
+            // offline alt, and nothing at all for one a human is presently playing.
+            char const* state = "offline";
+            if (online)
+            {
+                if (!GET_PLAYERBOT_AI(online))
+                    state = "player";
+                else if (group && group->IsMember(guid))
+                    state = "party";
+                else
+                    state = "bot";
+            }
+
+            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}:{}", low, Escape(fields[1].Get<std::string>()),
+                                               fields[2].Get<uint8>(), fields[3].Get<uint8>(),
+                                               fields[4].Get<uint8>(), state));
+        } while (result->NextRow());
+    }
+
+    Reply(to, "ALTS", "0", rows);
+}
+
+bool BotInspectorMgr::JoinMasterParty(Player* master, Player* bot)
+{
+    if (!master || !bot || master == bot)
+        return false;
+
+    if (Group* existing = bot->GetGroup())
+    {
+        // Already where it was asked to be.
+        if (existing == master->GetGroup())
+            return true;
+
+        existing->RemoveMember(bot->GetGUID());
+    }
+
+    Group* group = master->GetGroup();
+    if (!group)
+    {
+        group = new Group();
+        if (!group->Create(master))
+        {
+            delete group;
+            return false;
+        }
+
+        sGroupMgr->AddGroup(group);
+    }
+
+    if (group->IsFull())
+        return false;
+
+    return group->AddMember(bot);
+}
+
+void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, ObjectGuid::LowType altGuid)
+{
+    if (!to || !to->GetSession())
+        return;
+
+    ObjectGuid const guid = ObjectGuid::Create<HighGuid::Player>(altGuid);
+
+    // Ownership is enforced here and deliberately not left to the bot command layer. That layer
+    // only checks the account for "addaccount"; a plain "add" trusts its caller, so driving it
+    // straight from an addon message would otherwise let a crafted packet log in and puppet any
+    // character on the realm. This is the check that makes the feature safe to expose.
+    uint32 const owner = sCharacterCache->GetCharacterAccountIdByGuid(guid);
+    if (!owner || owner != to->GetSession()->GetAccountId())
+    {
+        SendError(to, 403, "not your character");
+        return;
+    }
+
+    PlayerbotMgr* const mgr = GET_PLAYERBOT_MGR(to);
+    if (!mgr)
+    {
+        SendError(to, 500, "no bot manager for this session");
+        return;
+    }
+
+    Player* online = ObjectAccessor::FindPlayer(guid);
+
+    if (action == "REMOVE")
+    {
+        if (!online)
+        {
+            SendError(to, 409, "that alt is not logged in");
+            return;
+        }
+
+        // Drop any queued invite first, or the bot gets re-invited moments after being dismissed.
+        _pendingInvites.erase(std::remove_if(_pendingInvites.begin(), _pendingInvites.end(),
+                                             [&guid](PendingInvite const& p) { return p.bot == guid; }),
+                              _pendingInvites.end());
+
+        std::string const outcome =
+            mgr->ProcessBotCommand("remove", guid, to->GetGUID(), true, to->GetSession()->GetAccountId(), 0);
+
+        Reply(to, "ALTCTL", std::to_string(altGuid), {Acore::StringFormat("{}:{}", altGuid, Escape(outcome))});
+        return;
+    }
+
+    if (action != "ADD" && action != "INVITE")
+    {
+        SendError(to, 400, "unknown alt action");
+        return;
+    }
+
+    // Party capacity is checked before the login is started, so a refusal costs nothing and the
+    // player is not left with a bot they did not want online.
+    if (Group const* group = to->GetGroup())
+    {
+        uint32 alts = 0;
+        for (GroupReference const* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member != to && GET_PLAYERBOT_AI(member))
+                    ++alts;
+
+        bool const alreadyIn = group->IsMember(guid);
+        if (!alreadyIn && alts >= MAX_PARTY_ALTS)
+        {
+            SendError(to, 409, "party already has four alts");
+            return;
+        }
+    }
+
+    if (!online)
+    {
+        if (action == "INVITE")
+        {
+            SendError(to, 409, "that alt is not logged in");
+            return;
+        }
+
+        std::string const outcome =
+            mgr->ProcessBotCommand("add", guid, to->GetGUID(), true, to->GetSession()->GetAccountId(), 0);
+
+        if (outcome != "ok")
+        {
+            Reply(to, "ALTCTL", std::to_string(altGuid), {Acore::StringFormat("{}:{}", altGuid, Escape(outcome))});
+            return;
+        }
+    }
+    else if (!GET_PLAYERBOT_AI(online))
+    {
+        // A human is playing this character right now. Taking it over is not ours to do.
+        SendError(to, 409, "that character is being played");
+        return;
+    }
+
+    // The bot may already be in world (INVITE, or an ADD that resolved immediately), in which case
+    // this succeeds now and no entry is queued.
+    if (online && JoinMasterParty(to, online))
+    {
+        Reply(to, "ALTCTL", std::to_string(altGuid), {Acore::StringFormat("{}:ok", altGuid)});
+        return;
+    }
+
+    _pendingInvites.erase(std::remove_if(_pendingInvites.begin(), _pendingInvites.end(),
+                                         [&guid](PendingInvite const& p) { return p.bot == guid; }),
+                          _pendingInvites.end());
+    _pendingInvites.push_back({to->GetGUID(), guid, INVITE_WAIT_MS});
+
+    Reply(to, "ALTCTL", std::to_string(altGuid), {Acore::StringFormat("{}:pending", altGuid)});
+}
+
+void BotInspectorMgr::Update(Player* player, uint32 diff)
+{
+    if (!player || _pendingInvites.empty())
+        return;
+
+    for (auto itr = _pendingInvites.begin(); itr != _pendingInvites.end();)
+    {
+        // Each entry is driven by its own master's tick, so one player's pending invite is never
+        // aged or retried by another player's update.
+        if (itr->master != player->GetGUID())
+        {
+            ++itr;
+            continue;
+        }
+
+        Player* const bot = ObjectAccessor::FindPlayer(itr->bot);
+        if (bot && bot->IsInWorld() && JoinMasterParty(player, bot))
+        {
+            itr = _pendingInvites.erase(itr);
+            continue;
+        }
+
+        if (itr->remainingMs <= diff)
+        {
+            LOG_DEBUG("playerbots", "[Inspector] gave up joining {} to {}'s party", itr->bot.ToString(),
+                      player->GetName());
+            itr = _pendingInvites.erase(itr);
+            continue;
+        }
+
+        itr->remainingMs -= diff;
+        ++itr;
+    }
+}
+
 bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
 {
     if (msg.rfind(std::string(PROTOCOL) + "\t", 0) != 0)
@@ -535,6 +781,11 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
     else if (verb == "DETAIL" && parts.size() >= 5)
         HandleDetail(sender, static_cast<ObjectGuid::LowType>(std::strtoul(parts[3].c_str(), nullptr, 10)),
                      parts[4]);
+    else if (verb == "ALTS")
+        HandleAlts(sender);
+    else if (verb == "ALTCTL" && parts.size() >= 5)
+        HandleAltControl(sender, parts[3],
+                         static_cast<ObjectGuid::LowType>(std::strtoul(parts[4].c_str(), nullptr, 10)));
     else
         SendError(sender, 400, "unknown verb");
 

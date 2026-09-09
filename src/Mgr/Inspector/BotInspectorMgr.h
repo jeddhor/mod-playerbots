@@ -51,6 +51,15 @@ public:
      */
     bool HandleMessage(Player* sender, std::string const& msg);
 
+    /**
+     * Deferred work for one player, called from the world update.
+     *
+     * Only party invites need this. Adding an alt bot starts a login, and a login does not finish
+     * inside the request that asked for it -- so the invite cannot be issued there. Queuing it and
+     * retrying as the master ticks is what turns "add" and "join my party" into one click.
+     */
+    void Update(Player* player, uint32 diff);
+
 private:
     BotInspectorMgr() = default;
     ~BotInspectorMgr() = default;
@@ -68,6 +77,15 @@ private:
     void HandleList(Player* to, uint32 zoneId);
     void HandleFind(Player* to, std::string const& needle);
     void HandleDetail(Player* to, ObjectGuid::LowType botGuid, std::string const& section);
+
+    /// The requesting account's other characters, with enough state for the panel to offer actions.
+    void HandleAlts(Player* to);
+
+    /// ADD / REMOVE / INVITE for one of the requesting account's own characters.
+    void HandleAltControl(Player* to, std::string const& action, ObjectGuid::LowType altGuid);
+
+    /// Put `bot` in `master`'s group, creating the group if this is the first member. True on success.
+    bool JoinMasterParty(Player* master, Player* bot);
 
     /**
      * True if this account may inspect bots at all.
@@ -100,8 +118,22 @@ private:
         uint32 lastMs = 0;
     };
 
+    /**
+     * A party invite waiting for a freshly added alt bot to reach the world.
+     *
+     * Held by GUID rather than by pointer: the whole point is that the bot does not exist as a
+     * Player yet when this is queued, and it may never arrive if the login fails.
+     */
+    struct PendingInvite
+    {
+        ObjectGuid master;
+        ObjectGuid bot;
+        uint32 remainingMs = 0;
+    };
+
     std::mutex _mutex;
     std::unordered_map<uint32, Bucket> _buckets;
+    std::vector<PendingInvite> _pendingInvites;
 };
 
 #define sBotInspectorMgr BotInspectorMgr::instance()

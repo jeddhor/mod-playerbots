@@ -78,6 +78,17 @@ refresh:SetPoint("BOTTOMRIGHT", -18, 16)
 refresh:SetText("Refresh")
 UI.refresh = refresh
 
+-- Altbot Controls sits beside Refresh and toggles a full-window page (ui_alts.lua). Wider than the
+-- other buttons because "Altbot Controls" does not fit the standard 80, and it doubles as "Back".
+local altsButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+altsButton:SetWidth(120); altsButton:SetHeight(24)
+altsButton:SetPoint("RIGHT", refresh, "LEFT", -6, 0)
+altsButton:SetText("Altbot Controls")
+altsButton:SetScript("OnClick", function()
+    if UI.ShowAlts then UI:ShowAlts(not UI.altsShown) end
+end)
+UI.altsButton = altsButton
+
 -- Panes
 local left = W.Panel(frame, 0, 0, 0, 0.30)
 left:SetPoint("TOPLEFT", LEFT_X + 8, -44)
@@ -108,6 +119,8 @@ function BI:Toggle()
         frame:Hide()
     else
         frame:Show()
+        -- Always reopen on the roster. The alts page is a detour, not a mode.
+        if UI.ShowAlts and UI.altsShown then UI:ShowAlts(false) end
         UI:SetStatus("requesting zones...")
         self:RequestZones()
     end

@@ -230,6 +230,11 @@ public:
         {
             playerbotMgr->UpdateAI(diff);
         }
+
+        // Party invites the inspector queued for alt bots that were still logging in. Driven from
+        // the master's tick rather than the bot's, because the bot it is waiting on may not exist
+        // as a Player yet -- which is the whole reason the invite had to be deferred.
+        sBotInspectorMgr.Update(player, diff);
     }
 
     bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Player* receiver) override

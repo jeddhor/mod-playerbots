@@ -40,6 +40,7 @@ BI.zoneNames = {}   -- zoneId -> name (server-sent; the client cannot resolve ar
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
 BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
 BI.lastError = nil
+BI.alts      = {}   -- { {guid, name, level, class, race, state}, ... }
 BI.can       = { appear = false, summon = false }   -- filled in by the ZONES reply
 
 -- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
@@ -78,6 +79,20 @@ end
 function BI:RequestDetail(guid, section)
     self:Send("DETAIL", guid, section)
     self:MarkSent("DETAIL", guid .. ":" .. section, function() BI:RequestDetail(guid, section) end)
+end
+
+--- The account's other characters, online or not.
+function BI:RequestAlts()
+    self:Send("ALTS")
+    self:MarkSent("ALTS", "0", function() BI:RequestAlts() end)
+end
+
+--- Act on one alt: "ADD" (log it in as a bot and party it), "INVITE", or "REMOVE".
+-- Deliberately not retried by MarkSent. Every other request is a read and re-sending one costs
+-- nothing, but these change the world -- a silent retry could log a character in twice or dismiss
+-- one the player had just re-added.
+function BI:RequestAltControl(action, guid)
+    self:Send("ALTCTL", action, guid)
 end
 
 BI.SECTIONS = { "CORE", "GEAR", "SKILL", "QUEST" }
@@ -276,6 +291,28 @@ local function dispatch(verb, key, rows)
             end
         end
         if handlers.OnFind then handlers.OnFind(list, matched) end
+
+    elseif verb == "ALTS" then
+        local list = {}
+        for _, row in ipairs(rows) do
+            local f = split(row, ":")
+            if f[1] and f[1] ~= "" then
+                table.insert(list, {
+                    guid = tonumber(f[1]), name = f[2], level = tonumber(f[3]),
+                    class = tonumber(f[4]), race = tonumber(f[5]),
+                    -- offline | player | bot | party
+                    state = f[6] or "offline",
+                })
+            end
+        end
+        BI.alts = list
+        if handlers.OnAlts then handlers.OnAlts(list) end
+
+    elseif verb == "ALTCTL" then
+        local f = split(rows[1] or "", ":")
+        if handlers.OnAltControl then
+            handlers.OnAltControl(tonumber(f[1]), f[2] or "")
+        end
 
     elseif verb == "DETAIL" then
         local f = split(key, ":")
