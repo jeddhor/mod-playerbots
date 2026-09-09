@@ -7,6 +7,7 @@
 #include "PostAuctionAction.h"
 
 #include "BotCraftMgr.h"
+#include "BotToolMgr.h"
 
 #include "BotEconomyMgr.h"
 #include "Item.h"
@@ -74,6 +75,14 @@ public:
         // needs a particular item is a per-bot question it cannot answer. This is that question. A
         // miner who smelts his ore and then auctions every bar has supplied the realm and stranded
         // his own blacksmithing, so a stack is only listed if the reserve survives its going.
+        // Never auction a tool the bot's own trade needs.
+        //
+        // The tool manager buys a Virtuoso Inking Set for 750c and the economy promptly listed it:
+        // twenty-two were on the house at once, every one of them bought minutes earlier by the
+        // scribe now selling it. Money round and round for nothing.
+        if (sBotToolMgr.IsNeededTool(bot, item->GetTemplate()->TotemCategory))
+            return false;
+
         uint32 const entry = item->GetTemplate()->ItemId;
         uint32 const reserve = sBotCraftMgr.ReagentReserve(bot, entry);
 

@@ -283,8 +283,19 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
     // over 64 activity starts, the chosen route averaged 962 yards and reached 2558 -- against a
     // fifteen minute window, which is why availability could rise 16 points while the number of bots
     // that actually reached a node stayed at one.
+    // Preferred reach, and a further one used only when nothing is near.
+    //
+    // 800 alone denied three gather attempts in four: 160 of 162 refusals were "no usable route
+    // within reach", not a skill or bag problem. A bot standing where no route is close then did
+    // nothing at all, which is worse than a walk -- the activity lasts twenty-five minutes and a
+    // bot covers three thousand yards in about seven of them, so the journey is affordable.
+    //
+    // The near cap still comes first, so a bot with a vein next to it does not set off across the
+    // zone. The far one only applies when the alternative is not gathering.
     constexpr float MAX_TRAVEL_DISTANCE = 800.0f;
     constexpr float MAX_TRAVEL_DISTANCE_SQ = MAX_TRAVEL_DISTANCE * MAX_TRAVEL_DISTANCE;
+    constexpr float FAR_TRAVEL_DISTANCE = 3000.0f;
+    constexpr float FAR_TRAVEL_DISTANCE_SQ = FAR_TRAVEL_DISTANCE * FAR_TRAVEL_DISTANCE;
 
     // Choose among the closest few rather than the single closest, so a hundred bots in one city do
     // not all descend on the same copper vein.
@@ -295,6 +306,7 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
     float const botY = bot->GetPositionY();
 
     std::vector<std::pair<float, Route const*>> reachable;
+    std::vector<std::pair<float, Route const*>> distant;
 
     for (Route const& route : _routes)
     {
@@ -312,11 +324,16 @@ GatherRouteMgr::Route const* GatherRouteMgr::PickRouteWithinReach(Player* bot) c
         float const dx = first.x - botX;
         float const dy = first.y - botY;
         float const d2 = dx * dx + dy * dy;
-        if (d2 > MAX_TRAVEL_DISTANCE_SQ)
-            continue;
 
-        reachable.emplace_back(d2, &route);
+        if (d2 <= MAX_TRAVEL_DISTANCE_SQ)
+            reachable.emplace_back(d2, &route);
+        else if (d2 <= FAR_TRAVEL_DISTANCE_SQ)
+            distant.emplace_back(d2, &route);
     }
+
+    // Nothing close: take the walk rather than the refusal.
+    if (reachable.empty())
+        reachable = std::move(distant);
 
     if (reachable.empty())
         return nullptr;

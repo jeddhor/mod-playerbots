@@ -70,6 +70,28 @@ uint32 BotToolMgr::VendorToolFor(uint32 totemCategory)
     return itr == _vendorTools.end() ? 0 : itr->second.first;
 }
 
+bool BotToolMgr::IsNeededTool(Player* bot, uint32 totemCategory)
+{
+    if (!totemCategory)
+        return false;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        for (uint32 category : info->TotemCategory)
+            if (category == totemCategory)
+                return true;
+    }
+
+    return false;
+}
+
 std::unordered_set<uint32> BotToolMgr::MissingToolCategories(Player* bot)
 {
     std::unordered_set<uint32> missing;

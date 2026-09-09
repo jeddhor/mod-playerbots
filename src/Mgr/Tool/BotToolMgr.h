@@ -48,6 +48,9 @@ public:
     /// Categories this bot's known recipes require but which nothing it carries satisfies.
     std::unordered_set<uint32> MissingToolCategories(Player* bot);
 
+    /// True if this item is a tool one of the bot's own recipes requires.
+    bool IsNeededTool(Player* bot, uint32 totemCategory);
+
     /// The cheapest vendor-sold item satisfying a category, or 0 if no vendor stocks one.
     uint32 VendorToolFor(uint32 totemCategory);
 
