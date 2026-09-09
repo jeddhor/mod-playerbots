@@ -5,6 +5,8 @@
  */
 
 #include "MovementActions.h"
+
+#include <algorithm>
 #include "Corpse.h"
 #include "Event.h"
 #include "FleeManager.h"
@@ -201,12 +203,25 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
     // been tested with.
     if (generatePath && IsSelfBot(bot))
     {
-        float allowedZ = z + CONTACT_DISTANCE;
+        // Start the floor search from whichever surface the bot is actually standing on, not from
+        // the requested Z. Inside a building -- a church with a ramp up to it, say -- the caller
+        // routinely supplies a terrain-level Z, and a downward search from there finds the ground
+        // *underneath* the building. Honouring that pins the bot below the floor it is walking on,
+        // so it appears to sink through it.
+        //
+        // The lift is clamped: raising the origin far enough to see a storey above is the point,
+        // but raising it arbitrarily would push the origin past the map's height search distance on
+        // a genuine descent (a cliff, a ramp down) and lose the floor altogether.
+        float const standingLift = std::clamp(bot->GetPositionZ() - z, 0.0f, 20.0f);
+        float allowedZ = z + standingLift + CONTACT_DISTANCE;
         bot->UpdateAllowedPositionZ(x, y, allowedZ);
 
-        // Only accept the correction when it is a correction and not a relocation: a large jump
-        // means the query found ground somewhere unrelated, and following it would be its own bug.
-        if (std::fabs(allowedZ - z) < 10.0f)
+        // Asymmetric on purpose. Raising the bot onto a surface it is demonstrably standing on is
+        // the safe direction and can legitimately span a whole storey. Lowering is the direction
+        // that puts a bot inside geometry, so it stays tightly bounded -- and a large jump either
+        // way means the query found ground somewhere unrelated, which would be its own bug.
+        float const delta = allowedZ - z;
+        if (delta >= 0.0f ? delta < 25.0f : delta > -10.0f)
             z = allowedZ;
     }
 
