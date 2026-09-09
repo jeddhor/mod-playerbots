@@ -84,7 +84,17 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
         // doing survives the recovery.
         if (anchor.valid && anchor.mapId == bot->GetMapId())
         {
-            LOG_INFO("playerbots", "[Safety] {} fell out of the world at z={:.1f}, restoring to its last safe ground",
+            // Enough detail to find the cause next time. "fell at z=-1012" says only that it
+            // happened; where, on which map, and what the bot was trying to do is what makes the
+            // next one diagnosable rather than another twelve hour wait.
+            LOG_INFO("playerbots",
+                     "[Safety] {} fell out of the world at ({:.0f},{:.0f},{:.1f}) map {} zone {} "
+                     "[{}selfbot, activity {}], restoring to its last safe ground",
+                     bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(),
+                     bot->GetZoneId(), IsSelfBot(bot) ? "" : "not a ",
+                     GET_PLAYERBOT_AI(bot) ? int(GET_PLAYERBOT_AI(bot)->rpgInfo.GetStatus()) : -1);
+
+            LOG_DEBUG("playerbots", "[Safety] {} fell out of the world at z={:.1f}, restoring to its last safe ground",
                      bot->GetName(), bot->GetPositionZ());
 
             bot->TeleportTo(anchor.mapId, anchor.pos.GetPositionX(), anchor.pos.GetPositionY(),

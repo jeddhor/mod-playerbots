@@ -184,6 +184,32 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
     }
 
     bool generatePath = !bot->IsFlying() && !bot->isSwimming();
+
+    // Snap the destination to a height the character may legally occupy -- but only for a bot with
+    // a real client behind it.
+    //
+    // Twelve hours of two hundred bots produced five falls out of the world and every one was the
+    // self bot; not a single clientless bot fell. The difference is who owns the character's
+    // position. For a clientless bot the server is the only authority and the path generator's own
+    // height handling is the last word. A self bot's client is also authoritative for where it
+    // stands, so a destination whose Z is inside terrain or hanging over nothing becomes a
+    // disagreement between the two, and the character loses -- z=-1012 and lower.
+    //
+    // UpdateAllowedPositionZ is the core's own answer to "what height may this unit be at here". It
+    // sits commented out in the dead upstream block below; this puts it back where it is needed and
+    // nowhere else, so the two hundred bots that never had the problem keep the behaviour they have
+    // been tested with.
+    if (generatePath && IsSelfBot(bot))
+    {
+        float allowedZ = z + CONTACT_DISTANCE;
+        bot->UpdateAllowedPositionZ(x, y, allowedZ);
+
+        // Only accept the correction when it is a correction and not a relocation: a large jump
+        // means the query found ground somewhere unrelated, and following it would be its own bug.
+        if (std::fabs(allowedZ - z) < 10.0f)
+            z = allowedZ;
+    }
+
     bool disableMoveSplinePath =
         sPlayerbotAIConfig.disableMoveSplinePath >= 2 ||
         (sPlayerbotAIConfig.disableMoveSplinePath == 1 && bot->InBattleground());
