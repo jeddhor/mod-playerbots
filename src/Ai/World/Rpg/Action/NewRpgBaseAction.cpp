@@ -1384,6 +1384,10 @@ using SpawnIndex = std::unordered_map<uint32, std::vector<std::tuple<uint16, flo
 
 SpawnIndex g_creatureSpawns;
 SpawnIndex g_objectSpawns;
+
+// Quest item -> the chest entries that can contain it.
+std::unordered_map<uint32, std::vector<uint32>> g_itemSourceObjects;
+
 std::once_flag g_spawnIndexOnce;
 
 void BuildSpawnIndex()
@@ -1400,47 +1404,112 @@ void BuildSpawnIndex()
         if (data.id)
             g_objectSpawns[data.id].emplace_back(data.mapid, data.posX, data.posY, data.posZ);
 
-    LOG_INFO("server.loading", ">> Indexed spawns for {} creatures and {} objects for quest routing",
-             g_creatureSpawns.size(), g_objectSpawns.size());
+    // An item objective names no creature and no object, so a bot carrying one has nothing to walk
+    // to and falls back to the quest's map pin -- which carries X and Y but no Z at all. For
+    // anything not lying on open ground that pin is unusable: the Bladefist Bay toolboxes behind
+    // "From The Wreckage...." sit on the seabed between -0.7 and -20.3, and a bot aiming at the
+    // surface coordinate above them never descends. Resolving the required item back to the chests
+    // that contain it recovers a real height to aim at.
+    //
+    // Restricted to items some quest actually asks for, which keeps this to the few thousand pairs
+    // that can matter rather than every chest drop in the game.
+    QueryResult itemSources = WorldDatabase.Query(
+        "SELECT DISTINCT glt.Item, gt.entry "
+        "FROM gameobject_loot_template glt "
+        "JOIN gameobject_template gt ON gt.Data1 = glt.Entry AND gt.type = 3 "
+        "WHERE glt.Item IN ("
+        " SELECT RequiredItemId1 FROM quest_template WHERE RequiredItemId1 > 0"
+        " UNION SELECT RequiredItemId2 FROM quest_template WHERE RequiredItemId2 > 0"
+        " UNION SELECT RequiredItemId3 FROM quest_template WHERE RequiredItemId3 > 0"
+        " UNION SELECT RequiredItemId4 FROM quest_template WHERE RequiredItemId4 > 0"
+        " UNION SELECT RequiredItemId5 FROM quest_template WHERE RequiredItemId5 > 0"
+        " UNION SELECT RequiredItemId6 FROM quest_template WHERE RequiredItemId6 > 0)");
+
+    if (itemSources)
+    {
+        do
+        {
+            Field* fields = itemSources->Fetch();
+            g_itemSourceObjects[fields[0].Get<uint32>()].push_back(fields[1].Get<uint32>());
+        } while (itemSources->NextRow());
+    }
+
+    LOG_INFO("server.loading",
+             ">> Indexed spawns for {} creatures and {} objects, and {} quest items to their source objects, "
+             "for quest routing",
+             g_creatureSpawns.size(), g_objectSpawns.size(), g_itemSourceObjects.size());
 }
 }  // namespace
 
 bool NewRpgBaseAction::AddSpawnCandidates(Quest const* quest, int32 objectiveIdx, std::vector<POIInfo>& poiInfo)
 {
-    // Only creature and object objectives have spawns to aim at. Item objectives that drop from mobs
-    // are covered by the creature entry; item objectives with no source fall back to the map pin.
-    if (objectiveIdx < 0 || objectiveIdx >= QUEST_OBJECTIVES_COUNT)
-        return false;
-
-    int32 const npcOrGo = quest->RequiredNpcOrGo[objectiveIdx];
-    if (!npcOrGo)
+    if (objectiveIdx < 0)
         return false;
 
     std::call_once(g_spawnIndexOnce, BuildSpawnIndex);
 
-    // A negative RequiredNpcOrGo means a game object, positive means a creature.
-    SpawnIndex const& index = npcOrGo > 0 ? g_creatureSpawns : g_objectSpawns;
-    auto itr = index.find(uint32(std::abs(npcOrGo)));
-    if (itr == index.end())
-        return false;
+    // Every spawn list this objective could be satisfied at. Usually one, but an item that drops
+    // from several kinds of chest has one list per chest.
+    std::vector<std::vector<std::tuple<uint16, float, float, float>> const*> sources;
+
+    if (objectiveIdx < QUEST_OBJECTIVES_COUNT)
+    {
+        int32 const npcOrGo = quest->RequiredNpcOrGo[objectiveIdx];
+        if (!npcOrGo)
+            return false;
+
+        // A negative RequiredNpcOrGo means a game object, positive means a creature.
+        SpawnIndex const& index = npcOrGo > 0 ? g_creatureSpawns : g_objectSpawns;
+        auto itr = index.find(uint32(std::abs(npcOrGo)));
+        if (itr == index.end())
+            return false;
+
+        sources.push_back(&itr->second);
+    }
+    else
+    {
+        // Item objective: aim at whatever holds the item. Objective indices past the creature slots
+        // are item slots, which is the convention GetQuestPOIPosAndObjectiveIdx already uses.
+        int32 const itemSlot = objectiveIdx - QUEST_OBJECTIVES_COUNT;
+        if (itemSlot >= QUEST_ITEM_OBJECTIVES_COUNT)
+            return false;
+
+        uint32 const itemId = quest->RequiredItemId[itemSlot];
+        if (!itemId)
+            return false;
+
+        auto sourceItr = g_itemSourceObjects.find(itemId);
+        if (sourceItr == g_itemSourceObjects.end())
+            return false;
+
+        for (uint32 objectEntry : sourceItr->second)
+            if (auto itr = g_objectSpawns.find(objectEntry); itr != g_objectSpawns.end())
+                sources.push_back(&itr->second);
+
+        if (sources.empty())
+            return false;
+    }
 
     size_t const before = poiInfo.size();
 
-    for (auto const& [mapId, x, y, z] : itr->second)
+    for (auto const* spawnList : sources)
     {
-        if (mapId != bot->GetMapId())
-            continue;
+        for (auto const& [mapId, x, y, z] : *spawnList)
+        {
+            if (mapId != bot->GetMapId())
+                continue;
 
-        // Same reach the pin sampler uses, so this does not send a bot across a continent.
-        if (bot->GetDistance2d(x, y) >= 1500.0f)
-            continue;
+            // Same reach the pin sampler uses, so this does not send a bot across a continent.
+            if (bot->GetDistance2d(x, y) >= 1500.0f)
+                continue;
 
-        POIInfo info;
-        info.pos = G3D::Vector2(x, y);
-        info.objectiveIdx = objectiveIdx;
-        info.z = z;
-        info.hasZ = true;
-        poiInfo.push_back(info);
+            POIInfo info;
+            info.pos = G3D::Vector2(x, y);
+            info.objectiveIdx = objectiveIdx;
+            info.z = z;
+            info.hasZ = true;
+            poiInfo.push_back(info);
+        }
     }
 
     return poiInfo.size() > before;
@@ -1611,6 +1680,21 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
         dest = *RandomElement(hi_prepared_locs);
     else if (WorldLocation const* loc = RandomElement(lo_prepared_locs))
         dest = *loc;
+
+    // These locations come out of locsPerLevelCache, which stores grid cells scaled by 50 -- so the
+    // Z is quantised to 50-yard steps and can sit tens of yards above or below the actual ground.
+    //
+    // That is fatal downstream rather than merely imprecise: GO_GRIND ends when
+    // GetExactDist(pos) < 10, and GetExactDist is three-dimensional. A bot standing exactly on the
+    // right spot still measures the full vertical error, never "arrives", and walks the same patch
+    // of ground until the status times out -- with MoveFarTo teleporting it up to the phantom
+    // height on the way, from which it simply falls back down.
+    //
+    // Quantised X and Y are fine, since the point is only ever "this region"; Z is the one axis a
+    // walking bot cannot choose for itself, so it has to be resolved against the map.
+    if (dest != WorldPosition())
+        ResolveTeleportGround(bot, dest);
+
     LOG_DEBUG("playerbots", "[New RPG] Bot {} select random grind pos Map:{} X:{} Y:{} Z:{} ({}+{} available in {})",
               bot->GetName(), dest.GetMapId(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(),
               hi_prepared_locs.size(), lo_prepared_locs.size() - hi_prepared_locs.size(), locs.size());
@@ -1651,6 +1735,9 @@ WorldPosition NewRpgBaseAction::SelectRandomCampPos(Player* bot)
     WorldPosition dest{};
     if (WorldLocation const* loc = RandomElement(prepared_locs))
         dest = *loc;
+    // Deliberately NOT ground-resolved. Unlike grind cells these are real NPC spawn coordinates and
+    // are already correct -- and an inn keeper standing on an upper floor would be snapped down to
+    // the terrain under the building, sending bots beneath it.
     LOG_DEBUG("playerbots", "[New RPG] Bot {} select random inn keeper pos Map:{} X:{} Y:{} Z:{} ({} available in {})",
               bot->GetName(), dest.GetMapId(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(),
               prepared_locs.size(), locs.size());

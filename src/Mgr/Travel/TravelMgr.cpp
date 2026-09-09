@@ -4819,8 +4819,34 @@ void TravelMgr::PrepareDestinationCache()
     {
         if (creatureDataList.size() >= 2)
         {
-            CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(creatureDataList[0].id);
-            uint32 level = (creatureTemplate->minlevel + creatureTemplate->maxlevel + 1) / 2;
+            // Band the cell by every creature standing in it, not just whichever spawn happened to
+            // be enumerated first. A 50-yard cell routinely mixes a level 1 critter with the level 6
+            // wolves next to it, and sampling one spawn let the whole cell inherit that spawn's
+            // level -- which is how a level 1 bot got handed a grind spot full of things that kill
+            // it. The peak matters more than the mean here, because the bot has to survive the
+            // toughest thing in the cell, not the average thing.
+            uint32 levelSum = 0;
+            uint32 levelPeak = 0;
+            uint32 sampled = 0;
+            for (auto const& creatureData : creatureDataList)
+            {
+                CreatureTemplate const* sampledTemplate = sObjectMgr->GetCreatureTemplate(creatureData.id);
+                if (!sampledTemplate)
+                    continue;
+
+                uint32 const sampledLevel = (sampledTemplate->minlevel + sampledTemplate->maxlevel + 1) / 2;
+                levelSum += sampledLevel;
+                levelPeak = std::max(levelPeak, sampledLevel);
+                sampled++;
+            }
+
+            if (!sampled)
+                continue;
+
+            // Halfway between the mean and the peak: a lone elite should not close a cell off to
+            // everyone, but it should not be averaged away either.
+            uint32 const level = ((levelSum / sampled) + levelPeak + 1) / 2;
+
             for (int32 l = (int32)level - (int32)sPlayerbotAIConfig.randomBotTeleLowerLevel;
                  l <= (int32)level + (int32)sPlayerbotAIConfig.randomBotTeleHigherLevel; l++)
             {
