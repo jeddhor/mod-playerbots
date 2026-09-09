@@ -58,6 +58,10 @@ public:
         uint32 weight;
     };
 
+    /// The apprentice spell that grants a profession. Shared with BotTrainingMgr, which must
+    /// remove it alongside the skill when stripping a profession a class should not have.
+    static uint32 GetProfessionStarterSpell(uint16 skillId);
+
     /// Trade-skill classification. Public because more than the factory needs to ask: the craft
     /// manager distinguishes a reagent some other crafter makes from one a gatherer smelts.
     static bool IsPrimaryTradeSkill(uint16 skillId);
@@ -168,7 +172,6 @@ private:
     // void InitEquipmentNew(bool incremental);
     bool CanEquipItem(ItemTemplate const* proto);
     bool CanEquipUnseenItem(uint8 slot, uint16& dest, uint32 item);
-    static uint32 GetProfessionStarterSpell(uint16 skillId);
     static std::vector<WeightedProfessionPair> GetRandomProfessionPairs();
     static std::pair<uint16, uint16> ChooseProfessionPair(std::vector<WeightedProfessionPair> const& professionPairs);
     static bool HasProfessionPair(std::vector<WeightedProfessionPair> const& professionPairs,

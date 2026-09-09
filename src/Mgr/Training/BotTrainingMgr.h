@@ -48,6 +48,17 @@ public:
     /// Per-bot tick. Trains on its own interval; cheap on every other call.
     void Update(Player* bot, uint32 diff);
 
+    /**
+     * Strip any primary profession this bot's class should not have.
+     *
+     * A last line rather than a first one. Something in the login path grants professions without
+     * an apprentice spell -- 190 such skills appeared across all eleven professions the moment two
+     * hundred bots logged in -- and I could not find it by reading. Predicting the source has now
+     * failed three times, so this stops predicting: it restates the invariant every pass, and is
+     * correct whatever put the skill there.
+     */
+    void EnforceProfessions(Player* bot);
+
     /// Train immediately, ignoring the interval. Returns how many spells were learned.
     uint32 TrainNow(Player* bot);
 
@@ -120,6 +131,8 @@ private:
     std::unordered_set<uint32> _neverPersists;
 
     uint32 _refunded{0};
+    uint32 _professionRefused{0};
+    uint32 _professionStripped{0};
     uint32 _learnedTotal{0};
     uint32 _passesRun{0};
 };

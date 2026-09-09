@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 
 namespace
 {
@@ -103,6 +104,24 @@ uint32 BotTrainingMgr::TaughtSpell(uint32 spellId)
     return spellId;
 }
 
+namespace
+{
+constexpr std::array<uint32, 11> PRIMARY_SKILLS = {
+    SKILL_BLACKSMITHING, SKILL_LEATHERWORKING, SKILL_ALCHEMY, SKILL_HERBALISM, SKILL_MINING,
+    SKILL_TAILORING, SKILL_ENGINEERING, SKILL_ENCHANTING, SKILL_SKINNING, SKILL_JEWELCRAFTING,
+    SKILL_INSCRIPTION};
+
+std::vector<uint32> HeldProfessions(Player* bot)
+{
+    std::vector<uint32> held;
+    for (uint32 skill : PRIMARY_SKILLS)
+        if (bot->HasSkill(skill))
+            held.push_back(skill);
+
+    return held;
+}
+}  // namespace
+
 uint32 BotTrainingMgr::PrimaryProfessionTaught(uint32 spellId)
 {
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
@@ -180,17 +199,7 @@ bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
         // GetFreePrimaryProfessionPoints. That counter is maintained by add/remove of spells, and a
         // realm where professions have been edited underneath it -- as they have been here -- can
         // leave it disagreeing with the character sheet. The skills are the truth.
-        static constexpr std::array<uint32, 11> PRIMARY_SKILLS = {
-            SKILL_BLACKSMITHING, SKILL_LEATHERWORKING, SKILL_ALCHEMY, SKILL_HERBALISM, SKILL_MINING,
-            SKILL_TAILORING, SKILL_ENGINEERING, SKILL_ENCHANTING, SKILL_SKINNING, SKILL_JEWELCRAFTING,
-            SKILL_INSCRIPTION};
-
-        uint32 held = 0;
-        for (uint32 skill : PRIMARY_SKILLS)
-            if (bot->HasSkill(skill))
-                ++held;
-
-        if (held >= sWorld->getIntConfig(CONFIG_MAX_PRIMARY_TRADE_SKILL))
+        if (HeldProfessions(bot).size() >= sWorld->getIntConfig(CONFIG_MAX_PRIMARY_TRADE_SKILL))
             return false;
 
         auto const [first, second] = PreferredProfessions(bot);
@@ -204,6 +213,33 @@ bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
         return false;
 
     return sSpellMgr->GetSpellInfo(entry.spellId) != nullptr;
+}
+
+void BotTrainingMgr::EnforceProfessions(Player* bot)
+{
+    auto const [want1, want2] = PreferredProfessions(bot);
+    if (!want1 && !want2)
+        return;
+
+    for (uint32 skill : PRIMARY_SKILLS)
+    {
+        if (!bot->HasSkill(skill) || skill == want1 || skill == want2)
+            continue;
+
+        bot->SetSkill(skill, 0, 0, 0);
+
+        // The apprentice spell goes with it, or the skill is simply recreated the next time spells
+        // are loaded and the sweep runs forever against its own leftovers.
+        if (uint32 const starter = PlayerbotFactory::GetProfessionStarterSpell(uint16(skill)))
+            if (bot->HasSpell(starter))
+                bot->removeSpell(starter, SPEC_MASK_ALL, false);
+
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        ++_professionStripped;
+
+        LOG_DEBUG("playerbots", "[Professions] {} stripped of {}, which its class should not have",
+                  bot->GetName(), skill);
+    }
 }
 
 uint32 BotTrainingMgr::TrainNow(Player* bot)
@@ -285,6 +321,10 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
         SpellInfo const* info = sSpellMgr->GetSpellInfo(entry.spellId);
         uint32 const taught = TaughtSpell(entry.spellId);
 
+        // Snapshot before the purchase, so the check afterwards is about what this spell did rather
+        // than about what the bot happened to have.
+        std::vector<uint32> const before = HeldProfessions(bot);
+
         bot->ModifyMoney(-int32(entry.cost));
 
         // Same branch a real trainer purchase takes: a spell whose effect is to teach must be cast,
@@ -294,6 +334,39 @@ uint32 BotTrainingMgr::TrainNow(Player* bot)
             bot->CastSpell(bot, entry.spellId, true);
         else
             bot->learnSpell(entry.spellId, false);
+
+        // A profession may arrive without ever looking like one.
+        //
+        // Predicting from the spell has now failed twice: first because the wrapper carries no
+        // SPELL_EFFECT_SKILL, then again for shapes the unwrapping still does not see. Every such
+        // fix is a guess about spell data, and the evidence kept saying the guess was wrong --
+        // bots gained professions at value 1 with no apprentice spell to show for it.
+        //
+        // So stop predicting and look. If the purchase left the bot holding a profession it should
+        // not have, take it straight back off. This cannot be bypassed by any spell shape, because
+        // it inspects the bot rather than the recipe.
+        for (uint32 skill : HeldProfessions(bot))
+        {
+            if (std::find(before.begin(), before.end(), skill) != before.end())
+                continue;
+
+            auto const [want1, want2] = PreferredProfessions(bot);
+            bool const wanted = (skill == want1 || skill == want2);
+            bool const room = before.size() < sWorld->getIntConfig(CONFIG_MAX_PRIMARY_TRADE_SKILL);
+
+            if (wanted && room)
+                continue;
+
+            bot->SetSkill(skill, 0, 0, 0);
+            bot->ModifyMoney(int32(entry.cost));
+
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            _unteachable[bot->GetGUID()].insert(entry.spellId);
+            ++_professionRefused;
+
+            LOG_DEBUG("playerbots", "[Train] {} gained profession {} it should not have; removed and refunded",
+                      bot->GetName(), skill);
+        }
 
         // Verify, refund and blacklist. Charging for something that does not stick is a loop that
         // empties a bot's purse thirty seconds at a time, so no purchase is trusted to have worked
@@ -368,6 +441,9 @@ void BotTrainingMgr::Update(Player* bot, uint32 diff)
         timer = TRAIN_INTERVAL_MS;
     }
 
+    // Before training, not after: a bot carrying a profession it should not have would otherwise
+    // spend the pass buying recipes for it.
+    EnforceProfessions(bot);
     TrainNow(bot);
 }
 

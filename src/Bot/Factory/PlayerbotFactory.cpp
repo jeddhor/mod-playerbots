@@ -4,6 +4,8 @@
  */
 
 #include "PlayerbotFactory.h"
+
+#include "BotTrainingMgr.h"
 #include "AccountMgr.h"
 #include "AiFactory.h"
 #include "AiObjectContext.h"
@@ -2865,6 +2867,15 @@ void PlayerbotFactory::InitTradeSkills()
     }
 
     InitTradeSpecializations();
+
+    // Last word on professions, at the point the factory hands the bot back.
+    //
+    // Something in this path grants professions a class should not have: 190 skills appeared across
+    // all eleven professions the moment two hundred bots logged in, at value 1 and with no
+    // apprentice spell, and reading the code did not find it. A periodic sweep elsewhere removed
+    // them but simply raced this, stripping and regranting on a treadmill. Restating the invariant
+    // here, after everything this function does, ends the race whatever the cause.
+    sBotTrainingMgr.EnforceProfessions(bot);
 }
 
 void PlayerbotFactory::InitTradeSpecializations()
