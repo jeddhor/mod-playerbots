@@ -65,10 +65,20 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
         botAI->rpgInfo.SetMoveFarTo(dest);
     }
 
-    // performance optimization
+    // Waiting is not failing.
+    //
+    // This returned false, and every caller reads false as "could not move" and answers it with
+    // MoveRandomNear -- a ten yard hop that clears the movement generator and destroys the walk
+    // this function had just committed to. So a bot heading for a node two thousand yards away was
+    // interrupted on the very next tick, every tick, and never arrived: 54 gather runs produced two
+    // waypoint arrivals.
+    //
+    // The gate immediately below already returns true for the same situation once the bot is
+    // visibly moving; the two disagreed only during the delay before the spline starts. Say the
+    // same thing in both places -- movement is in hand, leave it alone.
     if (IsWaitingForLastMove(MovementPriority::MOVEMENT_NORMAL))
     {
-        return false;
+        return true;
     }
 
     // Let previously committed movement finish before recomputing.

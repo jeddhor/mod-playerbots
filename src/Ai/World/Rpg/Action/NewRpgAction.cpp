@@ -961,6 +961,12 @@ bool NewRpgMailboxAction::Execute(Event /*event*/)
     return true;
 }
 
+namespace
+{
+/// Further than a route is ever chosen from, with headroom for the walk being imperfect.
+constexpr float GATHER_ABANDON_DISTANCE = 4000.0f;
+}  // namespace
+
 bool NewRpgGatherAction::Execute(Event /*event*/)
 {
     NewRpgInfo& info = botAI->rpgInfo;
@@ -970,21 +976,36 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
 
     auto& data = *dataPtr;
 
-    // Nearest reachable route, not "any route in the stored zone". Re-picking by zone could hand
-    // the bot a route on the far side of a zone it had already travelled into, restarting the walk
-    // it just finished.
-    GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRouteWithinReach(bot);
+    // The route the run was started for, kept for the life of the run.
+    //
+    // This asked for the nearest reachable route on every tick, which makes the destination move as
+    // the bot walks: a different route becomes nearest, routeIndex then indexes into a different
+    // node list, and the bot chases a target that keeps stepping sideways. Ask the stored zone
+    // first, so a run means one route from beginning to end.
+    GatherRouteMgr::Route const* route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
     if (!route)
-        route = sGatherRouteMgr.PickRoute(bot, data.zoneId);
+        route = sGatherRouteMgr.PickRouteWithinReach(bot);
     if (!route || route->nodes.empty())
     {
         info.ChangeToIdle();
         return true;
     }
 
-    // Wandered out of the zone the route belongs to - the route is no longer reachable.
-    if (bot->GetZoneId() != data.zoneId)
+    // Not yet arrived is not the same as wandered off.
+    //
+    // This aborted whenever the bot's zone differed from the route's, which is the normal state of
+    // affairs at the start of a run: ChangeToGather deliberately stores the *route's* zone -- its
+    // own comment says so -- precisely so a bot with nothing to gather where it stands can travel
+    // somewhere that has something. The two pieces of code contradicted each other, and the
+    // traveller lost: every cross-zone run was sent back to idle on its first tick. 26 bots started
+    // runs, one reached a node, none finished a route.
+    //
+    // Distance is the honest test. Beyond the reach a route could have been chosen at, the bot is
+    // not travelling to it any more.
+    if (bot->GetDistance2d(route->nodes.front().x, route->nodes.front().y) > GATHER_ABANDON_DISTANCE)
     {
+        LOG_DEBUG("playerbots", "[Gather] {} abandoned route in zone {}: {:.0f} yards from the first node",
+                  bot->GetName(), data.zoneId, bot->GetDistance2d(route->nodes.front().x, route->nodes.front().y));
         info.ChangeToIdle();
         return true;
     }
