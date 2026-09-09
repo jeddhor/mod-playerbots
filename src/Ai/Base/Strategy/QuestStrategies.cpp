@@ -15,6 +15,17 @@ void QuestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode("quest share", {  NextAction("accept quest share", relevance) }));
+
+    // The sending half of the same feature. It lives in the "maintenance" strategy upstream, which
+    // AiFactory never adds -- so no bot has ever shared a quest with anyone. Only this one action is
+    // pulled across rather than enabling that strategy wholesale, matching what was done for
+    // disenchanting: maintenance also carries crafting and repair behaviour that has not been
+    // reviewed.
+    //
+    // "seldom" because the action is idempotent by design -- it remembers who it has already
+    // offered each quest to -- so a fast trigger would buy nothing but party-scan cost.
+    triggers.push_back(
+        new TriggerNode("seldom", { NextAction("auto share quest", relevance) }));
 }
 
 void DefaultQuestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

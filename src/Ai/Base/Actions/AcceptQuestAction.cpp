@@ -133,16 +133,25 @@ bool AcceptQuestShareAction::Execute(Event event)
         return false;
     }
 
+    // Whoever actually offered the quest, which is who the divider names -- not the bot's master.
+    // With bots now sharing among themselves the sharer is usually another bot, and a bot with no
+    // master at all is ordinary, so the old code's unconditional use of master could crash.
+    // Resolved before the divider is cleared, because clearing it loses the only record of who asked.
+    Player* sharer = ObjectAccessor::FindPlayer(bot->GetDivider());
+
     if (!bot->GetDivider().IsEmpty())
     {
-        // send msg to quest giving player
-        master->SendPushToPartyResponse(bot, QUEST_PARTY_MSG_ACCEPT_QUEST);
+        if (sharer)
+            sharer->SendPushToPartyResponse(bot, QUEST_PARTY_MSG_ACCEPT_QUEST);
+
         bot->SetDivider(ObjectGuid::Empty);
     }
 
     if (bot->CanAddQuest(qInfo, false))
     {
-        bot->AddQuest(qInfo, master);
+        // The sharer is the quest giver here: for a timed quest the core copies the giver's
+        // remaining timer, so naming the master instead would hand out the wrong deadline.
+        bot->AddQuest(qInfo, sharer ? sharer : master);
 
         if (bot->CanCompleteQuest(quest))
             bot->CompleteQuest(quest);
