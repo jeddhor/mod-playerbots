@@ -54,6 +54,47 @@ QuestStatusData const* NewRpgBaseAction::GetQuestStatusData(uint32 questId) cons
     return itr != statusMap.end() ? &itr->second : nullptr;
 }
 
+namespace
+{
+/**
+ * Snap a teleport destination onto solid ground, or refuse it.
+ *
+ * A teleport is the one movement that skips every check walking would have made. Both of ours took
+ * a destination derived from map data -- a quest POI sample, a gather waypoint centroid -- and put
+ * the bot there unconditionally. Those coordinates are not promises: a POI point has no Z at all
+ * and a waypoint is an averaged centroid that can land inside a rock or in mid air. Arriving there
+ * is how a bot ends up under the world and needs recovering.
+ *
+ * Same standard the safety manager recovers against, applied before the fact instead of after.
+ */
+bool ResolveTeleportGround(Player* bot, WorldPosition& dest)
+{
+    Map* map = bot->FindMap();
+    if (!map)
+        return false;
+
+    float const x = dest.GetPositionX();
+    float const y = dest.GetPositionY();
+
+    // Search downward from a little above the requested point, so a destination floating over a
+    // ledge lands on the ledge rather than being rejected.
+    float ground = map->GetHeight(bot->GetPhaseMask(), x, y, dest.GetPositionZ() + 5.0f, true);
+    if (ground <= INVALID_HEIGHT || ground == VMAP_INVALID_HEIGHT_VALUE)
+        ground = map->GetHeight(bot->GetPhaseMask(), x, y, MAX_HEIGHT, true);
+
+    if (ground <= INVALID_HEIGHT || ground == VMAP_INVALID_HEIGHT_VALUE)
+        return false;
+
+    // Below the map's floor is outside the world, not underground -- the core's own distinction.
+    if (ground < map->GetMinHeight(x, y))
+        return false;
+
+    float const water = map->GetWaterLevel(x, y);
+    dest.Relocate(x, y, std::max(ground, water) + 0.5f);
+    return true;
+}
+}  // namespace
+
 bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
 {
     if (dest == WorldPosition())
@@ -136,8 +177,19 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(),
             dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), dest.GetMapId(), bot->GetZoneId(),
             zone_name);
+        // Stuck recovery is one of exactly two places this layer teleports, and it is the more
+        // dangerous: the destination was never walked to, so nothing has confirmed it is solid.
+        WorldPosition landing = dest;
+        if (!ResolveTeleportGround(bot, landing))
+        {
+            LOG_DEBUG("playerbots", "[Teleport] {} refused stuck recovery to ({:.0f},{:.0f},{:.0f}) on map {}: no "
+                                    "ground there",
+                      bot->GetName(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), dest.GetMapId());
+            return false;
+        }
+
         bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
-        return bot->TeleportTo(dest);
+        return bot->TeleportTo(landing);
     }
 
     float dis = bot->GetExactDist(dest);
@@ -869,10 +921,21 @@ bool NewRpgBaseAction::TeleportToDistantTurnIn(uint32 questId, WorldPosition con
     if (distance < sPlayerbotAIConfig.questTurnInTeleportDistance)
         return false;
 
+    // The second and last teleport in this layer. A quest giver's recorded position is usually
+    // sound, but it comes from the same POI data as everything else and is not worth trusting
+    // blind.
+    WorldPosition landing = pos;
+    if (!ResolveTeleportGround(bot, landing))
+    {
+        LOG_DEBUG("playerbots", "[Teleport] {} refused quest turn-in jump for quest {}: no ground at the destination",
+                  bot->GetName(), questId);
+        return false;
+    }
+
     LOG_DEBUG("playerbots", "[QuestTeleport] {} skipping {:.0f} yards to turn in quest {}", bot->GetName(),
               distance, questId);
 
-    bot->TeleportTo(pos.GetMapId(), pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(),
+    bot->TeleportTo(landing.GetMapId(), landing.GetPositionX(), landing.GetPositionY(), landing.GetPositionZ(),
                     bot->GetOrientation());
     return true;
 }
