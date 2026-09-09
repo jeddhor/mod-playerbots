@@ -695,7 +695,10 @@ AiPlayerbot.BotTaxiGapJitterMs = 100
 # weighted profession combination. The remaining randombots use the weighted
 # random sane-pair profession pool.
 # Default: 30
-AiPlayerbot.ClassMatchingProfessionChance = 30
+#    Set to 100: professions follow armour type and class need, so a paladin is a
+#    blacksmith and a hunter an engineer. A random roll produced miners who were also
+#    tailors and undid any attempt to give the realm a coherent trade economy.
+AiPlayerbot.ClassMatchingProfessionChance = 100
 
 # Automatically adds the 'master fishing' strategy to bots that have the fishing skill when the bots master fishes.
 # Default: 1 (Enabled)
