@@ -91,9 +91,16 @@ uint8 AiFactory::GetPlayerSpecTab(Player* bot)
         // 2H heavily for protection specs -- weight x0.5 then x0.1 -- but keys that on the talent
         // tab, and with no talents a warrior fell through to tab 0, which is Arms, which wants a
         // two-hander. Setting the tank strategies made no difference because nothing consulted
-        // them. IsTank(bot, false) reads exactly those strategies, and does not call back into this
-        // function, so it is safe to ask here.
-        if (PlayerbotAI::IsTank(bot, false))
+        // them.
+        //
+        // Ask the strategies directly, NOT through PlayerbotAI::IsTank. IsTank only short-circuits
+        // to ContainsStrategy when the player has a bot AI; without one it falls through to
+        // GetPlayerSpecTab -- this function -- and the pair recurse until the stack runs out. That
+        // is not hypothetical: it segfaulted the realm five times, every crash landing one word
+        // from the stack pointer.
+        PlayerbotAI* const botAi = GET_PLAYERBOT_AI(bot);
+
+        if (botAi && botAi->ContainsStrategy(STRATEGY_TYPE_TANK))
         {
             switch (bot->getClass())
             {
