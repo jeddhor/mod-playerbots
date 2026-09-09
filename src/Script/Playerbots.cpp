@@ -25,6 +25,7 @@
 #include "BotSafetyMgr.h"
 #include "BotRepairMgr.h"
 #include "BotCraftMgr.h"
+#include "BotFollowMgr.h"
 #include "BotToolMgr.h"
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
@@ -220,6 +221,7 @@ public:
             sBotRepairMgr.Update(player, diff);
             sBotToolMgr.Update(player, diff);
             sBotCraftMgr.Update(player, diff);
+            sBotFollowMgr.Update(player, diff);
 
             botAI->UpdateAI(diff);
         }
