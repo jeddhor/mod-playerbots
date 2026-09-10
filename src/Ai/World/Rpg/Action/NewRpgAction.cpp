@@ -319,7 +319,16 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
             // GO_GRIND -> WANDER_RANDOM
             if (bot->GetExactDist(originalPos) < 10.0f)
             {
-                info.ChangeToWanderRandom();
+                // Wandering on arrival is right outdoors: the bot has reached a grinding spot and
+                // should mill about it killing things. Inside an instance it is the whole bug an
+                // operator sees -- a leader walks to a pack, starts wandering ten yards at a time,
+                // and reads as pacing side to side at the entrance. Going idle instead sends it
+                // straight back through the dungeon branch to choose the next pull.
+                Map* map = bot->FindMap();
+                if (map && map->IsDungeon())
+                    info.ChangeToIdle();
+                else
+                    info.ChangeToWanderRandom();
                 return true;
             }
             // Could not get there in time - pick something else rather than walking forever.

@@ -5,6 +5,8 @@
  */
 
 #include "GrindTargetValue.h"
+#include "Map.h"
+#include "PlayerbotAIConfig.h"
 #include "NewRpgInfo.h"
 #include "Playerbots.h"
 #include "ReputationMgr.h"
@@ -55,6 +57,11 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
     Unit* result = nullptr;
     std::unordered_map<uint32, bool> needForQuestMap;
 
+    // Two of the filters below are tuned for open-world grinding and are actively wrong in a
+    // dungeon. Worked out once rather than per candidate.
+    Map const* map = bot->FindMap();
+    bool const inInstance = map && map->IsDungeon();
+
     for (ObjectGuid const guid : targets)
     {
         Unit* unit = botAI->GetUnit(guid);
@@ -74,7 +81,18 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
         if (!bot->isHonorOrXPTarget(unit))
             continue;
 
-        if (abs(bot->GetPositionZ() - unit->GetPositionZ()) > INTERACTION_DISTANCE)
+        // The vertical band exists so a bot does not fixate on something on a cliff above it that
+        // it has no way to reach. Outdoors that is the right instinct and 5.5 yards is a fine
+        // number for it.
+        //
+        // Inside an instance it rejects almost everything. Utgarde Keep's entrance is a ramp; its
+        // trash stands metres above and below the bot that is walking towards it, and a group led
+        // by a bot found nothing at all to attack while standing in the middle of a pack -- 412
+        // consecutive "attack anything - USELESS" with mobs 56 yards away. Line of sight, checked
+        // further down, is the honest reachability test in here, and it is already applied.
+        float const verticalBand = inInstance ? sPlayerbotAIConfig.dungeonPullSearchRange
+                                              : float(INTERACTION_DISTANCE);
+        if (abs(bot->GetPositionZ() - unit->GetPositionZ()) > verticalBand)
             continue;
 
         if (!bot->InBattleground() && GetTargetingPlayerCount(unit) > assistCount)
@@ -105,7 +123,14 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
             continue;
         }
 
-        bool inactiveGrindStatus = botAI->rpgInfo.GetStatus() != RPG_WANDER_RANDOM && botAI->rpgInfo.GetStatus() != RPG_IDLE;
+        // Outdoors a bot part-way through an errand should not be dragged into every fight it walks
+        // past, so anything outside aggro range has to justify itself with a quest. Inside an
+        // instance there is no errand to protect -- clearing the trash *is* the objective -- and
+        // applying the quest filter there means a dungeon leader walks to a pack and then declines
+        // to pull it, because no quest happens to want those mobs.
+        bool inactiveGrindStatus = !inInstance &&
+                                   botAI->rpgInfo.GetStatus() != RPG_WANDER_RANDOM &&
+                                   botAI->rpgInfo.GetStatus() != RPG_IDLE;
 
         float aggroRange = 30.0f;
         if (unit->ToCreature())

@@ -18,6 +18,7 @@
 #include "RandomUtils.h"
 #include "IVMapMgr.h"
 #include "NewRpgInfo.h"
+#include "AttackersValue.h"
 #include "NewRpgStrategy.h"
 #include "Object.h"
 #include "ObjectAccessor.h"
@@ -1980,6 +1981,27 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
 
         Creature* creature = unit->ToCreature();
         if (!creature || creature->IsCritter() || creature->IsTotem())
+            continue;
+
+        // Walk to something the bot will actually be willing to fight when it arrives.
+        //
+        // This search and the one behind "attack anything" were answering different questions. This
+        // one asked "is there a creature over there", accepting anything unfriendly through a wall
+        // or on another floor; the attack asked "may I engage this", which additionally requires
+        // line of sight and an acceptable target. A leader therefore walked confidently to a pack it
+        // was never going to pull, arrived, found nothing to attack, and wandered on the spot --
+        // which is exactly what an operator watching it described as running side to side.
+        //
+        // Asking the same question in both places is the fix. Line of sight also keeps the leader
+        // from choosing a pack through the floor of the room above it, which no amount of pathing
+        // would have got it to.
+        if (!AttackersValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.dungeonPullSearchRange))
+            continue;
+
+        if (!bot->IsHostileTo(unit))
+            continue;
+
+        if (!bot->IsWithinLOSInMap(unit))
             continue;
 
         float const dist = bot->GetDistance(unit);

@@ -143,11 +143,25 @@ void BotLfgMgr::ServeWaiter(Waiter const& waiter)
     bool needTank = !waiter.hasTank;
     bool needHealer = !waiter.hasHealer;
 
+    // Bots this manager has already put in a queue. Their CMSG_LFG_JOIN is queued on their own
+    // session and has not been processed yet, so sLFGMgr still reports them as LFG_STATE_NONE and
+    // IsSeedable happily offers them again -- the same bot was seeded four times in fourteen
+    // seconds, burning the candidate list on one character while the group stayed short.
+    std::unordered_set<ObjectGuid> pending;
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        for (auto const& entry : _seeded)
+            pending.insert(entry.first);
+    }
+
     std::vector<Player*> candidates;
     for (auto const& entry : sRandomPlayerbotMgr.GetAllBotsRef())
     {
         Player* bot = entry.second;
         if (!IsSeedable(bot))
+            continue;
+
+        if (pending.count(entry.first))
             continue;
 
         if (static_cast<uint8>(bot->GetTeamId()) != waiter.team)
@@ -201,6 +215,7 @@ void BotLfgMgr::ServeWaiter(Waiter const& waiter)
             if (!QueueBot(bot, dungeons, waiter.guid))
                 continue;
 
+            pending.insert(bot->GetGUID());
             ++queued;
             if (canTank)
                 needTank = false;
