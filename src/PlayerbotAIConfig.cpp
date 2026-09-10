@@ -272,6 +272,20 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<int32>("AiPlayerbot.MaxRandomBotsPriceChangeInterval", 48 * HOUR);
     randomBotJoinLfg = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotJoinLfg", true);
 
+    // P13.3 -- ceiling on instances bots may have running at once, counted by distinct instance id.
+    // Every one is a live map with its own update cost, so self-queuing has to be bounded. 0 keeps
+    // the old behaviour: bots only ever fill queues a human opened.
+    botInitiatedDungeonCap = sConfigMgr->GetOption<uint32>("AiPlayerbot.BotInitiatedDungeonCap", 5);
+
+    // P13.4 -- how far a dungeon leader looks for its next pull. Generous, because instance rooms
+    // are large and a leader that only sees 30 yards stops at the first empty corridor.
+    dungeonPullSearchRange = sConfigMgr->GetOption<float>("AiPlayerbot.DungeonPullSearchRange", 120.0f);
+
+    // Let alt bots use the dungeon finder alongside random bots. They only exist while their owner
+    // is logged in, so this cannot run without a person present. Off means alt bots follow their
+    // owner and never queue, which is what you want while actively playing with them.
+    altBotsJoinLfg = sConfigMgr->GetOption<bool>("AiPlayerbot.AltBotsJoinLfg", true);
+
     restrictHealerDPS = sConfigMgr->GetOption<bool>("AiPlayerbot.HealerDPSMapRestriction", false);
     LoadList<std::vector<uint32>>(
         sConfigMgr->GetOption<std::string>("AiPlayerbot.RestrictedHealerDPSMaps",
@@ -417,6 +431,14 @@ bool PlayerbotAIConfig::Initialize()
 
     randomBotTeleLowerLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotTeleLowerLevel", 1);
     randomBotTeleHigherLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotTeleHigherLevel", 3);
+
+    // P13.1 -- seed money for random bots, in copper. Enough to use a vendor and a trainer without
+    // being enough to distort the economy. Random bots only: an alt or self bot belongs to a person.
+    randomBotSeedMoney = sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotSeedMoney", 100000);
+
+    // How often a bot empties its mailbox. Cheap: it exits immediately when there is no mail, and
+    // collecting needs no travel.
+    mailCollectIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MailCollectIntervalMs", 30000);
     openGoSpell = sConfigMgr->GetOption<int32>("AiPlayerbot.OpenGoSpell", 6477);
 
     // Zones for NewRpgStrategy teleportation brackets
@@ -796,6 +818,11 @@ bool PlayerbotAIConfig::Initialize()
     questObjectiveMaxDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.ObjectiveMaxDistance", 2500.0f);
     questTurnInTeleport = sConfigMgr->GetOption<bool>("AiPlayerbot.Quest.TurnInTeleport", true);
     questTurnInTeleportDistance = sConfigMgr->GetOption<float>("AiPlayerbot.Quest.TurnInTeleportDistance", 800.0f);
+
+    // How close a completed quest's hand-in has to be before it outranks every other activity.
+    // Roughly what the minimap shows: near enough that walking past it is the visible mistake.
+    questTurnInPriorityDistance =
+        sConfigMgr->GetOption<float>("AiPlayerbot.Quest.TurnInPriorityDistance", 200.0f);
     safetyRecoverFromFalls = sConfigMgr->GetOption<bool>("AiPlayerbot.Safety.RecoverFromFalls", true);
     safetyCheckIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Safety.CheckIntervalMs", 1000);
     remoteTrainingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Training.RemoteEnabled", true);

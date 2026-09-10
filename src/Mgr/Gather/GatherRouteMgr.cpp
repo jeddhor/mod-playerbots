@@ -29,6 +29,21 @@ constexpr float MAX_LINK_DISTANCE = 300.0f;
 // detection range, so standing on the centroid puts the whole cluster in view.
 constexpr float CLUSTER_RADIUS = 50.0f;
 
+/**
+ * How far apart in height two spawn points may be and still be averaged together.
+ *
+ * Clustering was purely horizontal: any two nodes within 50 yards in x/y were merged and all three
+ * coordinates averaged. Height does not average. A cluster spanning a hillside, or a mine shaft
+ * under a ridge, yields a Z that belongs to no surface, and the bot sent there walks into the rock.
+ *
+ * Measured over the 42,475 gathering spawns on this realm: the median cluster spans 2.2 yards
+ * vertically and is entirely harmless, but 21% span more than 10 yards, 14% more than 15, and the
+ * worst spans 864 -- a surface node averaged with something deep underground. Fifteen yards is
+ * comfortably more than a slope produces within a 50 yard radius and comfortably less than a cave
+ * mouth, so it splits the ones that are really two places without fragmenting ordinary fields.
+ */
+constexpr float CLUSTER_VERTICAL_BAND = 15.0f;
+
 float Dist2(GatherRouteMgr::Node const& a, GatherRouteMgr::Node const& b)
 {
     float dx = a.x - b.x;
@@ -146,6 +161,11 @@ std::vector<GatherRouteMgr::Node> GatherRouteMgr::ClusterSpawnPoints(std::vector
                 continue;
 
             if (Dist2(points[i], points[j]) > CLUSTER_RADIUS * CLUSTER_RADIUS)
+                continue;
+
+            // Measured against the seed rather than the running mean, so no member can end up more
+            // than the band away from the centroid however the cluster grows.
+            if (std::fabs(points[i].z - points[j].z) > CLUSTER_VERTICAL_BAND)
                 continue;
 
             sx += points[j].x;

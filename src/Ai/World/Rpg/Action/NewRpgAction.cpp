@@ -7,6 +7,7 @@
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "NewRpgAction.h"
+#include "BotMailMgr.h"
 #include "GatherRouteMgr.h"
 #include "Item.h"
 #include "Mail.h"
@@ -281,10 +282,23 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
                 info.ChangeToIdle();
                 return true;
             }
-            // GO_CAMP -> WANDER_NPC
+            // GO_CAMP -> WANDER_NPC, but only where wandering NPCs is actually allowed.
+            //
+            // This transition used to be unconditional, which quietly defeated the whole point of
+            // setting RpgStatusProbWeight.WanderNpc to zero: the weight stops the activity being
+            // *chosen*, and this handed bots straight into it on arrival instead. Any bot that rolled
+            // GO_CAMP -- 15 of them in one short run -- ended up standing around talking to random
+            // townsfolk, which is the behaviour the operator switched off and then watched continue.
+            //
+            // Socialites still get it, because their archetype raises the weight above zero, which is
+            // exactly the gate this now consults.
             if (bot->GetExactDist(originalPos) < 10.0f)
             {
-                info.ChangeToWanderNpc();
+                if (IsRpgStatusPermitted(RPG_WANDER_NPC))
+                    info.ChangeToWanderNpc();
+                else
+                    info.ChangeToIdle();
+
                 return true;
             }
             if (info.HasStatusPersisted(statusGoCampDuration))
@@ -828,135 +842,12 @@ bool NewRpgVendorAction::Execute(Event /*event*/)
 
 bool NewRpgMailboxAction::Execute(Event /*event*/)
 {
-    // Take money and items from every mail, regardless of who sent it. See the class comment for
-    // why CheckMailAction cannot be reused: it drops anything not sent by a connected non-bot
-    // player, which is every auction payment.
-    //
-    // Mirrors WorldSession::HandleMailTakeItem's persistence exactly. The first version of this
-    // moved items into the bags in memory only -- no transaction, no Mail::RemoveItem, no
-    // removedItems, no _SaveMail. The item therefore ended up in the bot's bags *and* still
-    // attached to its mail row in the database, which is genuine item duplication: two owners for
-    // one item_instance. It showed up as auction-won mail whose item was also sitting in the
-    // winner's inventory.
-    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    // The work lives in BotMailMgr now, which runs on a timer for every bot. Kept as an action so
+    // the RPG status still resolves and so a bot can be told to check its mail directly.
+    BotMailMgr::Collect(bot);
 
-    uint32 collected = 0;
-    uint32 money = 0;
-    std::vector<uint32> emptied;
-    std::vector<uint32> takenItems;
-    std::vector<Mail const*> partiallyTaken;
-
-    for (Mail* mail : bot->GetMails())
-    {
-        if (!mail || mail->state == MAIL_STATE_DELETED)
-            continue;
-
-        // Undelivered mail is not the bot's to take yet.
-        if (mail->deliver_time > GameTime::GetGameTime().count())
-            continue;
-
-        bool changed = false;
-
-        if (mail->money)
-        {
-            money += mail->money;
-            bot->ModifyMoney(static_cast<int32>(mail->money));
-            mail->money = 0;
-            changed = true;
-        }
-
-        // Copied, because Mail::RemoveItem mutates the very vector being walked.
-        MailItemInfoVec const attachments = mail->items;
-
-        bool itemsPending = false;
-        for (MailItemInfo const& att : attachments)
-        {
-            Item* item = bot->GetMItem(att.item_guid);
-            if (!item)
-                continue;
-
-            ItemPosCountVec dest;
-            if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
-            {
-                // Leave it attached rather than destroying it; the bot will come back with space.
-                itemsPending = true;
-                continue;
-            }
-
-            mail->RemoveItem(att.item_guid);
-            bot->RemoveMItem(att.item_guid);
-            takenItems.push_back(att.item_guid);
-
-            // Without this the item cannot be removed from the bags later on.
-            item->SetState(ITEM_UNCHANGED);
-            bot->MoveItemToInventory(dest, item, true);
-
-            ++collected;
-            changed = true;
-        }
-
-        if (itemsPending)
-        {
-            if (changed)
-            {
-                mail->state = MAIL_STATE_CHANGED;
-                partiallyTaken.push_back(mail);
-            }
-            continue;
-        }
-
-        mail->state = MAIL_STATE_DELETED;
-        emptied.push_back(mail->messageID);
-    }
-
-    // Player::_SaveMail would do all of this, but it is protected and only WorldSession may call
-    // it, so the statements are issued directly -- the same approach CheckMailAction already takes.
-    for (uint32 itemGuid : takenItems)
-    {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_ITEM);
-        stmt->SetData(0, itemGuid);
-        trans->Append(stmt);
-    }
-
-    for (uint32 id : emptied)
-    {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_BY_ID);
-        stmt->SetData(0, id);
-        trans->Append(stmt);
-
-        stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_ITEM_BY_ID);
-        stmt->SetData(0, id);
-        trans->Append(stmt);
-    }
-
-    // Mail that gave up its money but still holds items the bags had no room for: persist the
-    // zeroed money so a restart cannot pay the bot twice.
-    for (Mail const* mail : partiallyTaken)
-    {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_MAIL);
-        stmt->SetData(0, uint8(!mail->items.empty()));
-        stmt->SetData(1, uint32(mail->expire_time));
-        stmt->SetData(2, uint32(mail->deliver_time));
-        stmt->SetData(3, mail->money);
-        stmt->SetData(4, mail->COD);
-        stmt->SetData(5, uint8(mail->checked));
-        stmt->SetData(6, mail->messageID);
-        trans->Append(stmt);
-    }
-
-    bot->SaveInventoryAndGoldToDB(trans);
-    CharacterDatabase.CommitTransaction(trans);
-
-    for (uint32 id : emptied)
-    {
-        bot->SendMailResult(id, MAIL_DELETED, MAIL_OK);
-        bot->RemoveMail(id);
-    }
-
-    if (money || collected)
-        LOG_DEBUG("playerbots", "[Logistics] {} collected {} copper and {} item(s) from mail",
-                  bot->GetName(), money, collected);
-
+    // Unconditionally, and regardless of whether anything was there to take: this status has no
+    // other exit, and a bot left sitting in RPG_MAILBOX with an empty mailbox never acts again.
     botAI->rpgInfo.ChangeToIdle();
     return true;
 }
@@ -1002,6 +893,19 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
     //
     // Distance is the honest test. Beyond the reach a route could have been chosen at, the bot is
     // not travelling to it any more.
+    // A route on another map is not a route this bot is walking to, and GetDistance2d below cannot
+    // tell -- it compares raw coordinates and would happily report a Kalimdor node as near an
+    // Eastern Kingdoms bot. Selection already enforces the same map, so this only catches a bot that
+    // crossed one mid-run by boat or portal. It also protects the ground resolution further down,
+    // which queries the height on the map the bot is standing on.
+    if (route->nodes.front().mapId != bot->GetMapId())
+    {
+        LOG_DEBUG("playerbots", "[Gather] {} abandoned route in zone {}: it is on map {}, bot is on map {}",
+                  bot->GetName(), data.zoneId, route->nodes.front().mapId, bot->GetMapId());
+        info.ChangeToIdle();
+        return true;
+    }
+
     if (bot->GetDistance2d(route->nodes.front().x, route->nodes.front().y) > GATHER_ABANDON_DISTANCE)
     {
         LOG_DEBUG("playerbots", "[Gather] {} abandoned route in zone {}: {:.0f} yards from the first node",
@@ -1020,7 +924,29 @@ bool NewRpgGatherAction::Execute(Event /*event*/)
 
     GatherRouteMgr::Node const& node = route->nodes[data.routeIndex];
     if (data.pos == WorldPosition())
-        data.pos = WorldPosition(node.mapId, node.x, node.y, node.z);
+    {
+        // The node's Z is a cluster average, not a place. ClusterSpawnPoints groups spawn points by
+        // their x/y within 50 yards and averages all three coordinates, so a cluster spanning a
+        // hillside -- or a mine below a ridge -- produces a Z that belongs to no surface at all.
+        // Walking to it is how a gathering bot ends up under the map: 80 of 142 under-terrain
+        // recoveries in the last run were bots in RPG_GATHER, more than every other activity
+        // combined.
+        //
+        // Snap it to the ground at the waypoint's x/y before committing to the walk. The x/y is the
+        // part of a centroid that is meaningful; the height is not ours to average.
+        WorldPosition resolved(node.mapId, node.x, node.y, node.z);
+        if (!ResolveTeleportGround(bot, resolved))
+        {
+            // Nothing to stand on there. Skip the waypoint rather than walk into rock -- the route
+            // has up to fifteen of them and the next one is very likely fine.
+            LOG_DEBUG("playerbots", "[Gather] {} skipped waypoint {}/{} in zone {}: no ground at ({:.0f},{:.0f})",
+                      bot->GetName(), data.routeIndex + 1, route->nodes.size(), data.zoneId, node.x, node.y);
+            data.routeIndex++;
+            return true;
+        }
+
+        data.pos = resolved;
+    }
 
     // Arrive within DETECTION range, not interaction range.
     //

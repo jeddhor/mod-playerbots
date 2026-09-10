@@ -2968,6 +2968,9 @@ AiPlayerbot.Quest.ObjectiveMaxDistance = 2500
 AiPlayerbot.Quest.TurnInTeleport = 1
 AiPlayerbot.Quest.TurnInTeleportDistance = 800
 
+# How close a completed quest's hand-in must be to outrank every other activity.
+AiPlayerbot.Quest.TurnInPriorityDistance = 200
+
 #
 #    AiPlayerbot.Safety.RecoverFromFalls
 #        Detect bots that have fallen below the world and restore them to the last ground they were
@@ -3015,3 +3018,25 @@ AiPlayerbot.Loot.RollDelayMaxMs = 4000
 AiPlayerbot.Inspector.Enabled = 1
 AiPlayerbot.Inspector.MinSecurityLevel = 2
 AiPlayerbot.Inspector.MinIntervalMs = 100
+
+# P13.1 -- seed money for random bots, in copper (100000 = 10g). Random bots only;
+# alt bots and self bots belong to a person and are never given gold by the server.
+AiPlayerbot.RandomBotSeedMoney = 100000
+
+# How often a bot empties its mailbox, in milliseconds.
+# Collection runs on a timer rather than as a chosen activity: it needs no travel and takes no time,
+# so it must not compete with questing and grinding for a bot's attention. Bots that had made one
+# or zero activity decisions in a whole run were the ones left holding mail forever.
+AiPlayerbot.MailCollectIntervalMs = 30000
+
+# P13.3 -- how many instances bots may have running at once (distinct instance ids).
+# Every bot-initiated instance is a live map with its own update cost. 0 disables bot-initiated
+# dungeons entirely, leaving bots to fill only queues a human has opened.
+AiPlayerbot.BotInitiatedDungeonCap = 5
+
+# P13.4 -- how far a dungeon leader looks for its next pull.
+AiPlayerbot.DungeonPullSearchRange = 120
+
+# Let alt bots queue for dungeons alongside random bots. They only exist while their owner is
+# logged in. Set to 0 to keep them following you instead of queueing.
+AiPlayerbot.AltBotsJoinLfg = 1

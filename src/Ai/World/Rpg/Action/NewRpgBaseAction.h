@@ -51,6 +51,10 @@ protected:
     bool MoveRandomNear(float moveStep = 50.0f, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL, WorldObject* center = nullptr);
     bool ForceToWait(uint32 duration, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
 
+    /// Snap a destination onto the walkable surface at its x/y. False when there is none, in which
+    /// case the destination is not somewhere a bot can stand and should not be walked to.
+    static bool ResolveTeleportGround(Player* bot, WorldPosition& dest);
+
     /* QUEST RELATED CHECK */
     /// Safe replacement for `bot->getQuestStatusMap().at(questId)`, which throws std::out_of_range
     /// for a quest that is not in the bot's log. Returns nullptr instead so callers can bail out.
@@ -115,6 +119,21 @@ protected:
 
 protected:
     bool GetQuestPOIPosAndObjectiveIdx(uint32 questId, std::vector<POIInfo>& poiInfo, bool toComplete = false);
+
+    /// Work-order tier for a held quest: complete, then green, yellow, grey, orange, red.
+    int32 QuestWorkPriority(uint32 questId, Quest const* quest);
+
+    /// A completed quest whose hand-in is within the turn-in priority distance, or 0.
+    /// P13.4 -- the next pull inside an instance, or an empty position when there is none.
+    WorldPosition SelectDungeonPullPos();
+
+    /// Is this activity permitted for this bot -- base weight, with any archetype override?
+    bool IsRpgStatusPermitted(NewRpgStatus status);
+
+    uint32 FindNearbyTurnIn();
+
+    /// The turn-in this bot has committed to, held until the quest leaves its log.
+    uint32 _committedTurnIn{0};
 
     /// Real spawn positions for an objective's creature or object, nearest first. Empty if unknown.
     bool AddSpawnCandidates(Quest const* quest, int32 objectiveIdx, std::vector<POIInfo>& poiInfo);

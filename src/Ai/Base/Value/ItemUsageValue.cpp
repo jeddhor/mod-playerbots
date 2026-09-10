@@ -7,6 +7,7 @@
 #include "ItemUsageValue.h"
 #include "AiFactory.h"
 #include "ChatHelper.h"
+#include "Group.h"
 #include "GuildTaskMgr.h"
 #include "Item.h"
 #include "LootObjectStack.h"
@@ -16,6 +17,63 @@
 #include "RandomItemMgr.h"
 #include "ServerFacade.h"
 #include "StatsWeightCalculator.h"
+
+namespace
+{
+/**
+ * Would anyone else in the group actually wear this?
+ *
+ * An enchanter classifies gear it cannot use itself as disenchant fodder, and it does so before
+ * anybody else gets a look. That is right for soulbound drops -- nobody else can ever have them --
+ * but wrong for bind-on-equip gear, which is exactly what a party's greens are. The reported case
+ * was a pair of warrior pants shredded by the party's enchanter while the party's warrior was
+ * wearing nothing in that slot.
+ *
+ * Deliberately a coarse check, not a second copy of the equip pipeline. It answers "is there
+ * somebody here who would obviously wear this", and the trade logic -- which already offers items
+ * an enchanter has not claimed -- does the rest. If the group breaks up before the hand-off, the
+ * answer becomes no on the next pass and the item is disenchanted as before, so nothing is hoarded
+ * forever.
+ */
+bool GroupmateWouldWear(Player* bot, ItemTemplate const* proto, int32 randomPropertyId)
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsInWorld())
+            continue;
+
+        // Class, race, level and skill requirements in one call.
+        if (member->BotCanUseItem(proto) != EQUIP_ERR_OK)
+            continue;
+
+        uint8 const slot = member->FindEquipSlot(proto, NULL_SLOT, true);
+        if (slot == NULL_SLOT)
+            continue;
+
+        StatsWeightCalculator calculator(member);
+        calculator.SetItemSetBonus(false);
+        calculator.SetOverflowPenalty(false);
+
+        float const candidate = calculator.CalculateItem(proto->ItemId, randomPropertyId);
+        if (candidate <= 0.0f)
+            continue;  // Scores nothing for that member's spec -- not an upgrade, just an item.
+
+        Item* current = member->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!current)
+            return true;  // An empty slot is an upgrade by definition.
+
+        if (candidate > calculator.CalculateItem(current->GetEntry(), current->GetItemRandomPropertyId()))
+            return true;
+    }
+
+    return false;
+}
+}  // namespace
 
 ItemUsage ItemUsageValue::Calculate()
 {
@@ -151,7 +209,10 @@ ItemUsage ItemUsageValue::Calculate()
             bool const tradeable = !isSoulbound && proto->Bonding == BIND_WHEN_EQUIPPED &&
                                    proto->Quality <= sPlayerbotAIConfig.economyDisenchantMaxQuality;
 
-            if (boundToBot || tradeable)
+            // A groupmate who can wear it outranks a shard. Only for the tradeable case: soulbound
+            // gear cannot be handed over in 3.3.5, so breaking it down really is the only value in
+            // it and holding it back would help nobody.
+            if (boundToBot || (tradeable && !GroupmateWouldWear(bot, proto, randomPropertyId)))
                 return ITEM_USAGE_DISENCHANT;
         }
     }

@@ -7,6 +7,7 @@
 #include "RandomPlayerbotMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
+#include "BotMailMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
@@ -1287,7 +1288,81 @@ void RandomPlayerbotMgr::CheckLfgQueue()
         }
     }
 
+    // P13.3 -- bots start their own dungeons rather than only filling queues a human opened.
+    //
+    // Everything above reads the *real player* list, so LfgDungeons only ever held what a person had
+    // already queued for. On a realm with nobody in the finder it stayed empty, and JoinLFG returns
+    // at its first check when the list is empty -- which is why no dungeon had ever run here despite
+    // the LFG strategy being enabled and 162 bots being eligible.
+    //
+    // Seeding the random-dungeon entries lets bots form groups by themselves. The entries are the
+    // per-bracket "Random Dungeon" pseudo-dungeons, so each bot still filters them down to the one
+    // matching its own level, exactly as it would with a human-seeded list.
+    SeedBotInitiatedDungeons();
+
     LOG_DEBUG("playerbots", "LFG Queue check finished");
+}
+
+/**
+ * How many instances bots are currently occupying, counted by distinct instance id.
+ *
+ * The cap is about live maps, not bots: five bots in one dungeon is one instance, and one bot in
+ * each of five dungeons is five. Counting bots instead would have let the second case through.
+ */
+uint32 RandomPlayerbotMgr::CountBotInstances()
+{
+    std::set<uint32> instances;
+
+    for (auto const& [guid, bot] : GetAllBotsRef())
+    {
+        if (!bot || !bot->IsInWorld())
+            continue;
+
+        Map* map = bot->FindMap();
+        if (map && map->Instanceable())
+            instances.insert(map->GetInstanceId());
+    }
+
+    return static_cast<uint32>(instances.size());
+}
+
+/**
+ * Offer the random-dungeon entries to bots, while the realm is under its instance ceiling.
+ *
+ * Capped because every bot-initiated instance is a live map carrying its own update cost. At this
+ * population unbounded self-queuing would spin up a great many at once, which is the failure the
+ * plan calls out ahead of the feature itself.
+ */
+void RandomPlayerbotMgr::SeedBotInitiatedDungeons()
+{
+    uint32 const cap = sPlayerbotAIConfig.botInitiatedDungeonCap;
+    if (!cap)
+        return;
+
+    uint32 const running = CountBotInstances();
+    if (running >= cap)
+    {
+        LOG_DEBUG("playerbots", "[LFG] {} bot instances running, at or over the cap of {} -- not seeding",
+                  running, cap);
+        return;
+    }
+
+    uint32 seeded = 0;
+    for (uint32 id = 0; id < sLFGDungeonStore.GetNumRows(); ++id)
+    {
+        LFGDungeonEntry const* dungeon = sLFGDungeonStore.LookupEntry(id);
+        if (!dungeon || dungeon->TypeID != lfg::LFG_TYPE_RANDOM)
+            continue;
+
+        // Both factions: a bot filters by its own level when it reads this, and the random entries
+        // are not faction-specific.
+        LfgDungeons[TEAM_ALLIANCE].push_back(dungeon->ID);
+        LfgDungeons[TEAM_HORDE].push_back(dungeon->ID);
+        ++seeded;
+    }
+
+    LOG_DEBUG("playerbots", "[LFG] seeded {} random dungeons for bot-initiated groups ({} of {} instances in use)",
+              seeded, running, cap);
 }
 
 void RandomPlayerbotMgr::CheckPlayers()
@@ -2418,6 +2493,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "safety")
     {
         LOG_INFO("playerbots", "{}", sBotSafetyMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd == "mail")
+    {
+        LOG_INFO("playerbots", "{}", sBotMailMgr.DescribeStats());
         return true;
     }
 

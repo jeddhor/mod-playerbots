@@ -185,6 +185,9 @@ public:
     uint32 minRandomBotsPriceChangeInterval, maxRandomBotsPriceChangeInterval;
     uint32 disabledWithoutRealPlayerLoginDelay, disabledWithoutRealPlayerLogoutDelay;
     bool randomBotJoinLfg;
+    uint32 botInitiatedDungeonCap;
+    float dungeonPullSearchRange;
+    bool altBotsJoinLfg;
 
     // Professions
     bool enableFishingWithMaster;
@@ -280,6 +283,8 @@ public:
     uint32 randomBotAutoJoinBGRatedArena5v5Count;
 
     uint32 randomBotTeleLowerLevel, randomBotTeleHigherLevel;
+    uint32 randomBotSeedMoney;
+    uint32 mailCollectIntervalMs;
     std::map<uint32, std::pair<uint32, uint32>> zoneBrackets;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
@@ -444,6 +449,7 @@ public:
     float questObjectiveMaxDistance;
     bool questTurnInTeleport;
     float questTurnInTeleportDistance;
+    float questTurnInPriorityDistance;
     bool safetyRecoverFromFalls;
     uint32 safetyCheckIntervalMs;
     bool remoteTrainingEnabled;

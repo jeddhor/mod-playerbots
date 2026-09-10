@@ -26,6 +26,7 @@
 #include "BotRepairMgr.h"
 #include "BotCraftMgr.h"
 #include "BotFollowMgr.h"
+#include "BotMailMgr.h"
 #include "BotToolMgr.h"
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
@@ -222,6 +223,10 @@ public:
             sBotToolMgr.Update(player, diff);
             sBotCraftMgr.Update(player, diff);
             sBotFollowMgr.Update(player, diff);
+
+            // Mail is collected on a timer, not as an activity: it needs no travel and takes no
+            // time, so it must not compete with grinding and questing for a bot's attention.
+            sBotMailMgr.Update(player, diff);
 
             botAI->UpdateAI(diff);
         }

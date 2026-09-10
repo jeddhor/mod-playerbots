@@ -8,9 +8,12 @@
 #include "GatherRouteMgr.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
+#include "CellImpl.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "GossipDef.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "GridTerrainData.h"
 #include "RandomUtils.h"
 #include "IVMapMgr.h"
@@ -54,8 +57,6 @@ QuestStatusData const* NewRpgBaseAction::GetQuestStatusData(uint32 questId) cons
     return itr != statusMap.end() ? &itr->second : nullptr;
 }
 
-namespace
-{
 /**
  * Snap a teleport destination onto solid ground, or refuse it.
  *
@@ -67,7 +68,7 @@ namespace
  *
  * Same standard the safety manager recovers against, applied before the fact instead of after.
  */
-bool ResolveTeleportGround(Player* bot, WorldPosition& dest)
+bool NewRpgBaseAction::ResolveTeleportGround(Player* bot, WorldPosition& dest)
 {
     Map* map = bot->FindMap();
     if (!map)
@@ -93,7 +94,6 @@ bool ResolveTeleportGround(Player* bot, WorldPosition& dest)
     dest.Relocate(x, y, std::max(ground, water) + 0.5f);
     return true;
 }
-}  // namespace
 
 bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
 {
@@ -1411,19 +1411,21 @@ void BuildSpawnIndex()
     // surface coordinate above them never descends. Resolving the required item back to the chests
     // that contain it recovers a real height to aim at.
     //
-    // Restricted to items some quest actually asks for, which keeps this to the few thousand pairs
-    // that can matter rather than every chest drop in the game.
+    // Every chest drop, unfiltered. An earlier version narrowed this to items some quest actually
+    // asks for, with `IN (SELECT ... UNION ...)` over the six RequiredItemId columns. MySQL
+    // re-evaluated that subquery per row and the statement ran for over ten minutes -- and because
+    // this function is called under std::call_once from the world thread, it took the entire realm
+    // with it: no bot updates, no console output, and clients stuck at "Connected".
+    //
+    // The filter was never worth having. Unfiltered this is a plain two-table join returning 33,449
+    // pairs in 0.05s, and the map it builds is small enough that narrowing it saved nothing.
+    //
+    // The general rule this cost us: anything queried here runs on the world thread with the realm
+    // waiting on it. Keep it to something that cannot become slow.
     QueryResult itemSources = WorldDatabase.Query(
         "SELECT DISTINCT glt.Item, gt.entry "
         "FROM gameobject_loot_template glt "
-        "JOIN gameobject_template gt ON gt.Data1 = glt.Entry AND gt.type = 3 "
-        "WHERE glt.Item IN ("
-        " SELECT RequiredItemId1 FROM quest_template WHERE RequiredItemId1 > 0"
-        " UNION SELECT RequiredItemId2 FROM quest_template WHERE RequiredItemId2 > 0"
-        " UNION SELECT RequiredItemId3 FROM quest_template WHERE RequiredItemId3 > 0"
-        " UNION SELECT RequiredItemId4 FROM quest_template WHERE RequiredItemId4 > 0"
-        " UNION SELECT RequiredItemId5 FROM quest_template WHERE RequiredItemId5 > 0"
-        " UNION SELECT RequiredItemId6 FROM quest_template WHERE RequiredItemId6 > 0)");
+        "JOIN gameobject_template gt ON gt.Data1 = glt.Entry AND gt.type = 3");
 
     if (itemSources)
     {
@@ -1882,6 +1884,182 @@ WorldPosition NewRpgBaseAction::SelectNearestVendorPos()
     return best;
 }
 
+/**
+ * A completed quest whose hand-in sits close by, or 0.
+ *
+ * "Close" is measured to the reward POI rather than to the giver's spawn, because that is the point
+ * the client draws its question mark at and so the thing the operator is looking at when they say
+ * the bot walked past one.
+ */
+/**
+ * Which quest to work on first, lowest tier first.
+ *
+ * P7.4 made the *keeping* score asymmetric so a green quest is not shed as readily as a red one, but
+ * the quest actually worked on was still drawn with RandomElement -- so a bot holding a green and a
+ * red picked between them by coin flip.
+ *
+ * Green is the perishable one: it is the only tier that loses its experience outright, by turning
+ * grey while the bot does something else. Yellow pays full value and is in no danger. Grey has
+ * already lost what it had, but P7.5 keeps such quests because they are usually one step from done,
+ * and finishing one frees a log slot cheaply -- so it goes ahead of the expensive tiers rather than
+ * last. Orange and red cost the most attempts and stay viable longest, so they wait.
+ *
+ * Thresholds follow the client's own GetQuestDifficultyColor, so a bot's idea of "green" is the
+ * colour the operator sees in their own quest log.
+ */
+int32 NewRpgBaseAction::QuestWorkPriority(uint32 questId, Quest const* quest)
+{
+    if (!quest)
+        return 100;
+
+    // Done is done: one interaction from experience and a reward, wherever it is.
+    if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+        return -1;
+
+    int32 const questLevel = static_cast<int32>(bot->GetQuestLevel(quest));
+    int32 const botLevel = static_cast<int32>(bot->GetLevel());
+    int32 const gap = questLevel - botLevel;
+
+    uint32 const greyDiff = sWorld->getIntConfig(CONFIG_QUEST_LOW_LEVEL_HIDE_DIFF);
+    bool const grey = botLevel > questLevel + static_cast<int32>(greyDiff);
+
+    if (grey)
+        return 2;
+    if (gap >= 5)
+        return 4;   // red
+    if (gap >= 3)
+        return 3;   // orange
+    if (gap >= -2)
+        return 1;   // yellow
+    return 0;       // green -- the only tier with an expiry date
+}
+
+/**
+ * P13.4 -- somewhere worth walking to inside an instance.
+ *
+ * A bot that zones into a dungeon keeps running its open-world brain: the activity roll picks quests,
+ * gathering or the mailbox, none of which exist down here, so it cannot path anywhere and stands at
+ * the door. Sixteen bots across seven instances were stacked on their entrance coordinates to the
+ * decimal.
+ *
+ * The nearest living hostile is the honest target: it is the next pull, and walking to it is what
+ * clearing a dungeon consists of. Returning a position rather than a unit lets the existing GO_GRIND
+ * machinery do the travelling and hand over to WANDER_RANDOM to fight, so this adds a destination
+ * rather than a second movement system.
+ */
+WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
+{
+    Map* map = bot->FindMap();
+    if (!map || !map->Instanceable())
+        return WorldPosition();
+
+    std::list<Unit*> targets;
+    Acore::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, sPlayerbotAIConfig.dungeonPullSearchRange);
+    Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, targets, check);
+    Cell::VisitObjects(bot, searcher, sPlayerbotAIConfig.dungeonPullSearchRange);
+
+    Unit* nearest = nullptr;
+    float nearestDist = FLT_MAX;
+
+    for (Unit* unit : targets)
+    {
+        if (!unit || !unit->IsAlive() || unit->IsPlayer())
+            continue;
+
+        // Already engaged is not a pull; the combat engine is handling it.
+        if (unit->IsInCombat())
+            continue;
+
+        Creature* creature = unit->ToCreature();
+        if (!creature || creature->IsCritter() || creature->IsTotem())
+            continue;
+
+        float const dist = bot->GetDistance(unit);
+        if (dist < nearestDist)
+        {
+            nearestDist = dist;
+            nearest = unit;
+        }
+    }
+
+    if (!nearest)
+        return WorldPosition();
+
+    return WorldPosition(map->GetId(), nearest->GetPositionX(), nearest->GetPositionY(), nearest->GetPositionZ());
+}
+
+/**
+ * Is this activity allowed for this bot at all?
+ *
+ * The same test RandomChangeStatus applies before the weighted roll: a base weight of zero means the
+ * operator has switched the activity off, and an archetype may re-enable it for the disposition it
+ * belongs to. Pulled out so the state machine's own transitions can respect it too -- they were
+ * bypassing it entirely.
+ */
+bool NewRpgBaseAction::IsRpgStatusPermitted(NewRpgStatus status)
+{
+    int32 const activityOverride = sBotAgendaMgr.GetActivityBaseOverride(bot, status);
+    uint32 const base = activityOverride > 0 ? uint32(activityOverride)
+                                             : sPlayerbotAIConfig.RpgStatusProbWeight[status];
+    return base > 0;
+}
+
+uint32 NewRpgBaseAction::FindNearbyTurnIn()
+{
+    // Once committed, stay committed.
+    //
+    // Distance alone is not a stable test. The bot commits inside the radius, DO_QUEST times out
+    // part way through the walk, and by the next idle it is *outside* the radius -- so the
+    // preemption goes quiet, it picks some other errand, drifts back inside, and commits again.
+    // The operator saw exactly that: a bot running at a quest giver, away to the Darkmoon tents,
+    // and back, for a long while.
+    //
+    // Holding the choice until the quest is actually handed in is what a person does, and it costs
+    // nothing: the quest leaving the log clears it, so this cannot latch onto something stale.
+    if (_committedTurnIn)
+    {
+        if (bot->GetQuestStatus(_committedTurnIn) == QUEST_STATUS_COMPLETE)
+        {
+            std::vector<POIInfo> held;
+            if (GetQuestPOIPosAndObjectiveIdx(_committedTurnIn, held, true))
+                return _committedTurnIn;
+        }
+
+        _committedTurnIn = 0;
+    }
+
+    uint32 nearest = 0;
+    float nearestDist = sPlayerbotAIConfig.questTurnInPriorityDistance;
+
+    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 const questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId || bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
+            continue;
+
+        if (sQuestBlacklistMgr.IsBlacklisted(questId))
+            continue;
+
+        // toComplete: this asks for the hand-in location specifically, not the objectives.
+        std::vector<POIInfo> poiInfo;
+        if (!GetQuestPOIPosAndObjectiveIdx(questId, poiInfo, true))
+            continue;
+
+        for (POIInfo const& poi : poiInfo)
+        {
+            float const dist = bot->GetDistance2d(poi.pos.x, poi.pos.y);
+            if (dist < nearestDist)
+            {
+                nearestDist = dist;
+                nearest = questId;
+            }
+        }
+    }
+
+    _committedTurnIn = nearest;
+    return nearest;
+}
+
 bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateStatus)
 {
     // Someone is stuck and this bot can reach them. Answering outranks the weighted roll entirely:
@@ -1902,6 +2080,60 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
                       bot->GetLevel(), request.caller.GetCounter(), request.questId);
 
             botAI->rpgInfo.ChangeToGoGrind(helpPos);
+            return true;
+        }
+    }
+
+    // P13.4 -- inside an instance the open-world activity mix is meaningless, and rolling it is how
+    // a group ends up standing on the entrance while its brain tries to go gather herbs. Only the
+    // leader navigates: everyone else is already following it, and five bots each choosing their own
+    // pull is not a group clearing a dungeon.
+    if (Map* map = bot->FindMap(); map && map->Instanceable())
+    {
+        Group* group = bot->GetGroup();
+        bool const leads = !group || group->GetLeaderGUID() == bot->GetGUID();
+
+        if (leads)
+        {
+            WorldPosition pull = SelectDungeonPullPos();
+            if (pull != WorldPosition())
+            {
+                // Logged because there was no way to tell this apart from a group simply standing
+                // still: the whole branch was silent, so a run that never entered it and a run where
+                // it fired constantly produced identical logs.
+                LOG_DEBUG("playerbots", "[Dungeon] {} leads a pull on map {} to ({:.0f},{:.0f},{:.0f}), {:.0f} yards off",
+                          bot->GetName(), map->GetId(), pull.GetPositionX(), pull.GetPositionY(),
+                          pull.GetPositionZ(), bot->GetExactDist(pull));
+
+                botAI->rpgInfo.ChangeToGoGrind(pull);
+                return true;
+            }
+
+            LOG_DEBUG("playerbots", "[Dungeon] {} leads on map {} but found nothing to pull within {:.0f} yards",
+                      bot->GetName(), map->GetId(), sPlayerbotAIConfig.dungeonPullSearchRange);
+        }
+
+        // Nothing left to pull, or not the leader. Resting beats wandering off in a dungeon.
+        botAI->rpgInfo.ChangeToRest();
+        return true;
+    }
+
+    // A finished quest with its turn-in within reach outranks the weighted roll, the same way a call
+    // for help does. This is the question mark on the minimap: the bot is standing next to the one
+    // action that converts everything it has already done into a level, and rolling dice against
+    // vendoring and grinding instead is how an operator watches a bot carry two completed quests
+    // past their giver.
+    //
+    // Deliberately near-only. Anything further is ordinary travel and belongs in the weighted roll
+    // with everything else; overriding at any distance would turn every completed quest into an
+    // errand that pre-empts the whole activity mix.
+    if (uint32 const turnIn = FindNearbyTurnIn())
+    {
+        if (Quest const* quest = sObjectMgr->GetQuestTemplate(turnIn))
+        {
+            LOG_DEBUG("playerbots", "[New RPG] {} has quest {} complete and its turn-in nearby -- going now",
+                      bot->GetName(), turnIn);
+            botAI->rpgInfo.ChangeToDoQuest(turnIn, quest);
             return true;
         }
     }
@@ -2011,7 +2243,21 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             }
             if (availableQuests.size())
             {
-                uint32 questId = *RandomElement(availableQuests);
+                // Best tier first, then at random within it. Keeping the draw inside the tier
+                // matters: a whole realm of bots working their quest logs in a fixed order would
+                // converge on the same objectives, and the randomness was doing that job even while
+                // it was ignoring difficulty.
+                int32 bestTier = 1000;
+                for (uint32 candidate : availableQuests)
+                    bestTier = std::min(bestTier,
+                                        QuestWorkPriority(candidate, sObjectMgr->GetQuestTemplate(candidate)));
+
+                std::vector<uint32> preferred;
+                for (uint32 candidate : availableQuests)
+                    if (QuestWorkPriority(candidate, sObjectMgr->GetQuestTemplate(candidate)) == bestTier)
+                        preferred.push_back(candidate);
+
+                uint32 questId = *RandomElement(preferred);
                 const Quest* quest = sObjectMgr->GetQuestTemplate(questId);
                 if (quest)
                 {

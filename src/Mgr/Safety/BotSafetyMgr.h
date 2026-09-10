@@ -35,6 +35,9 @@ class Player;
  */
 class BotSafetyMgr
 {
+    /// How far below the surface counts as suspicious rather than a slope or a doorway.
+    static constexpr float UNDER_TERRAIN_TOLERANCE = 8.0f;
+
 public:
     static BotSafetyMgr& instance()
     {
@@ -67,6 +70,9 @@ private:
 
     /// True if the bot is below the map's floor -- the core's own out-of-world test.
     static bool IsOutOfWorld(Player* bot);
+
+    /// Below the surface with nothing underneath -- "under the map" as an operator sees it.
+    static bool IsUnderTerrain(Player* bot);
 
     /// True if the bot is standing on something solid, and so worth remembering.
     static bool IsOnSafeGround(Player* bot);

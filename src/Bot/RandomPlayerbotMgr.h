@@ -156,6 +156,12 @@ public:
     std::map<uint32, std::map<uint32, std::map<TeamId, uint32>>> VisualBots;
     std::map<uint32, std::map<uint32, std::map<uint32, uint32>>> Supporters;
     std::map<TeamId, std::vector<uint32>> LfgDungeons;
+
+    /// P13.3 -- how many instances bots currently occupy, counted by distinct instance id.
+    uint32 CountBotInstances();
+
+    /// P13.3 -- offer random dungeons for bot-initiated groups, while under the instance ceiling.
+    void SeedBotInitiatedDungeons();
     void CheckBgQueue();
     void CheckLfgQueue();
     void CheckPlayers();
