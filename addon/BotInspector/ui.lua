@@ -81,9 +81,9 @@ UI.refresh = refresh
 -- Altbot Controls sits beside Refresh and toggles a full-window page (ui_alts.lua). Wider than the
 -- other buttons because "Altbot Controls" does not fit the standard 80, and it doubles as "Back".
 local altsButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-altsButton:SetWidth(120); altsButton:SetHeight(24)
+altsButton:SetWidth(150); altsButton:SetHeight(24)
 altsButton:SetPoint("RIGHT", refresh, "LEFT", -6, 0)
-altsButton:SetText("Altbot Controls")
+altsButton:SetText("Self & Altbot Controls")
 altsButton:SetScript("OnClick", function()
     if UI.ShowAlts then UI:ShowAlts(not UI.altsShown) end
 end)

@@ -16,7 +16,7 @@ local BORDER_TEXTURE = "Interface\\Minimap\\MiniMap-TrackingBorder"
 local HIGHLIGHT      = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
 
 local DEFAULT_ANGLE = 194     -- lower-left, clear of the default clock and tracking button
-local RADIUS        = 80
+local RING_GAP      = 10      -- how far outside the minimap edge the button's centre orbits
 
 local button = CreateFrame("Button", "BotInspectorMinimapButton", Minimap)
 button:SetWidth(31); button:SetHeight(31)
@@ -40,11 +40,27 @@ border:SetPoint("TOPLEFT")
 button:SetHighlightTexture(HIGHLIGHT)
 
 --- Place the button on the minimap ring at the saved angle.
+--
+-- Derived from the minimap's and the button's real sizes rather than the usual copied constants, so
+-- the orbit is actually centred on the minimap. The first attempt carried a stray 25-pixel shift on
+-- both axes, which moved the centre of the circle off the centre of the minimap and pulled part of
+-- the path inside it.
+--
+-- Anchoring is by TOPLEFT, so the button's own half-size has to come back out of the result to put
+-- its *centre* on the ring.
 local function updatePosition()
     local angle = math.rad(tonumber(BotInspectorDB and BotInspectorDB.minimapAngle or nil) or DEFAULT_ANGLE)
+
+    local mapHalf = Minimap:GetWidth() / 2
+    local halfBtn = button:GetWidth() / 2
+    local radius = mapHalf + RING_GAP
+
+    -- Repositioning, not adding another anchor: SetPoint on a frame that already has points leaves
+    -- the old ones in place and the two fight each other.
+    button:ClearAllPoints()
     button:SetPoint("TOPLEFT", Minimap, "TOPLEFT",
-                    54 - (RADIUS * math.cos(angle)) - 25,
-                    (RADIUS * math.sin(angle)) - 54 + 25)
+                    mapHalf + (radius * math.cos(angle)) - halfBtn,
+                    -mapHalf + (radius * math.sin(angle)) + halfBtn)
 end
 UI.UpdateMinimapPosition = updatePosition
 
@@ -55,7 +71,12 @@ button:SetScript("OnDragStart", function(self)
     self.dragging = true
     self:SetScript("OnUpdate", function()
         local mx, my = Minimap:GetCenter()
-        local scale = UIParent:GetEffectiveScale()
+
+        -- The minimap's scale, not UIParent's. GetCenter reports in the frame's own scale space
+        -- while GetCursorPosition reports raw screen coordinates, so dividing by the wrong scale
+        -- stretches one axis against the other and the drag traces an ellipse-ish path rather than
+        -- a circle. They are usually equal, which is what makes this easy to get away with.
+        local scale = Minimap:GetEffectiveScale()
         local cx, cy = GetCursorPosition()
         cx, cy = cx / scale, cy / scale
 

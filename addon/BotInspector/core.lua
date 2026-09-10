@@ -40,7 +40,8 @@ BI.zoneNames = {}   -- zoneId -> name (server-sent; the client cannot resolve ar
 BI.roster  = {}   -- zoneId -> { {guid, name, level, class, race, gold}, ... }
 BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
 BI.lastError = nil
-BI.alts      = {}   -- { {guid, name, level, class, race, state}, ... }
+BI.alts      = {}   -- { {guid, name, level, class, race, state, role}, ... }
+BI.selfInfo  = nil -- { guid, name, active, role } for the character being played
 BI.can       = { appear = false, summon = false }   -- filled in by the ZONES reply
 
 -- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
@@ -294,14 +295,24 @@ local function dispatch(verb, key, rows)
 
     elseif verb == "ALTS" then
         local list = {}
+        BI.selfInfo = nil
         for _, row in ipairs(rows) do
             local f = split(row, ":")
-            if f[1] and f[1] ~= "" then
+            if f[1] == "#self" then
+                -- The requesting character itself. Not one of its own alts, so it is carried
+                -- separately and drawn with its own controls.
+                BI.selfInfo = {
+                    guid = tonumber(f[2]), name = f[3],
+                    active = f[4] == "1", role = f[5] or "-",
+                }
+            elseif f[1] and f[1] ~= "" then
                 table.insert(list, {
                     guid = tonumber(f[1]), name = f[2], level = tonumber(f[3]),
                     class = tonumber(f[4]), race = tonumber(f[5]),
                     -- offline | player | bot | party
                     state = f[6] or "offline",
+                    -- What the bot's live strategies amount to: tank | heal | dps | none | -
+                    role = f[7] or "-",
                 })
             end
         end

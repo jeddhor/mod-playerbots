@@ -12,3 +12,4 @@ ui_list.lua
 ui_detail.lua
 ui_alts.lua
 ui_minimap.lua
+ui_lootroll.lua
