@@ -77,6 +77,7 @@ private:
         Position lastFailure;
         uint32 lastFailureMap{0};
         uint32 consecutive{0};
+        uint32 lastRecoveryMs{0};
     };
 
     /// True if the bot is below the map's floor -- the core's own out-of-world test.
@@ -94,6 +95,7 @@ private:
     uint32 _recoveries{0};
     uint32 _recoveriesNoAnchor{0};
     uint32 _anchorsDistrusted{0};
+    uint32 _activitiesInterrupted{0};
 };
 
 #define sBotSafetyMgr BotSafetyMgr::instance()

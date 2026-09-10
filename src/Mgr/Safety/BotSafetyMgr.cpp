@@ -15,6 +15,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "StringFormat.h"
+#include "Timer.h"
 
 namespace
 {
@@ -23,16 +24,32 @@ namespace
     constexpr float SAFE_GROUND_TOLERANCE = 5.0f;
 
     /// Two failures closer together than this are the same failure recurring, not two failures.
+    /// Kept for the log, which is more useful when it says whether a bot is stuck in one place or
+    /// leaving a trail of them.
     constexpr float SAME_SPOT_RADIUS = 25.0f;
 
-    /// After this many recoveries to the same place, the anchor is part of the problem.
+    /// A bot that has gone this long without needing recovery has stopped being a repeat case.
     ///
-    /// Restoring a bot to where it was last standing is the right first answer, and it works for
-    /// the great majority: 18 of 45 bots in one run needed exactly one recovery. But when the
-    /// anchor sits somewhere the bot immediately slides back under, repeating it is worse than
-    /// useless -- it pins the bot in a loop for the rest of the run and buries the log. Three
-    /// attempts is enough to establish that this particular place does not work.
-    constexpr uint32 ANCHOR_DISTRUST_AFTER = 3;
+    /// The first version counted only failures near the *previous* failure, which turned out to
+    /// describe one of the two patterns and not the commoner one. Over 25 minutes, 287 recoveries
+    /// came from 37 bots -- but the worst, at 27 recoveries, was spread over a hundred yards:
+    /// restored, walked on, went under again further along. Every failure was more than 25 yards
+    /// from the last, so a same-place counter reset every time and never fired once in the run.
+    ///
+    /// Elapsed time catches both. A bot in a tight anchor loop and a bot walking a path that keeps
+    /// burying it are the same problem seen from different distances: it needs help repeatedly and
+    /// is not getting better.
+    constexpr uint32 RECOVERY_STREAK_WINDOW_MS = 60 * IN_MILLISECONDS;
+
+    /// After this many recoveries inside the window, stop the bot doing whatever put it there.
+    ///
+    /// Relocating it is not enough on its own: it resumes the same walk and arrives back under the
+    /// same terrain. Dropping the activity makes it choose a new destination, which is the only
+    /// thing that breaks a bad path.
+    constexpr uint32 INTERRUPT_ACTIVITY_AFTER = 3;
+
+    /// And after this many, the anchor is failing too, so stop returning it there.
+    constexpr uint32 ANCHOR_DISTRUST_AFTER = 6;
 }
 
 bool BotSafetyMgr::IsOutOfWorld(Player* bot)
@@ -126,34 +143,45 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
     {
         Anchor anchor;
         bool trustAnchor = false;
+        bool interrupt = false;
+        uint32 streak = 0;
+        bool sameSpot = false;
         {
             std::unique_lock<std::shared_mutex> lock(_mutex);
             Anchor& stored = _anchors[guid];
 
-            // Same place as last time, or a fresh incident? Distance decides, not a timer: a bot
-            // that slid back under within a second and a bot that fell somewhere else an hour
-            // later are different problems and must not share a counter.
-            bool const sameSpot = stored.consecutive > 0 && stored.lastFailureMap == bot->GetMapId() &&
-                                  stored.lastFailure.GetExactDist2d(bot->GetPositionX(), bot->GetPositionY()) <
-                                      SAME_SPOT_RADIUS;
+            uint32 const now = getMSTime();
 
-            stored.consecutive = sameSpot ? stored.consecutive + 1 : 1;
+            // A run of recoveries, or an isolated one? Time decides. Distance is recorded too, but
+            // only so the log can say whether the bot is pinned in one place or leaving a trail.
+            bool const continuing = stored.lastRecoveryMs != 0 &&
+                                    GetMSTimeDiffToNow(stored.lastRecoveryMs) < RECOVERY_STREAK_WINDOW_MS;
+
+            sameSpot = stored.consecutive > 0 && stored.lastFailureMap == bot->GetMapId() &&
+                       stored.lastFailure.GetExactDist2d(bot->GetPositionX(), bot->GetPositionY()) <
+                           SAME_SPOT_RADIUS;
+
+            stored.consecutive = continuing ? stored.consecutive + 1 : 1;
+            stored.lastRecoveryMs = now;
             stored.lastFailureMap = bot->GetMapId();
             stored.lastFailure.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
 
-            trustAnchor = stored.valid && stored.mapId == bot->GetMapId() &&
-                          stored.consecutive < ANCHOR_DISTRUST_AFTER;
+            streak = stored.consecutive;
+            interrupt = streak >= INTERRUPT_ACTIVITY_AFTER;
 
-            if (!trustAnchor && stored.valid && stored.consecutive >= ANCHOR_DISTRUST_AFTER)
+            trustAnchor = stored.valid && stored.mapId == bot->GetMapId() &&
+                          streak < ANCHOR_DISTRUST_AFTER;
+
+            if (stored.valid && streak >= ANCHOR_DISTRUST_AFTER)
             {
-                // The anchor leads back here. Drop it so a new one is recorded wherever the bot
-                // ends up, rather than teleporting it into the same hole a fourth time.
+                // Six recoveries inside a minute, and returning it to its own safe ground has not
+                // helped once. Drop the anchor so a new one is recorded wherever the bot lands.
                 LOG_INFO("playerbots",
-                         "[Safety] {} has needed {} recoveries within {:.0f} yards of "
+                         "[Safety] {} has needed {} recoveries in the last minute, the latest at "
                          "({:.0f},{:.0f},{:.1f}) on map {} -- its safe ground leads straight back "
                          "under, so it is being sent to a graveyard instead",
-                         bot->GetName(), stored.consecutive, SAME_SPOT_RADIUS, bot->GetPositionX(),
-                         bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+                         bot->GetName(), streak, bot->GetPositionX(), bot->GetPositionY(),
+                         bot->GetPositionZ(), bot->GetMapId());
 
                 stored.valid = false;
                 ++_anchorsDistrusted;
@@ -202,6 +230,27 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
             }
         }
 
+        // Put the bot back first, then stop it walking there again.
+        //
+        // Relocation alone leaves the activity intact, so the bot resumes the same route and is
+        // back under the same terrain within the minute. The worst offender in one run needed 27
+        // recoveries spread over a hundred yards for exactly this reason: every individual rescue
+        // worked and none of them changed anything.
+        if (interrupt)
+        {
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+            {
+                LOG_INFO("playerbots",
+                         "[Safety] {} has needed {} recoveries in the last minute ({}), "
+                         "dropping activity {} so it chooses somewhere else",
+                         bot->GetName(), streak, sameSpot ? "all near one spot" : "along a route",
+                         int(ai->rpgInfo.GetStatus()));
+
+                ai->rpgInfo.ChangeToIdle();
+                ++_activitiesInterrupted;
+            }
+        }
+
         // Cancel the fall so the core does not apply falling damage on arrival. Recovering a bot and
         // then killing it for the fall it was rescued from would defeat the entire point.
         bot->SetFallInformation(GameTime::GetGameTime().count(), bot->GetPositionZ());
@@ -216,9 +265,9 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
         anchor.pos.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
         anchor.valid = true;
 
-        // Standing on something again ends the streak. A bot that recovers and then works normally
-        // for a while has had one incident, not the beginning of a loop.
-        anchor.consecutive = 0;
+        // Standing on something again does not end the streak on its own -- a bot walking a bad
+        // route is on solid ground between every burial. Only the window expiring does, which is
+        // handled where the streak is counted.
     }
 }
 
@@ -233,8 +282,9 @@ std::string BotSafetyMgr::DescribeStats() const
     std::shared_lock<std::shared_mutex> lock(_mutex);
     return Acore::StringFormat(
         "Fall recoveries: {} restored to safe ground, {} sent to a graveyard for want of one, "
-        "{} anchors abandoned for leading straight back under. Anchors held: {}.\n"
+        "{} anchors abandoned for leading straight back under, {} activities dropped for burying "
+        "the bot repeatedly. Anchors held: {}.\n"
         "A recovery count that keeps climbing means the movement cause is still there; this only "
         "catches the symptom.",
-        _recoveries, _recoveriesNoAnchor, _anchorsDistrusted, _anchors.size());
+        _recoveries, _recoveriesNoAnchor, _anchorsDistrusted, _activitiesInterrupted, _anchors.size());
 }
