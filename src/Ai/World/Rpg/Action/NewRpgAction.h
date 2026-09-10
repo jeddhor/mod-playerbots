@@ -61,6 +61,9 @@ public:
     bool Execute(Event event) override;
 
 protected:
+    /// May a completed quest's hand-in interrupt the activity the bot is running right now?
+    bool ShouldPreemptForTurnIn(NewRpgStatus status);
+
     // static NewRpgStatusTransitionProb transitionMat;
     const int32 statusWanderNpcDuration = 5 * MINUTE  * IN_MILLISECONDS ;
     const int32 statusWanderRandomDuration = 5 * MINUTE  * IN_MILLISECONDS ;

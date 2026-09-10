@@ -1049,10 +1049,18 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
 
     if (!strcmp(cmd, "self"))
     {
-        if (GET_PLAYERBOT_AI(master))
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(master))
         {
             messages.push_back("Disable player botAI");
-            delete GET_PLAYERBOT_AI(master);
+
+            // Hand the character back *now*. Deleting the AI leaves whatever spline it had already
+            // committed running on the client, so the character carries on walking to a destination
+            // its owner has just cancelled, and cannot be steered until it arrives. Stopping first
+            // is the difference between switching the AI off and asking it to finish up.
+            botAI->ReleaseMovementToHuman();
+            master->InterruptNonMeleeSpells(true);
+
+            delete botAI;
         }
         else if (sPlayerbotAIConfig.selfBotLevel == 0)
             messages.push_back("Self-bot is disabled");

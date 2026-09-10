@@ -298,6 +298,9 @@ public:
     // How long a bot avoids a loot object it could not empty, so it stops re-gathering it.
     uint32 unfinishedLootRetrySeconds;
 
+    // How long after a person lets go of the movement keys the AI waits before steering again.
+    uint32 humanControlGraceMs;
+
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.
     uint32 eraCappedBotPctAt60, eraCappedBotPctAt70;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;

@@ -6049,8 +6049,60 @@ int32 PlayerbotAI::GetNearGroupMemberCount(float dis)
     return count;
 }
 
+void PlayerbotAI::NoteHumanMovementInput(bool holding)
+{
+    bool const wasDriving = HumanIsDriving();
+
+    _humanHoldingKey = holding;
+    _humanInputMs = getMSTime();
+
+    // Kill the spline on the *first* input, not on the next AI tick. A tick is up to a second away,
+    // and a second of a character continuing to walk somewhere the person did not ask for is
+    // exactly the complaint. Only on the transition, so holding a key does not re-clear every
+    // packet and stutter the movement the person is trying to make.
+    if (holding && !wasDriving)
+        ReleaseMovementToHuman();
+}
+
+bool PlayerbotAI::HumanIsDriving() const
+{
+    if (_humanHoldingKey)
+        return true;
+
+    if (!_humanInputMs)
+        return false;
+
+    return GetMSTimeDiffToNow(_humanInputMs) < sPlayerbotAIConfig.humanControlGraceMs;
+}
+
+void PlayerbotAI::ReleaseMovementToHuman()
+{
+    if (!bot || !bot->IsInWorld())
+        return;
+
+    // Clear() alone leaves the spline the client is already playing, so the character keeps sliding
+    // to the old destination. Stopping where it stands is what actually returns control.
+    if (MotionMaster* mm = bot->GetMotionMaster())
+    {
+        mm->Clear();
+        mm->MoveIdle();
+    }
+
+    bot->StopMoving();
+
+    // The queued destination would otherwise be re-used the moment the grace period lapses, walking
+    // the character back to wherever the AI had been heading before the person intervened.
+    if (AiObjectContext* ctx = GetAiObjectContext())
+        ctx->GetValue<LastMovement&>("last movement")->Get().Set(nullptr);
+}
+
 bool PlayerbotAI::CanMove()
 {
+    // Hands on the keys outrank everything below. Checked first and cheaply, because it is checked
+    // on every movement decision of every bot.
+    if (HumanIsDriving())
+        return false;
+
     // Most common checks: confused, stunned, fleeing, jumping, charging. All these
     // states are set when handling certain aura effects. We don't check against
     // UNIT_STATE_ROOT here, because this state is used by vehicles.

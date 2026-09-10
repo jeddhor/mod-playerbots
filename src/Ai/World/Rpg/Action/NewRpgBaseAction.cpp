@@ -100,6 +100,14 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
     if (dest == WorldPosition())
         return false;
 
+    // A person is steering. Return before the stuck counters below are touched, not just before the
+    // movement: suppressing the AI's movement is exactly what "no progress toward dest" looks like,
+    // so without this the stuck timer runs down while somebody walks their own character around and
+    // then teleports them to wherever the AI had been heading. Saying movement is in hand is also
+    // true -- it is, by the person holding the keys.
+    if (botAI->HumanIsDriving())
+        return true;
+
     if (dest != botAI->rpgInfo.moveFarPos)
     {
         // clear stuck information if it's a new dest

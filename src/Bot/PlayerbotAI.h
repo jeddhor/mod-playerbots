@@ -540,6 +540,26 @@ public:
 
     Player* GetBot() { return bot; }
     Player* GetMaster() { return master; }
+
+    /**
+     * A person at the keyboard has pressed or released a movement key.
+     *
+     * The hands on the keys win, always. A self bot is somebody's own character, and having to wait
+     * for the AI to finish walking to wherever it had decided to go before regaining control of it
+     * is the single most unpleasant thing the AI does.
+     *
+     * ``holding`` is true for a key going down and false for one coming up. Release starts a short
+     * grace period rather than handing control straight back, because a person steering rarely
+     * holds one key continuously, and an AI that grabs the character back between two taps of W is
+     * no better than one that never lets go.
+     */
+    void NoteHumanMovementInput(bool holding);
+
+    /// True while the person is steering, or just was. Movement decisions must not run.
+    bool HumanIsDriving() const;
+
+    /// Drop any movement the AI has in flight and hand the character back this instant.
+    void ReleaseMovementToHuman();
     Player* FindNewMaster();
 
     // Get the group leader or the master of the bot.
@@ -637,6 +657,12 @@ private:
 protected:
     Player* bot;
     Player* master;
+
+    // Set from the packet hook when a real client sends a movement key. `_humanHoldingKey` tracks
+    // the key being down; `_humanInputMs` is when it was last seen either way, which is what the
+    // grace period is measured from.
+    bool _humanHoldingKey{false};
+    uint32 _humanInputMs{0};
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

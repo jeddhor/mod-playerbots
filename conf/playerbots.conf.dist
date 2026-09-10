@@ -3086,6 +3086,18 @@ AiPlayerbot.LfgSeedHoldMs = 300000
 
 AiPlayerbot.UnfinishedLootRetrySeconds = 300
 
+#
+#    AiPlayerbot.HumanControlGraceMs
+#        Description: How long after a person lets go of the movement keys the AI waits before it
+#                     steers a self bot again. Pressing a movement key cancels whatever the AI had
+#                     in flight immediately; this only covers the gap between two taps so the AI
+#                     does not grab the character back mid-manoeuvre.
+#        Default:     1500
+#
+
+AiPlayerbot.HumanControlGraceMs = 1500
+
+
 
 
 ###############################################################################

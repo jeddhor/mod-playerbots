@@ -457,6 +457,10 @@ bool PlayerbotAIConfig::Initialize()
     unfinishedLootRetrySeconds =
         sConfigMgr->GetOption<uint32>("AiPlayerbot.UnfinishedLootRetrySeconds", 300);
 
+    // Long enough to cover the gap between two taps of a movement key, short enough that letting go
+    // hands control back straight away. A person steering rarely holds one key down continuously.
+    humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
+
     // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
     // currently below each ceiling, so the two numbers mean what an operator expects them to.
     eraCappedBotPctAt60 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt60", 15);

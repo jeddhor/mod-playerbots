@@ -27,6 +27,7 @@
 #include "BotCraftMgr.h"
 #include "BotFollowMgr.h"
 #include "BotMailMgr.h"
+#include "Opcodes.h"
 #include "BotDungeonMgr.h"
 #include "BotLfgMgr.h"
 #include "BotToolMgr.h"
@@ -403,10 +404,64 @@ public:
 
     void OnPacketReceived(WorldSession* session, WorldPacket const& packet) override
     {
-        if (Player* player = session->GetPlayer())
-            if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
-                playerbotMgr->HandleMasterIncomingPacket(packet);
+        Player* player = session->GetPlayer();
+        if (!player)
+            return;
+
+        NoteHumanSteering(player, packet.GetOpcode());
+
+        if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
+            playerbotMgr->HandleMasterIncomingPacket(packet);
     }
+
+private:
+    /**
+     * A self bot's own client just sent a movement key.
+     *
+     * Only deliberate key presses count. Heartbeats and MSG_MOVE_SPLINE_DONE arrive while the
+     * server is driving the character too, so treating those as human input would have the AI
+     * permanently suppressing itself the moment it moved anything.
+     *
+     * Nothing here parses the packet body -- the opcode alone says a key went down or came up, and
+     * this runs for every packet from every session on the realm.
+     */
+    static void NoteHumanSteering(Player* player, uint16 opcode)
+    {
+        bool holding;
+        switch (opcode)
+        {
+            case MSG_MOVE_START_FORWARD:
+            case MSG_MOVE_START_BACKWARD:
+            case MSG_MOVE_START_STRAFE_LEFT:
+            case MSG_MOVE_START_STRAFE_RIGHT:
+            case MSG_MOVE_START_TURN_LEFT:
+            case MSG_MOVE_START_TURN_RIGHT:
+            case MSG_MOVE_START_SWIM:
+            case MSG_MOVE_JUMP:
+                holding = true;
+                break;
+
+            case MSG_MOVE_STOP:
+            case MSG_MOVE_STOP_STRAFE:
+            case MSG_MOVE_STOP_TURN:
+            case MSG_MOVE_STOP_SWIM:
+                holding = false;
+                break;
+
+            default:
+                return;
+        }
+
+        // Only a self bot has both an AI and a person behind it. Every other bot is clientless, so
+        // no packet it appears to send can have come from a keyboard.
+        if (!IsSelfBot(player))
+            return;
+
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
+            botAI->NoteHumanMovementInput(holding);
+    }
+
+public:
 };
 
 class PlayerbotsWorldScript : public WorldScript

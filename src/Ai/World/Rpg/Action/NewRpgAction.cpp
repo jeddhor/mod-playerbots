@@ -236,10 +236,69 @@ bool StartRpgDoQuestAction::Execute(Event event)
     return false;
 }
 
+/**
+ * May a completed quest's hand-in interrupt what this bot is doing right now?
+ *
+ * "Anything except something that's actively killing you" is the rule, so combat is the one thing
+ * that outranks it. The rest of these are cases where interrupting cannot work rather than cases
+ * where it would be unwelcome: a bot in mid-flight cannot walk anywhere, and one inside an instance
+ * is running content with a group whose turn-ins are outside.
+ *
+ * The cheap complete-quest scan comes last on purpose -- it runs for every bot on every RPG tick,
+ * and most bots carry nothing complete, so the loop exits without touching the POI store.
+ */
+bool NewRpgStatusUpdateAction::ShouldPreemptForTurnIn(NewRpgStatus status)
+{
+    if (status == RPG_DO_QUEST || status == RPG_TRAVEL_FLIGHT)
+        return false;
+
+    if (bot->IsInCombat() || bot->isDead())
+        return false;
+
+    if (Map* map = bot->FindMap(); map && map->Instanceable())
+        return false;
+
+    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 const questId = bot->GetQuestSlotQuestId(slot);
+        if (questId && bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+            return true;
+    }
+
+    return false;
+}
+
 bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
 {
     NewRpgInfo& info = botAI->rpgInfo;
     NewRpgStatus status = info.GetStatus();
+
+    // A finished quest whose hand-in is within reach outranks whatever the bot is currently doing.
+    //
+    // This check already existed, but it lived in RandomChangeStatus, which is only reached from
+    // RPG_IDLE. So a bot part-way through a gather route or a grind would walk right past the NPC
+    // that turns its completed quest into experience, and notice only if that activity happened to
+    // end nearby. Watching a character stand in front of a question mark and ignore it is the most
+    // obviously wrong thing the AI can do, because no person would ever do it.
+    //
+    // Preemption, not a higher weight in the roll: the roll happens when the bot goes idle, and the
+    // whole problem is that it does not go idle for minutes at a time.
+    if (ShouldPreemptForTurnIn(status))
+    {
+        if (uint32 const turnIn = FindNearbyTurnIn())
+        {
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(turnIn))
+            {
+                LOG_DEBUG("playerbots",
+                          "[New RPG] {} interrupting activity {} -- quest {} is complete and its "
+                          "turn-in is right here",
+                          bot->GetName(), uint32(status), turnIn);
+                info.ChangeToDoQuest(turnIn, quest);
+                return true;
+            }
+        }
+    }
+
     switch (status)
     {
         case RPG_IDLE:
