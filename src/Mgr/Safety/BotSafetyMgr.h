@@ -66,6 +66,17 @@ private:
         Position pos;
         uint32 timer{0};
         bool valid{false};
+
+        /// Where the last recovery was needed, and how many in a row have happened near it.
+        ///
+        /// Recoveries are not evenly spread across bots. Over one run, 334 of them came from 45
+        /// bots, the top five accounting for 177 and one bot alone for 65 -- all within two yards
+        /// of a single spot. That is not a bot falling through the world sixty-five times; it is
+        /// one bot being restored to an anchor that leads straight back under, forever. Counting
+        /// repeats at the same place is what tells the two apart.
+        Position lastFailure;
+        uint32 lastFailureMap{0};
+        uint32 consecutive{0};
     };
 
     /// True if the bot is below the map's floor -- the core's own out-of-world test.
@@ -82,6 +93,7 @@ private:
 
     uint32 _recoveries{0};
     uint32 _recoveriesNoAnchor{0};
+    uint32 _anchorsDistrusted{0};
 };
 
 #define sBotSafetyMgr BotSafetyMgr::instance()

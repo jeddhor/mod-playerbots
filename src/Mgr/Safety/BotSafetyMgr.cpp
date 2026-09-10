@@ -21,6 +21,18 @@ namespace
     // How close to the ground counts as standing on it. Generous, because a bot mid-jump or on a
     // slope is still somewhere sane to come back to.
     constexpr float SAFE_GROUND_TOLERANCE = 5.0f;
+
+    /// Two failures closer together than this are the same failure recurring, not two failures.
+    constexpr float SAME_SPOT_RADIUS = 25.0f;
+
+    /// After this many recoveries to the same place, the anchor is part of the problem.
+    ///
+    /// Restoring a bot to where it was last standing is the right first answer, and it works for
+    /// the great majority: 18 of 45 bots in one run needed exactly one recovery. But when the
+    /// anchor sits somewhere the bot immediately slides back under, repeating it is worse than
+    /// useless -- it pins the bot in a loop for the rest of the run and buries the log. Three
+    /// attempts is enough to establish that this particular place does not work.
+    constexpr uint32 ANCHOR_DISTRUST_AFTER = 3;
 }
 
 bool BotSafetyMgr::IsOutOfWorld(Player* bot)
@@ -113,17 +125,47 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
     if (IsOutOfWorld(bot) || IsUnderTerrain(bot))
     {
         Anchor anchor;
+        bool trustAnchor = false;
         {
-            std::shared_lock<std::shared_mutex> lock(_mutex);
-            auto itr = _anchors.find(guid);
-            if (itr != _anchors.end())
-                anchor = itr->second;
+            std::unique_lock<std::shared_mutex> lock(_mutex);
+            Anchor& stored = _anchors[guid];
+
+            // Same place as last time, or a fresh incident? Distance decides, not a timer: a bot
+            // that slid back under within a second and a bot that fell somewhere else an hour
+            // later are different problems and must not share a counter.
+            bool const sameSpot = stored.consecutive > 0 && stored.lastFailureMap == bot->GetMapId() &&
+                                  stored.lastFailure.GetExactDist2d(bot->GetPositionX(), bot->GetPositionY()) <
+                                      SAME_SPOT_RADIUS;
+
+            stored.consecutive = sameSpot ? stored.consecutive + 1 : 1;
+            stored.lastFailureMap = bot->GetMapId();
+            stored.lastFailure.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+
+            trustAnchor = stored.valid && stored.mapId == bot->GetMapId() &&
+                          stored.consecutive < ANCHOR_DISTRUST_AFTER;
+
+            if (!trustAnchor && stored.valid && stored.consecutive >= ANCHOR_DISTRUST_AFTER)
+            {
+                // The anchor leads back here. Drop it so a new one is recorded wherever the bot
+                // ends up, rather than teleporting it into the same hole a fourth time.
+                LOG_INFO("playerbots",
+                         "[Safety] {} has needed {} recoveries within {:.0f} yards of "
+                         "({:.0f},{:.0f},{:.1f}) on map {} -- its safe ground leads straight back "
+                         "under, so it is being sent to a graveyard instead",
+                         bot->GetName(), stored.consecutive, SAME_SPOT_RADIUS, bot->GetPositionX(),
+                         bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+
+                stored.valid = false;
+                ++_anchorsDistrusted;
+            }
+
+            anchor = stored;
         }
 
         // Restore to the last place the bot was demonstrably standing on something. That is a far
         // better destination than a graveyard: it is where the bot was working, so whatever it was
         // doing survives the recovery.
-        if (anchor.valid && anchor.mapId == bot->GetMapId())
+        if (trustAnchor)
         {
             // Enough detail to find the cause next time. "fell at z=-1012" says only that it
             // happened; where, on which map, and what the bot was trying to do is what makes the
@@ -145,12 +187,13 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
         }
         else
         {
-            // No anchor yet -- the bot fell before it was ever seen on solid ground. The graveyard
-            // is a poor destination but an available one, and still better than dying.
+            // Either no anchor was ever recorded, or the one we had has just been distrusted.
+            // The graveyard is a poor destination but an available one, and still better than
+            // leaving the bot under the map or letting it die there.
             if (GraveyardStruct const* graveyard =
                     sGraveyard->GetClosestGraveyard(bot, bot->GetTeamId(), bot->InBattleground()))
             {
-                LOG_INFO("playerbots", "[Safety] {} fell out of the world with no safe ground recorded, "
+                LOG_INFO("playerbots", "[Safety] {} has no usable safe ground, "
                                        "sending to the nearest graveyard",
                          bot->GetName());
 
@@ -172,6 +215,10 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
         anchor.mapId = bot->GetMapId();
         anchor.pos.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
         anchor.valid = true;
+
+        // Standing on something again ends the streak. A bot that recovers and then works normally
+        // for a while has had one incident, not the beginning of a loop.
+        anchor.consecutive = 0;
     }
 }
 
@@ -185,9 +232,9 @@ std::string BotSafetyMgr::DescribeStats() const
 {
     std::shared_lock<std::shared_mutex> lock(_mutex);
     return Acore::StringFormat(
-        "Fall recoveries: {} restored to safe ground, {} sent to a graveyard for want of one. "
-        "Anchors held: {}.\n"
+        "Fall recoveries: {} restored to safe ground, {} sent to a graveyard for want of one, "
+        "{} anchors abandoned for leading straight back under. Anchors held: {}.\n"
         "A recovery count that keeps climbing means the movement cause is still there; this only "
         "catches the symptom.",
-        _recoveries, _recoveriesNoAnchor, _anchors.size());
+        _recoveries, _recoveriesNoAnchor, _anchorsDistrusted, _anchors.size());
 }
