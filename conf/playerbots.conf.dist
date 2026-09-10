@@ -3029,6 +3029,65 @@ AiPlayerbot.RandomBotSeedMoney = 100000
 # or zero activity decisions in a whole run were the ones left holding mail forever.
 AiPlayerbot.MailCollectIntervalMs = 30000
 
+#
+#    AiPlayerbot.DungeonAutopilotEnabled
+#        Description: Inside an instance, let a bot holding party lead navigate for the group.
+#                     Hand party lead to a bot and it picks the pulls; everyone else follows it
+#                     instead of standing with their master. A human keeping lead is unaffected.
+#        Default:     1
+#
+
+AiPlayerbot.DungeonAutopilotEnabled = 1
+
+#
+#    AiPlayerbot.DungeonAutopilotIntervalMs
+#        Description: How often a bot re-checks whether it should be leading, following or neither.
+#        Default:     2000
+#
+
+AiPlayerbot.DungeonAutopilotIntervalMs = 2000
+
+#
+#    AiPlayerbot.LfgSeedForPlayers
+#        Description: When a real player is waiting in the Dungeon Finder, put suitable bots into
+#                     that same queue so the group forms. Bots join the real queue with the roles
+#                     the group is short of; nothing is faked. Limited by the bot population that
+#                     actually exists at the right level.
+#        Default:     1
+#
+
+AiPlayerbot.LfgSeedForPlayers = 1
+
+#
+#    AiPlayerbot.LfgSeedIntervalMs
+#        Description: How often the queue is checked for waiting players.
+#        Default:     2000
+#
+
+AiPlayerbot.LfgSeedIntervalMs = 2000
+
+#
+#    AiPlayerbot.LfgSeedHoldMs
+#        Description: How long a seeded bot is left in the queue before being taken back out, so a
+#                     failed match does not park it there for good.
+#        Default:     300000
+#
+
+AiPlayerbot.LfgSeedHoldMs = 300000
+
+#
+#    AiPlayerbot.UnfinishedLootRetrySeconds
+#        Description: How long a bot leaves alone a loot object it could not empty. A mining node
+#                     keeps its loot until somebody takes all of it, so a bot that declines one
+#                     item -- bags near full, a stack it cannot start -- would otherwise gather the
+#                     same node forever.
+#        Default:     300
+#
+
+AiPlayerbot.UnfinishedLootRetrySeconds = 300
+
+
+
 ###############################################################################
 # P13.2 -- the old-content population.
 #

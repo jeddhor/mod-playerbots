@@ -440,6 +440,23 @@ bool PlayerbotAIConfig::Initialize()
     // collecting needs no travel.
     mailCollectIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MailCollectIntervalMs", 30000);
 
+    dungeonAutopilotEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.DungeonAutopilotEnabled", true);
+    // Two seconds is well under the time it takes to walk between pulls, so a leadership handover
+    // or a zone-in is acted on before anyone notices the group standing still.
+    dungeonAutopilotIntervalMs =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.DungeonAutopilotIntervalMs", 2000);
+
+    lfgSeedForPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.LfgSeedForPlayers", true);
+    lfgSeedIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LfgSeedIntervalMs", 2000);
+    // How long a seeded bot is left in the queue before being taken back out. Long enough for
+    // LFGQueue to assemble a group, short enough that a failed match does not park the bot.
+    lfgSeedHoldMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.LfgSeedHoldMs", 300000);
+
+    // Long enough that the bot walks away and does something else; short enough that a node it
+    // genuinely could not take earlier is reconsidered once its bags have changed.
+    unfinishedLootRetrySeconds =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.UnfinishedLootRetrySeconds", 300);
+
     // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
     // currently below each ceiling, so the two numbers mean what an operator expects them to.
     eraCappedBotPctAt60 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt60", 15);

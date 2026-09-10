@@ -280,6 +280,10 @@ bool StoreLootAction::Execute(Event event)
         // bot->GetSession()->HandleLootMoneyOpcode(packet);
     }
 
+    // Anything declined here stays in the object, and a gathering node with loot left in it never
+    // depletes -- so the bot walks back to the same node next tick and does it all again.
+    uint8 declined = 0;
+
     for (uint8 i = 0; i < items; ++i)
     {
         uint32 itemid;
@@ -299,7 +303,10 @@ bool StoreLootAction::Execute(Event event)
             continue;
 
         if (loot_type != LOOT_SKINNING && !IsLootAllowed(itemid, botAI))
+        {
+            ++declined;
             continue;
+        }
 
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemid);
         if (!proto)
@@ -309,7 +316,10 @@ bool StoreLootAction::Execute(Event event)
         {
             uint32 maxStack = proto->GetMaxStackSize();
             if (maxStack == 1)
+            {
+                ++declined;
                 continue;
+            }
 
             std::vector<Item*> found = parseItems(chat->FormatItem(proto));
 
@@ -325,7 +335,10 @@ bool StoreLootAction::Execute(Event event)
             }
 
             if (!hasFreeStack)
+            {
+                ++declined;
                 continue;
+            }
         }
 
         Player* master = botAI->GetMaster();
@@ -356,7 +369,21 @@ bool StoreLootAction::Execute(Event event)
         BroadcastHelper::BroadcastLootingItem(botAI, bot, proto);
     }
 
-    AI_VALUE(LootObjectStack*, "available loot")->Remove(guid);
+    LootObjectStack* stack = AI_VALUE(LootObjectStack*, "available loot");
+
+    if (declined)
+    {
+        // Whatever stopped the bot taking these items is still true a second from now, so the only
+        // thing retrying immediately achieves is the loop. Park the object instead.
+        stack->MarkUnfinished(guid);
+        LOG_DEBUG("playerbots", "[Loot] {} left {} item(s) in {}; not returning to it for {}s",
+                  bot->GetName(), declined, guid.ToString(),
+                  sPlayerbotAIConfig.unfinishedLootRetrySeconds);
+    }
+    else
+    {
+        stack->Remove(guid);
+    }
 
     // release loot
     WorldPacket* packet = new WorldPacket(CMSG_LOOT_RELEASE, 8);

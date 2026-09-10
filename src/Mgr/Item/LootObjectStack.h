@@ -9,6 +9,9 @@
 
 #include "ObjectGuid.h"
 
+#include <ctime>
+#include <unordered_map>
+
 class AiObjectContext;
 class Player;
 class WorldObject;
@@ -78,11 +81,30 @@ public:
     bool CanLoot(float maxDistance);
     LootObject GetLoot(float maxDistance = 0);
 
+    /**
+     * Loot was left behind in this object, so stop offering it for a while.
+     *
+     * A mining node keeps its loot until somebody takes all of it, and a bot that declines one of
+     * the items -- bags near full, a stack it cannot start, a unique it already owns -- leaves the
+     * node lootable. The gather target picker then hands back the same node, forever. Observed
+     * directly: a bot in Jasperlode Mine topping up its Rough Stone from one copper vein over and
+     * over while never taking the ore, because it had a part-used Rough Stone stack and no ore
+     * stack at all.
+     *
+     * Remembering the failure is the fix rather than forcing the loot: whatever stopped the bot
+     * taking the item is still true a second later, so retrying immediately cannot succeed, and
+     * only the loop is worth breaking here.
+     */
+    void MarkUnfinished(ObjectGuid guid);
+    bool IsUnfinished(ObjectGuid guid) const;
+
 private:
     LootObject GetNearest(float maxDistance = 0);
 
     Player* bot;
     LootTargetList availableLoot;
+    /// guid -> the time after which it may be offered again.
+    std::unordered_map<ObjectGuid, time_t> unfinished;
 };
 
 #endif

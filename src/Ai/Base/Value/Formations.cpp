@@ -99,6 +99,24 @@ public:
     std::string const GetTargetName() override { return "line target"; }
 };
 
+/**
+ * Follow whoever leads the group, rather than this bot's master.
+ *
+ * Used by dungeon autopilot. Every other follow formation positions on the master, which inside an
+ * instance is the person standing at the entrance -- so a group whose bot leader has walked off to
+ * pull leaves its healer behind with the human, and the pull happens two players short.
+ *
+ * Named for what it is for rather than reusing "melee", which targets the group leader too but
+ * promises melee range to anyone who reads it back out of `.formation ?`.
+ */
+class DungeonFormation : public FollowFormation
+{
+public:
+    DungeonFormation(PlayerbotAI* botAI) : FollowFormation(botAI, "dungeon") {}
+
+    std::string const GetTargetName() override { return "group leader"; }
+};
+
 class NearFormation : public MoveAheadFormation
 {
 public:
@@ -584,6 +602,13 @@ bool FormationValue::Load(std::string const formation)
 
         value = new FarFormation(botAI);
     }
+    else if (formation == "dungeon")
+    {
+        if (value)
+            delete value;
+
+        value = new DungeonFormation(botAI);
+    }
     else
         return false;
 
@@ -618,7 +643,8 @@ bool SetFormationAction::Execute(Event event)
         str << "Invalid formation: |cffff0000" << formation;
         botAI->TellMaster(str);
         botAI->TellMaster(
-            "Please set to any of:|cffffffff chaos (default), near, queue, circle, line, shield, arrow, melee, far");
+            "Please set to any of:|cffffffff chaos (default), near, queue, circle, line, shield, arrow, melee, far, "
+            "dungeon");
         return false;
     }
 

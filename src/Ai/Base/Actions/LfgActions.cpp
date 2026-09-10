@@ -18,13 +18,13 @@ using namespace lfg;
 
 bool LfgJoinAction::Execute(Event /*event*/) { return JoinLFG(); }
 
-uint32 LfgJoinAction::GetPrimaryRole()
+uint32 LfgPrimaryRoleFor(Player* bot)
 {
     if (!RandomPlayerbotMgr::instance().IsRandomBot(bot))
     {
-        if (botAI->IsTank(bot))
+        if (PlayerbotAI::IsTank(bot))
             return PLAYER_ROLE_TANK;
-        if (botAI->IsHeal(bot))
+        if (PlayerbotAI::IsHeal(bot))
             return PLAYER_ROLE_HEALER;
         else
             return PLAYER_ROLE_DAMAGE;
@@ -97,9 +97,9 @@ uint32 LfgJoinAction::GetPrimaryRole()
  * This is also what a person does: you tick every box you can cover, especially at low level where
  * an off-spec heal is normal and waiting for a dedicated healer means not running the dungeon.
  */
-uint32 LfgJoinAction::GetRoles()
+uint32 LfgRolesFor(Player* bot)
 {
-    uint32 roles = GetPrimaryRole();
+    uint32 roles = LfgPrimaryRoleFor(bot);
 
     switch (bot->getClass())
     {
@@ -124,6 +124,10 @@ uint32 LfgJoinAction::GetRoles()
 
     return roles;
 }
+
+uint32 LfgJoinAction::GetPrimaryRole() { return LfgPrimaryRoleFor(bot); }
+
+uint32 LfgJoinAction::GetRoles() { return LfgRolesFor(bot); }
 
 bool LfgJoinAction::JoinLFG()
 {

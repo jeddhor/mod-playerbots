@@ -8,6 +8,8 @@
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
 #include "BotMailMgr.h"
+#include "BotDungeonMgr.h"
+#include "BotLfgMgr.h"
 #include "RandomBotLevelMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
@@ -2531,6 +2533,18 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "eras")
     {
         LOG_INFO("playerbots", "{}", RandomBotLevelMgr::DescribeEraPopulation());
+        return true;
+    }
+
+    if (cmd == "dungeon")
+    {
+        LOG_INFO("playerbots", "{}", sBotDungeonMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd == "lfg")
+    {
+        LOG_INFO("playerbots", "{}", sBotLfgMgr.DescribeStats());
         return true;
     }
 

@@ -286,6 +286,18 @@ public:
     uint32 randomBotSeedMoney;
     uint32 mailCollectIntervalMs;
 
+    // Dungeon autopilot: inside an instance, a bot holding party lead navigates for the group.
+    bool dungeonAutopilotEnabled;
+    uint32 dungeonAutopilotIntervalMs;
+
+    // Demand-driven Dungeon Finder: put bots into the queue a person is already waiting in.
+    bool lfgSeedForPlayers;
+    uint32 lfgSeedIntervalMs;
+    uint32 lfgSeedHoldMs;
+
+    // How long a bot avoids a loot object it could not empty, so it stops re-gathering it.
+    uint32 unfinishedLootRetrySeconds;
+
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.
     uint32 eraCappedBotPctAt60, eraCappedBotPctAt70;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;

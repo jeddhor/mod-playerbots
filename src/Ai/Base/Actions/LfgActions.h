@@ -9,7 +9,20 @@
 
 #include "InventoryAction.h"
 
+class Player;
 class PlayerbotAI;
+
+/**
+ * The single role this character's spec is built for.
+ *
+ * Free functions rather than members because BotLfgMgr needs the same answer for a bot it is about
+ * to queue on a person's behalf, and it has no action object to ask. Two copies of this table
+ * would drift, and the one that drifted would be the one deciding whether a group can form.
+ */
+uint32 LfgPrimaryRoleFor(Player* bot);
+
+/// Every role this character can actually fill, not just the one its spec is built for.
+uint32 LfgRolesFor(Player* bot);
 
 class LfgJoinAction : public InventoryAction
 {

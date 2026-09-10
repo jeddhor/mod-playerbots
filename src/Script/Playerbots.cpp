@@ -27,6 +27,8 @@
 #include "BotCraftMgr.h"
 #include "BotFollowMgr.h"
 #include "BotMailMgr.h"
+#include "BotDungeonMgr.h"
+#include "BotLfgMgr.h"
 #include "BotToolMgr.h"
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
@@ -228,6 +230,11 @@ public:
             // time, so it must not compete with grinding and questing for a bot's attention.
             sBotMailMgr.Update(player, diff);
 
+            // Before the AI runs, so that a bot which has just been handed party lead inside an
+            // instance decides its next action with navigation already switched on rather than
+            // spending one more tick following somebody.
+            sBotDungeonMgr.Update(player, diff);
+
             botAI->UpdateAI(diff);
         }
 
@@ -372,6 +379,11 @@ public:
 
     void OnDestructPlayer(Player* player) override
     {
+        // Dungeon autopilot remembers a decision per bot so it only flips strategies on change.
+        // Without this the map keeps an entry for every bot that ever logged in.
+        if (player)
+            sBotDungeonMgr.Forget(player->GetGUID());
+
         PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
 
         if (botAI != nullptr)
@@ -452,6 +464,7 @@ public:
         sBotEconomyMgr.Update(diff);         // World thread only: touches AuctionHouseObject
         sBotAgendaMgr.Update(diff);          // round-robin, fixed budget per tick
         sBotHelpMgr.Update(diff);            // expire stale help requests
+        sBotLfgMgr.Update(diff);             // put bots into queues real players are waiting in
     }
 };
 

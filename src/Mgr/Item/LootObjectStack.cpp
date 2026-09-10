@@ -5,6 +5,7 @@
  */
 
 #include "LootObjectStack.h"
+#include "PlayerbotAIConfig.h"
 #include "LootMgr.h"
 #include "Object.h"
 #include "ObjectAccessor.h"
@@ -348,8 +349,37 @@ bool LootObject::IsLootPossible(Player* bot)
     return true;
 }
 
+void LootObjectStack::MarkUnfinished(ObjectGuid guid)
+{
+    unfinished[guid] = time(nullptr) + sPlayerbotAIConfig.unfinishedLootRetrySeconds;
+    // Dropped from the offer list as well, or the current pass would still hand it back.
+    Remove(guid);
+}
+
+bool LootObjectStack::IsUnfinished(ObjectGuid guid) const
+{
+    auto const itr = unfinished.find(guid);
+    if (itr == unfinished.end())
+        return false;
+
+    // Expired entries are left to be overwritten rather than erased here: this is called from a
+    // const path, the map only ever holds objects this bot personally failed on, and Add() clears
+    // them out as it goes.
+    return time(nullptr) < itr->second;
+}
+
 bool LootObjectStack::Add(ObjectGuid guid)
 {
+    if (IsUnfinished(guid))
+        return false;
+
+    if (!unfinished.empty())
+    {
+        time_t const now = time(nullptr);
+        for (auto itr = unfinished.begin(); itr != unfinished.end();)
+            itr = itr->second <= now ? unfinished.erase(itr) : std::next(itr);
+    }
+
     if (availableLoot.size() >= MAX_LOOT_OBJECT_COUNT)
     {
         availableLoot.shrink(time(nullptr) - 30);
