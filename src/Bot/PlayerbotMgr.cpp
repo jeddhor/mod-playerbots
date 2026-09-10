@@ -477,6 +477,11 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
         return;
     }
 
+    // P13.1 -- bags for every bot, seed money for random ones. Done at login rather than only in
+    // Randomize(), because most of the low-level population never passes through Randomize() at all
+    // and was going without bags entirely: 0.66 bags on average below level 10, against ~3.9 above.
+    PlayerbotFactory::EnsureStartingKit(bot);
+
     Player* master = botAI->GetMaster();
 
     Group* group = bot->GetGroup();
@@ -1064,6 +1069,12 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
             PlayerbotsMgr::instance().AddPlayerbotData(master, true);
             GET_PLAYERBOT_AI(master)->SetMaster(master);
             PlayerbotRepository::instance().Load(GET_PLAYERBOT_AI(master));
+
+            // Turning on self-bot mode does not go through OnBotLogin -- the character was already
+            // in the world -- so the starting kit never ran for a self bot. That left them with
+            // whatever bags they happened to own and empty bag slots beside carried bags.
+            // Seed money is still refused inside EnsureStartingKit: this is a person's character.
+            PlayerbotFactory::EnsureStartingKit(master);
         }
 
         return messages;

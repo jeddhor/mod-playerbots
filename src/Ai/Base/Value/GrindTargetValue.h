@@ -23,6 +23,9 @@ private:
     uint32 GetTargetingPlayerCount(Unit* unit);
     Unit* FindTargetForGrinding(uint32 assistCount);
     bool needForQuest(Unit* target);
+
+    /// Does this one player still need `target` for a quest objective or quest loot?
+    bool needForQuestBy(Player* who, Unit* target);
 };
 
 #endif

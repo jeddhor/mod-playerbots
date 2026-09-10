@@ -51,6 +51,15 @@ enum spec : uint8
 class PlayerbotFactory
 {
 public:
+    /// P13.1 -- bags for every bot, seed money for random ones. Safe to call on any bot.
+    static void EnsureStartingKit(Player* bot);
+
+    /// Move containers the bot already carries into free bag slots, largest first.
+    static void EquipCarriedBags(Player* bot);
+
+    /// True when this character belongs to a person, so the factory must not rewrite its money.
+    static bool IsOwnedByPlayer(Player* bot);
+
     struct WeightedProfessionPair
     {
         uint16 firstSkill;

@@ -502,6 +502,57 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
     Reply(to, "DETAIL", key, rows);
 }
 
+namespace
+{
+/**
+ * The strategies that make a bot actually play a role.
+ *
+ * Generous on purpose: Engine::addStrategy silently ignores a name its class never registered, so
+ * one string per role can name both the generic strategies ("tank assist") and the class ones
+ * ("tank", "heal") without knowing which class it is being applied to. A rogue told to tank simply
+ * gets the parts that exist for a rogue -- which is to say, almost nothing, correctly.
+ *
+ * Removals matter as much as additions. Without "-dps assist" a tank keeps choosing targets like a
+ * damage dealer and the role change is cosmetic.
+ */
+struct RoleStrategies
+{
+    char const* combat;
+    char const* nonCombat;
+};
+
+RoleStrategies const ROLE_TANK{
+    "+tank,+tank assist,+tank face,+pull,-dps assist,-heal,-healer dps",
+    "-save mana"};
+
+RoleStrategies const ROLE_HEAL{
+    "+heal,+healer dps,-tank,-tank assist,-tank face,-dps assist,-pull",
+    "+save mana"};
+
+RoleStrategies const ROLE_DPS{
+    "+dps assist,+dps,+aoe,-tank,-tank assist,-tank face,-heal,-healer dps,-pull",
+    "-save mana"};
+
+/// What role a bot's current strategies amount to. Read from the engine, never guessed from spec.
+char const* DescribeRole(PlayerbotAI* ai)
+{
+    if (!ai)
+        return "-";
+
+    if (ai->HasStrategy("tank assist", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
+        return "tank";
+
+    if (ai->HasStrategy("heal", BotState::BOT_STATE_COMBAT))
+        return "heal";
+
+    if (ai->HasStrategy("dps assist", BotState::BOT_STATE_COMBAT))
+        return "dps";
+
+    return "none";
+}
+}  // namespace
+
 void BotInspectorMgr::HandleAlts(Player* to)
 {
     if (!to || !to->GetSession())
@@ -546,11 +597,23 @@ void BotInspectorMgr::HandleAlts(Player* to)
                     state = "bot";
             }
 
-            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}:{}", low, Escape(fields[1].Get<std::string>()),
+            // Role is reported, not inferred client-side: only the server can see which strategies
+            // an engine is actually carrying, and that is the honest answer to "what is this bot
+            // doing right now" -- spec would only say what it was built for.
+            char const* role = online ? DescribeRole(GET_PLAYERBOT_AI(online)) : "-";
+
+            rows.push_back(Acore::StringFormat("{}:{}:{}:{}:{}:{}:{}", low, Escape(fields[1].Get<std::string>()),
                                                fields[2].Get<uint8>(), fields[3].Get<uint8>(),
-                                               fields[4].Get<uint8>(), state));
+                                               fields[4].Get<uint8>(), state, role));
         } while (result->NextRow());
     }
+
+    // The requesting character itself, so the panel can offer self-bot controls beside the alts.
+    // Prefixed rather than listed among them: it is not one of its own alts, and the panel needs to
+    // tell it apart to draw a different set of buttons.
+    PlayerbotAI* const selfAI = GET_PLAYERBOT_AI(to);
+    rows.push_back(Acore::StringFormat("#self:{}:{}:{}:{}", to->GetGUID().GetCounter(), Escape(to->GetName()),
+                                       IsSelfBot(to) ? 1 : 0, DescribeRole(selfAI)));
 
     Reply(to, "ALTS", "0", rows);
 }
@@ -632,6 +695,36 @@ void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, Ob
             mgr->ProcessBotCommand("remove", guid, to->GetGUID(), true, to->GetSession()->GetAccountId(), 0);
 
         Reply(to, "ALTCTL", std::to_string(altGuid), {Acore::StringFormat("{}:{}", altGuid, Escape(outcome))});
+        return;
+    }
+
+    if (action == "ROLE_TANK" || action == "ROLE_HEAL" || action == "ROLE_DPS")
+    {
+        if (!online)
+        {
+            SendError(to, 409, "that alt is not logged in");
+            return;
+        }
+
+        PlayerbotAI* const ai = GET_PLAYERBOT_AI(online);
+        if (!ai)
+        {
+            SendError(to, 409, "that character is being played");
+            return;
+        }
+
+        RoleStrategies const& wanted = action == "ROLE_TANK" ? ROLE_TANK
+                                     : action == "ROLE_HEAL" ? ROLE_HEAL
+                                                             : ROLE_DPS;
+
+        ai->ChangeStrategy(wanted.combat, BotState::BOT_STATE_COMBAT);
+        ai->ChangeStrategy(wanted.nonCombat, BotState::BOT_STATE_NON_COMBAT);
+
+        LOG_DEBUG("playerbots", "[Inspector] {} set {} to {}", to->GetName(), online->GetName(),
+                  DescribeRole(ai));
+
+        Reply(to, "ALTCTL", std::to_string(altGuid),
+              {Acore::StringFormat("{}:{}", altGuid, DescribeRole(ai))});
         return;
     }
 

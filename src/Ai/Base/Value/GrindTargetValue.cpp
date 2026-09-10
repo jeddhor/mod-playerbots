@@ -163,9 +163,9 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
     return result;
 }
 
-bool GrindTargetValue::needForQuest(Unit* target)
+bool GrindTargetValue::needForQuestBy(Player* who, Unit* target)
 {
-    QuestStatusMap& questMap = bot->getQuestStatusMap();
+    QuestStatusMap& questMap = who->getQuestStatusMap();
     for (auto& quest : questMap)
     {
         Quest const* questTemplate = sObjectMgr->GetQuestTemplate(quest.first);
@@ -176,13 +176,17 @@ bool GrindTargetValue::needForQuest(Unit* target)
         if (!questId)
             continue;
 
-        QuestStatus status = bot->GetQuestStatus(questId);
+        QuestStatus status = who->GetQuestStatus(questId);
 
         if (status == QUEST_STATUS_INCOMPLETE)
         {
-            const QuestStatusData* questStatus = &bot->getQuestStatusMap()[questId];
+            // The entry already being iterated, rather than a second lookup. QuestStatusMap's
+            // operator[] is non-const and inserts a default when the key is absent -- harmless when
+            // the map is the bot's own and the key came from it, but this now runs against other
+            // players' quest logs, where silently inserting an empty status is not worth risking.
+            const QuestStatusData* questStatus = &quest.second;
 
-            if (questTemplate->GetQuestLevel() > bot->GetLevel() + 5)
+            if (questTemplate->GetQuestLevel() > who->GetLevel() + 5)
                 continue;
 
             for (int j = 0; j < QUEST_OBJECTIVES_COUNT; j++)
@@ -205,11 +209,49 @@ bool GrindTargetValue::needForQuest(Unit* target)
     {
         if (uint32 lootId = data->lootid)
         {
-            if (LootTemplates_Creature.HaveQuestLootForPlayer(lootId, bot))
+            if (LootTemplates_Creature.HaveQuestLootForPlayer(lootId, who))
             {
                 return true;
             }
         }
+    }
+
+    return false;
+}
+
+
+/**
+ * P13.5 -- does anyone in the party still need this, not just this bot.
+ *
+ * The per-player test below was the whole of needForQuest, which meant the first member to finish an
+ * objective stopped counting the camp as useful and left for its own errands while the rest were
+ * still working it. That is the opposite of what a party looks like, and it is most visible on
+ * collection quests, where members finish minutes apart.
+ *
+ * Bounded to members who are actually here: same map, and within sight. Helping with an objective
+ * on the other side of the continent is not helping, and scanning the whole group's quest logs for
+ * every candidate target would cost more than it is worth.
+ */
+bool GrindTargetValue::needForQuest(Unit* target)
+{
+    if (needForQuestBy(bot, target))
+        return true;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsInWorld())
+            continue;
+
+        if (!member->IsInMap(bot) || bot->GetDistance(member) > sPlayerbotAIConfig.sightDistance)
+            continue;
+
+        if (needForQuestBy(member, target))
+            return true;
     }
 
     return false;

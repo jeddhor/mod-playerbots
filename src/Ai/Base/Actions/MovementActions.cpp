@@ -221,7 +221,22 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
         // that puts a bot inside geometry, so it stays tightly bounded -- and a large jump either
         // way means the query found ground somewhere unrelated, which would be its own bug.
         float const delta = allowedZ - z;
-        if (delta >= 0.0f ? delta < 25.0f : delta > -10.0f)
+        bool accept = delta >= 0.0f ? delta < 25.0f : delta > -10.0f;
+
+        // A raise has to be somewhere the bot could actually walk to from where it stands.
+        //
+        // Underground this matters more than the bound does. Inside a cave the height query finds
+        // the terrain above the roof, and raising the destination to it puts the point inside solid
+        // rock -- which the navmesh cannot reach, so the path generator falls back to a straight
+        // line and the bot walks out through the cave wall and off the map. The old symmetric
+        // ten-yard rule rejected that by accident; widening it for the church case let it through.
+        //
+        // Line of sight separates the two honestly: the church floor a bot is standing on is
+        // visible from the bot, and the rock above a cave is not.
+        if (accept && delta > CONTACT_DISTANCE && !bot->IsWithinLOS(x, y, allowedZ))
+            accept = false;
+
+        if (accept)
             z = allowedZ;
     }
 

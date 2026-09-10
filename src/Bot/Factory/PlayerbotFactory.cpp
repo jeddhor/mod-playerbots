@@ -856,7 +856,11 @@ void PlayerbotFactory::Randomize(bool incremental)
 
     pmo = sPerfMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Save");
     LOG_DEBUG("playerbots", "Saving to DB...");
-    bot->SetMoney(urand(level * 100000, level * 5 * 100000));
+    // Never rewrite the money of a character a person owns. Randomize() runs on alt bots and self
+    // bots too -- a maintenance pass, a level-up, a re-roll -- and setting money here would quietly
+    // replace whatever the player had earned or been given with a generated figure.
+    if (!IsOwnedByPlayer(bot))
+        bot->SetMoney(urand(level * 100000, level * 5 * 100000));
     bot->SetHealth(bot->GetMaxHealth());
     bot->SetPower(POWER_MANA, bot->GetMaxPower(POWER_MANA));
     bot->SaveToDB(false, false);
@@ -899,9 +903,12 @@ void PlayerbotFactory::Refresh()
     bot->DurabilityRepairAll(false, 1.0f, false);
     if (bot->isDead())
         bot->ResurrectPlayer(1.0f, false);
-    uint32 money = urand(level * 1000, level * 5 * 1000);
-    if (bot->GetMoney() < money)
-        bot->SetMoney(money);
+    if (!IsOwnedByPlayer(bot))
+    {
+        uint32 money = urand(level * 1000, level * 5 * 1000);
+        if (bot->GetMoney() < money)
+            bot->SetMoney(money);
+    }
     // bot->SaveToDB(false, false);
 }
 
@@ -2609,6 +2616,107 @@ inline Item* StoreNewItemInInventorySlot(Player* player, uint32 newItemId, uint3
 //         }
 //     }
 // }
+
+/**
+ * P13.1 -- what every bot should have before it does anything else.
+ *
+ * Bags for every bot type. The inventory ceiling throttles everything downstream: gathering, looting
+ * and auction supply all stall on bag space long before they stall on anything interesting. Bots that
+ * never pass through Randomize() -- which is most of the low-level population -- had none at all,
+ * measured at 0.66 bags on average below level 10 against ~3.9 above it.
+ *
+ * Seed money for random bots only. An alt bot or a self bot belongs to a person, and handing one gold
+ * is handing the player gold.
+ */
+/**
+ * Move any container the bot is carrying into a free bag slot, largest first.
+ *
+ * Equipping a bag you already own is something a person does without thinking, and no code path did
+ * it: bags only ever appeared by being created directly into an empty slot. A bot given bags, or one
+ * that looted a decent bag, kept them as cargo.
+ *
+ * Largest first so a 6-slot pouch cannot take the slot a 24-slot bag needed.
+ */
+void PlayerbotFactory::EquipCarriedBags(Player* bot)
+{
+    if (!bot)
+        return;
+
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            continue;   // slot already holds a bag
+
+        Item* best = nullptr;
+        uint32 bestSlots = 0;
+
+        for (uint8 i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+        {
+            Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+            if (!item)
+                continue;
+
+            ItemTemplate const* proto = item->GetTemplate();
+            if (!proto || proto->Class != ITEM_CLASS_CONTAINER || proto->SubClass != ITEM_SUBCLASS_CONTAINER)
+                continue;
+
+            // A bag with something in it cannot be moved into a bag slot.
+            if (Bag* asBag = item->ToBag(); asBag && !asBag->IsEmpty())
+                continue;
+
+            if (proto->ContainerSlots > bestSlots)
+            {
+                bestSlots = proto->ContainerSlots;
+                best = item;
+            }
+        }
+
+        if (!best)
+            return;   // nothing left worth equipping
+
+        uint16 dest;
+        if (bot->CanEquipItem(slot, dest, best, false) != EQUIP_ERR_OK)
+            continue;
+
+        bot->RemoveItem(INVENTORY_SLOT_BAG_0, best->GetSlot(), true);
+        bot->EquipItem(dest, best, true);
+    }
+}
+
+void PlayerbotFactory::EnsureStartingKit(Player* bot)
+{
+    if (!bot)
+        return;
+
+    // Use what the bot is already carrying before conjuring anything. InitBags only ever creates new
+    // bags in empty slots -- it never looks in the inventory -- so a bag handed to a bot, or looted
+    // by one, sat in its bags forever while empty bag slots stayed empty beside it.
+    EquipCarriedBags(bot);
+
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.InitBags();
+
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+        return;
+
+    uint32 const seed = sPlayerbotAIConfig.randomBotSeedMoney;
+    if (seed && bot->GetMoney() < seed)
+        bot->SetMoney(seed);
+}
+
+/// True when this character belongs to a person -- a self bot, or an alt bot of a real account --
+/// rather than being part of the random population the factory is free to rewrite.
+bool PlayerbotFactory::IsOwnedByPlayer(Player* bot)
+{
+    if (!bot)
+        return false;
+
+    if (IsSelfBot(bot))
+        return true;
+
+    PlayerbotAI* const ai = GET_PLAYERBOT_AI(bot);
+    return ai && ai->IsAltBot();
+}
 
 void PlayerbotFactory::InitBags(bool destroyOld)
 {
