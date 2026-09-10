@@ -22,6 +22,9 @@ public:
 protected:
     bool JoinLFG();
     uint32 GetRoles();
+
+    /// The single role this bot's spec is built for, before hybrid capabilities are added.
+    uint32 GetPrimaryRole();
 };
 
 class LfgAcceptAction : public LfgJoinAction

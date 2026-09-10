@@ -18,7 +18,7 @@ using namespace lfg;
 
 bool LfgJoinAction::Execute(Event /*event*/) { return JoinLFG(); }
 
-uint32 LfgJoinAction::GetRoles()
+uint32 LfgJoinAction::GetPrimaryRole()
 {
     if (!RandomPlayerbotMgr::instance().IsRandomBot(bot))
     {
@@ -80,6 +80,49 @@ uint32 LfgJoinAction::GetRoles()
     }
 
     return PLAYER_ROLE_DAMAGE;
+}
+
+/**
+ * Every role this bot can actually fill, not just the one its spec is built for.
+ *
+ * P13.3 -- the queue was offering one role per bot, and LFGQueue could not assemble five. Its
+ * compatible sets reached four and stopped, 539 times, and never once reached five: a bracket would
+ * hold plenty of damage and no healer, and nothing could bridge it.
+ *
+ * LFGMgr::CheckGroupRoles is written for exactly this. Given a mask with several bits it recurses,
+ * trying each assignment until it finds a composition that works, so offering a hybrid's full range
+ * strictly widens what can be formed and never forces a bot into the wrong job -- a protection
+ * warrior offering TANK|DAMAGE is still assigned tank whenever the group needs one.
+ *
+ * This is also what a person does: you tick every box you can cover, especially at low level where
+ * an off-spec heal is normal and waiting for a dedicated healer means not running the dungeon.
+ */
+uint32 LfgJoinAction::GetRoles()
+{
+    uint32 roles = GetPrimaryRole();
+
+    switch (bot->getClass())
+    {
+        case CLASS_DRUID:
+        case CLASS_PALADIN:
+            // Can cover all three at dungeon level.
+            roles |= PLAYER_ROLE_TANK | PLAYER_ROLE_HEALER | PLAYER_ROLE_DAMAGE;
+            break;
+        case CLASS_WARRIOR:
+        case CLASS_DEATH_KNIGHT:
+            roles |= PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE;
+            break;
+        case CLASS_PRIEST:
+        case CLASS_SHAMAN:
+            roles |= PLAYER_ROLE_HEALER | PLAYER_ROLE_DAMAGE;
+            break;
+        default:
+            // Mage, rogue, hunter, warlock: damage only, whatever their spec.
+            roles |= PLAYER_ROLE_DAMAGE;
+            break;
+    }
+
+    return roles;
 }
 
 bool LfgJoinAction::JoinLFG()
@@ -345,8 +388,15 @@ bool LfgJoinAction::isUseful()
     if (bot->isDead())
         return false;
 
+    // Random bots always; alt bots when allowed. An alt bot only exists while its owner is logged
+    // in, so "a person is present" is already implied by the bot existing at all -- there is no case
+    // where this queues a character whose owner has gone. Self bots stay excluded above: someone is
+    // at the keyboard and the dungeon finder is theirs to drive.
     if (!RandomPlayerbotMgr::instance().IsRandomBot(bot))
-        return false;
+    {
+        if (!sPlayerbotAIConfig.altBotsJoinLfg || !botAI->IsAltBot())
+            return false;
+    }
 
     Map* map = bot->GetMap();
     if (map && map->Instanceable())

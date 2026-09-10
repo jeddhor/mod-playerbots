@@ -5,6 +5,8 @@
  */
 
 #include "LeaveGroupAction.h"
+#include "Map.h"
+#include "LFGMgr.h"
 #include "Event.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotTextMgr.h"
@@ -110,6 +112,27 @@ bool LeaveFarAwayAction::isUseful()
         return false;
 
     if (!bot->GetGroup())
+        return false;
+
+    // Never walk out of a dungeon group.
+    //
+    // LFG spends real effort assembling five compatible players across roles and level brackets, and
+    // a bot whose GrouperType is SOLO would otherwise leave the moment it landed -- stranding every
+    // member alone in its own instance. That is exactly what happened: nineteen bots entered
+    // dungeons via LFG and ended up ungrouped, one per instance, until ten instances were live
+    // against a cap of five. The cap counts instances and was working correctly; the groups were
+    // dissolving underneath it.
+    if (sLFGMgr->GetState(bot->GetGUID()) != lfg::LFG_STATE_NONE)
+        return false;
+
+    if (Map* map = bot->FindMap(); map && map->Instanceable())
+        return false;
+
+    // A self bot is the player's own character, and its party membership is the player's decision
+    // rather than the AI's. This matters most when the self bot leads: the guard below reads
+    // "a leader does not leave" but exempts self bots, so a self-bot leader fell through to the
+    // GrouperType::SOLO case and disbanded the party the player had just built around them.
+    if (IsSelfBot(bot))
         return false;
 
     Player* groupLeader = botAI->GetGroupLeader();
