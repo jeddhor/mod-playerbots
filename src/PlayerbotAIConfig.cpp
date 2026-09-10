@@ -439,6 +439,26 @@ bool PlayerbotAIConfig::Initialize()
     // How often a bot empties its mailbox. Cheap: it exits immediately when there is no mail, and
     // collecting needs no travel.
     mailCollectIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MailCollectIntervalMs", 30000);
+
+    // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
+    // currently below each ceiling, so the two numbers mean what an operator expects them to.
+    eraCappedBotPctAt60 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt60", 15);
+    eraCappedBotPctAt70 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt70", 15);
+
+    // Two shares of one roster cannot exceed it. Clamping the second rather than refusing to start,
+    // because a realm running with slightly fewer TBC bots than asked for is a far better outcome
+    // than one that will not come up.
+    if (eraCappedBotPctAt60 > 100)
+        eraCappedBotPctAt60 = 100;
+    if (eraCappedBotPctAt60 + eraCappedBotPctAt70 > 100)
+        eraCappedBotPctAt70 = 100 - eraCappedBotPctAt60;
+
+    // How quickly bots already above their ceiling are brought down onto it. Bounded per pass
+    // because each one is a full re-gear, and this shares the world thread. Set PerPass to 0 to
+    // leave existing bots where they are and let the population build only from new rolls -- which
+    // on default randomise timings means weeks.
+    eraCappedBotSeedPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.SeedPerPass", 3);
+    eraCappedBotSeedIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.SeedIntervalMs", 30000);
     openGoSpell = sConfigMgr->GetOption<int32>("AiPlayerbot.OpenGoSpell", 6477);
 
     // Zones for NewRpgStrategy teleportation brackets

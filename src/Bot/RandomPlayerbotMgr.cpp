@@ -8,6 +8,7 @@
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
 #include "BotMailMgr.h"
+#include "RandomBotLevelMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
@@ -1958,6 +1959,10 @@ void RandomPlayerbotMgr::IncreaseLevel(Player* bot)
     if (maxLevel > sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
         maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
 
+    // An era-capped bot's ceiling is its max level, whatever the roster's is.
+    if (uint8 const cap = RandomBotLevelMgr::EraCapFor(bot); cap && cap < maxLevel)
+        maxLevel = cap;
+
     PerfMonitorOperation* pmo = sPerfMonitor.start(PERF_MON_RNDBOT, "IncreaseLevel");
     uint32 lastLevel = GetValue(bot, "level");
     uint8 level = bot->GetLevel() + 1;
@@ -1970,6 +1975,8 @@ void RandomPlayerbotMgr::IncreaseLevel(Player* bot)
         PlayerbotFactory factory(bot, level);
         factory.Randomize(true);
     }
+
+    RandomBotLevelMgr::ApplyXpGainPolicy(bot);
 
     if (pmo)
         pmo->finish();
@@ -1996,6 +2003,20 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
         maxLevel = std::max(maxLevel, sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL));
         minLevel = std::max(minLevel, sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL));
     }
+
+    // An era-capped bot rolls within its own era.
+    //
+    // This is what makes the old-content populations arrive at all rather than eventually. Levels
+    // here are assigned outright, not earned, so without the clamp a bot capped at 70 could be
+    // handed level 75 -- above its ceiling, therefore left uncapped, and only able to come back
+    // round to its era after reaching 80 and waiting out a seven day played-time reset. Clamped, it
+    // lands at or below 70 immediately and the RandomBotMaxLevelChance roll puts a share of them
+    // exactly on it straight away.
+    //
+    // Deliberately after the death knight floor: a death knight cannot exist below 55, so a class
+    // whose floor exceeds its rolled ceiling keeps the floor and is simply not capped in practice.
+    if (uint8 const cap = RandomBotLevelMgr::EraCapFor(bot); cap && cap < maxLevel && cap >= minLevel)
+        maxLevel = cap;
 
     PerfMonitorOperation* pmo = sPerfMonitor.start(PERF_MON_RNDBOT, "RandomizeFirst");
 
@@ -2040,6 +2061,11 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
     SetValue(bot, "level", level);
     PlayerbotFactory factory(bot, level);
     factory.Randomize(false);
+
+    // Levels are handed out here, so the flag has to be settled here too. Waiting for the next
+    // login would leave a bot that was just placed exactly on its ceiling still earning XP, and it
+    // would level straight off it before anything noticed.
+    RandomBotLevelMgr::ApplyXpGainPolicy(bot);
 
     uint32 randomTime =
         urand(sPlayerbotAIConfig.minRandomBotRandomizeTime, sPlayerbotAIConfig.maxRandomBotRandomizeTime);
@@ -2502,6 +2528,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
         return true;
     }
 
+    if (cmd == "eras")
+    {
+        LOG_INFO("playerbots", "{}", RandomBotLevelMgr::DescribeEraPopulation());
+        return true;
+    }
+
     if (cmd == "help requests")
     {
         LOG_INFO("playerbots", "{}", sBotHelpMgr.DescribeRequests());
@@ -2713,14 +2745,9 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
 
     RandomPlayerbotFactory::AssignBotToArenaTeam(bot);
 
-    if (sPlayerbotAIConfig.randomBotFixedLevel)
-    {
-        bot->SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }
-    else
-    {
-        bot->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }
+    // Fixed level and era caps both decide this flag, and this used to clear it whenever fixed
+    // level was off -- which would have stripped an era cap on every pass.
+    RandomBotLevelMgr::ApplyXpGainPolicy(bot);
 }
 
 void RandomPlayerbotMgr::OnPlayerLogin(Player* player)

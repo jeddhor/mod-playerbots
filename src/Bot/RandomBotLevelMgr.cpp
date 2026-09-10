@@ -20,6 +20,7 @@
 #include "Random.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
+#include "StringFormat.h"
 #include "World.h"
 #include <algorithm>
 #include <cmath>
@@ -115,6 +116,110 @@ std::vector<LevelBracketConfig>& RandomBotLevelMgr::GetFactionRanges(TeamId team
 // Copies the bracket definitions from PlayerbotAIConfig into the working state and resets the
 // working bounds/percentages. Dynamic distribution and the clamp/rebalance pass below mutate these
 // working copies at runtime, so PlayerbotAIConfig's own vectors are never touched after this point.
+namespace
+{
+    /// The two expansion ceilings. Not configurable: they are facts about the game, not policy.
+    constexpr uint8 ERA_CAP_CLASSIC = 60;
+    constexpr uint8 ERA_CAP_TBC = 70;
+}
+
+uint8 RandomBotLevelMgr::EraCapFor(Player* bot)
+{
+    if (!bot)
+        return 0;
+
+    uint32 const pct60 = sPlayerbotAIConfig.eraCappedBotPctAt60;
+    uint32 const pct70 = sPlayerbotAIConfig.eraCappedBotPctAt70;
+    if (!pct60 && !pct70)
+        return 0;
+
+    // The GUID counter is dense and sequential, so taking it modulo 100 spreads bots evenly across
+    // the hundred slots without needing a hash.
+    uint32 const slot = bot->GetGUID().GetCounter() % 100;
+
+    if (slot < pct60)
+        return ERA_CAP_CLASSIC;
+    if (slot < pct60 + pct70)
+        return ERA_CAP_TBC;
+
+    return 0;
+}
+
+void RandomBotLevelMgr::ApplyXpGainPolicy(Player* bot)
+{
+    if (!bot)
+        return;
+
+    // Era caps shape the random bot population. A person's own character -- their alt bots and
+    // their self bot -- levels when they level, whatever the roster is meant to look like.
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+        return;
+
+    if (sPlayerbotAIConfig.randomBotFixedLevel)
+    {
+        bot->SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+        return;
+    }
+
+    uint8 const cap = EraCapFor(bot);
+
+    // Exactly at its ceiling: stop here, and stay here. The played-time reset only considers bots
+    // at RandomBotMaxLevel, so a bot parked at 60 is never recycled and the population holds.
+    //
+    // Deliberately not ">= cap". A bot already past its ceiling is left alone rather than frozen
+    // wherever it happens to be: freezing a level 75 bot with a 70 cap would strand it in a level
+    // no reset path ever looks at, so it could never come back round to its era. Left alone it
+    // reaches the cap, is recycled by played time, and stops at 70 on the way back up.
+    if (cap && bot->GetLevel() == cap)
+    {
+        if (!bot->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
+            LOG_INFO("playerbots", "[Era] {} has reached the level {} ceiling and stops there",
+                     bot->GetName(), cap);
+
+        bot->SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+        return;
+    }
+
+    bot->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+}
+
+std::string RandomBotLevelMgr::DescribeEraPopulation()
+{
+    uint32 assigned60 = 0, assigned70 = 0, parked60 = 0, parked70 = 0, uncapped = 0, belowCap = 0;
+
+    for (auto const& itr : ObjectAccessor::GetPlayers())
+    {
+        Player* bot = itr.second;
+        if (!bot || !bot->IsInWorld() || !sRandomPlayerbotMgr.IsRandomBot(bot))
+            continue;
+
+        uint8 const cap = EraCapFor(bot);
+        if (!cap)
+        {
+            ++uncapped;
+            continue;
+        }
+
+        (cap == 60 ? assigned60 : assigned70) += 1;
+
+        if (bot->GetLevel() == cap)
+            (cap == 60 ? parked60 : parked70) += 1;
+        else if (bot->GetLevel() < cap)
+            ++belowCap;
+    }
+
+    return Acore::StringFormat(
+        "eras: configured {}% at 60 and {}% at 70.\n"
+        "  online and assigned: {} to 60 ({} there now), {} to 70 ({} there now), {} uncapped.\n"
+        "  {} assigned bots are still below their ceiling and on their way to it, {} have been "
+        "re-rolled down onto one.\n"
+        "Assigned counts follow the config immediately; the 'there now' counts fill in as bots "
+        "level or are recycled, then should stop moving. A 'there now' figure that keeps falling "
+        "means something is still pulling capped bots out of their era.",
+        sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70, assigned60, parked60,
+        assigned70, parked70, uncapped, belowCap, instance()._eraSeeded);
+}
+
 void RandomBotLevelMgr::LoadConfig()
 {
     _allianceRanges = sPlayerbotAIConfig.levelBracketsAlliance;
@@ -143,6 +248,13 @@ void RandomBotLevelMgr::LogStartupSummary() const
             LOG_DEBUG("playerbots", "[RandomBotLevelMgr] Horde Range {}: {}-{}, Desired Percentage: {}%", i + 1,
                 _hordeRanges[i].lower, _hordeRanges[i].upper, _hordeRanges[i].pct);
     }
+
+    if (!sPlayerbotAIConfig.eraCappedBotPctAt60 && !sPlayerbotAIConfig.eraCappedBotPctAt70)
+        LOG_INFO("playerbots", "[RandomBotLevelMgr] Era caps disabled: every bot levels to the cap.");
+    else
+        LOG_INFO("playerbots",
+            "[RandomBotLevelMgr] Era caps: {}% of random bots stop at level 60, {}% at level 70.",
+            sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70);
 
     if (!sPlayerbotAIConfig.resetBotLevelEnabled)
         LOG_INFO("playerbots", "[RandomBotLevelMgr] Level reset sub-feature disabled via configuration.");
@@ -296,6 +408,12 @@ void RandomBotLevelMgr::AdjustBotToRange(Player* bot, int targetRangeIndex, Team
 
     std::vector<LevelBracketConfig> const& factionRanges = GetFactionRanges(team);
     if (static_cast<size_t>(targetRangeIndex) >= factionRanges.size())
+        return;
+
+    // A bot parked at an expansion ceiling is part of the old-content population and is not a
+    // surplus body to be moved into whichever bracket is short. Redistribution is off by default,
+    // but if an operator turns it on it must not quietly empty the level 60 and 70 tiers.
+    if (uint8 const cap = EraCapFor(bot); cap && bot->GetLevel() == cap)
         return;
 
     if (bot->IsMounted())
@@ -914,6 +1032,73 @@ void RandomBotLevelMgr::RunResetPlayedTimeCheck()
 // SHARED UPDATE / HOOKS
 // =============================================================================
 
+/**
+ * Bring bots that are above their era ceiling down onto it.
+ *
+ * Without this the feature is correct and invisible. Levels are handed out by RandomizeFirst, which
+ * a bot reaches somewhere between MinRandomBotRandomizeTime and MaxRandomBotRandomizeTime -- two
+ * hours and *fourteen days* on this realm. So the clamp only bites when a bot happens to be
+ * re-rolled, and the bots already above their ceiling when the feature was switched on would take
+ * weeks to come back round. Measured at the moment of enabling: 50 characters above their ceiling,
+ * exactly one parked on it. Old-era goods would not reach the auction house this month.
+ *
+ * Deliberately bounded and gradual rather than a sweep at startup: a batch that re-gears fifty bots
+ * in one tick is a stall, and this has to share the world thread with everything else. It is also
+ * self-limiting -- once the clamps in RandomizeFirst and IncreaseLevel are in place nothing climbs
+ * above its ceiling again, so after the initial convergence this pass finds nothing and costs a
+ * loop over the online players.
+ *
+ * The bots it moves are random bots, which this module already recycles to level 1 outright when
+ * ResetBotLevel fires. Re-rolling one at 60 instead of 75 is a smaller change than that, and it
+ * re-gears them through the normal factory path, which is what makes them era-appropriate rather
+ * than merely era-levelled. A person's own characters are never touched: ApplyXpGainPolicy and this
+ * both require IsRandomBot.
+ */
+void RandomBotLevelMgr::RunEraSeedingPass()
+{
+    uint32 const limit = sPlayerbotAIConfig.eraCappedBotSeedPerPass;
+    if (!limit)
+        return;
+
+    uint32 moved = 0;
+
+    for (auto const& itr : ObjectAccessor::GetPlayers())
+    {
+        if (moved >= limit)
+            break;
+
+        Player* bot = itr.second;
+        if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() ||
+            bot->IsDuringRemoveFromWorld())
+            continue;
+
+        if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+            continue;
+
+        uint8 const cap = EraCapFor(bot);
+        if (!cap || bot->GetLevel() <= cap)
+            continue;
+
+        // A death knight cannot exist below its starting level, so one assigned a ceiling beneath
+        // that is simply not part of the old-content population.
+        if (cap < sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL) && bot->getClass() == CLASS_DEATH_KNIGHT)
+            continue;
+
+        if (bot->IsInCombat() || bot->isDead() || bot->InBattleground() || bot->GetMap()->Instanceable())
+            continue;
+
+        LOG_INFO("playerbots", "[Era] {} is level {} but belongs to the level {} population, re-rolling it there",
+                 bot->GetName(), bot->GetLevel(), cap);
+
+        PlayerbotFactory factory(bot, cap);
+        factory.Randomize(false);
+        ApplyXpGainPolicy(bot);
+
+        ++moved;
+        ++_eraSeeded;
+    }
+}
+
 void RandomBotLevelMgr::Update(uint32 diff)
 {
     if (sPlayerbotAIConfig.levelBracketsEnabled)
@@ -931,6 +1116,16 @@ void RandomBotLevelMgr::Update(uint32 diff)
         {
             _bracketsTimer = 0;
             RunLevelBracketsDistribution();
+        }
+    }
+
+    if (sPlayerbotAIConfig.eraCappedBotPctAt60 || sPlayerbotAIConfig.eraCappedBotPctAt70)
+    {
+        _eraSeedTimer += diff;
+        if (_eraSeedTimer >= sPlayerbotAIConfig.eraCappedBotSeedIntervalMs)
+        {
+            _eraSeedTimer = 0;
+            RunEraSeedingPass();
         }
     }
 
@@ -1016,6 +1211,14 @@ void RandomBotLevelMgr::OnBotLevelChanged(Player* player, uint8 oldLevel)
         return;
 
     uint8 newLevel = player->GetLevel();
+
+    // The ceiling is checked before the skip and reset rules, because a bot that has just arrived
+    // at its era's last level should not then be skipped past it or recycled out of it.
+    if (uint8 const cap = EraCapFor(player); cap && newLevel == cap)
+    {
+        ApplyXpGainPolicy(player);
+        return;
+    }
 
     // SkipFromLevel takes priority and is not affected by ScaledChance or RestrictTimePlayed.
     if (sPlayerbotAIConfig.resetBotLevelSkipFrom > 0 && newLevel == sPlayerbotAIConfig.resetBotLevelSkipFrom)

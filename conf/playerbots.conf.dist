@@ -3029,6 +3029,39 @@ AiPlayerbot.RandomBotSeedMoney = 100000
 # or zero activity decisions in a whole run were the ones left holding mail forever.
 AiPlayerbot.MailCollectIntervalMs = 30000
 
+###############################################################################
+# P13.2 -- the old-content population.
+#
+# Percentages of the random bot roster that stop levelling at each expansion's ceiling and stay
+# there. Without them every bot ends up at 80, and Classic and TBC gear, reagents and materials
+# never reach the auction house at all -- the economy is Wrath-only. They also give a human player
+# who turns their own XP off somebody to run old content with.
+#
+# Which bots are capped is derived from the character GUID, so it is stable across restarts and
+# does not drift. Changing these numbers moves the boundary rather than reshuffling the roster.
+#
+# A bot already above its ceiling is left alone rather than pulled back down; it reaches max level,
+# is recycled by ResetBotLevel, and stops at its ceiling on the way back up. So the populations
+# fill in over time rather than appearing at once.
+#
+# Set both to 0 to disable. The two together may not exceed 100; the second is clamped if they do.
+#
+AiPlayerbot.EraCappedBots.PctAt60 = 15
+AiPlayerbot.EraCappedBots.PctAt70 = 15
+
+# How quickly bots that are already above their ceiling are brought down onto it. Each one is a
+# full re-gear through the normal factory path, so this is bounded per pass rather than swept in
+# one go. It is self-limiting: once the population has converged, nothing sits above its ceiling
+# and the pass finds nothing.
+#
+# Set SeedPerPass to 0 to leave existing bots exactly where they are. The populations then build
+# only from new rolls, which at the default randomise timings (2 hours to 14 days) means weeks
+# before any bot appears at 60 or 70.
+#
+# Only random bots are ever touched. Alt bots and self bots belong to a person and level with them.
+AiPlayerbot.EraCappedBots.SeedPerPass = 3
+AiPlayerbot.EraCappedBots.SeedIntervalMs = 30000
+
 # P13.3 -- how many instances bots may have running at once (distinct instance ids).
 # Every bot-initiated instance is a live map with its own update cost. 0 disables bot-initiated
 # dungeons entirely, leaving bots to fill only queues a human has opened.

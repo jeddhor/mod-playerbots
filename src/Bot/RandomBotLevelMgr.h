@@ -14,6 +14,7 @@
 #include "ObjectGuid.h"
 #include "PlayerbotAIConfig.h"
 #include "SharedDefines.h"
+#include <string>
 #include <vector>
 
 class Player;
@@ -30,6 +31,33 @@ public:
 
         return instance;
     }
+
+    /**
+     * The expansion ceiling this bot stops at: 60, 70, or 0 for a bot that levels to the cap.
+     *
+     * Derived from the character's GUID rather than rolled or stored. A roll re-taken at each login
+     * would move bots in and out of the capped population every restart, which is precisely the
+     * drift the phase is meant to avoid; a stored column would need a table, a migration and a
+     * repair path for bots created before it existed. A GUID is already stable, already unique, and
+     * already loaded.
+     *
+     * The consequence worth knowing: which bots are capped is fixed for the life of the character,
+     * so changing the percentages moves the boundary rather than reshuffling the roster.
+     */
+    static uint8 EraCapFor(Player* bot);
+
+    /**
+     * Set or clear PLAYER_FLAGS_NO_XP_GAIN according to the bot's era cap.
+     *
+     * Must be called from every place that touches the flag. Both existing sites cleared it
+     * unconditionally whenever RandomBotFixedLevel was off, so an era cap applied anywhere else
+     * would have been stripped again at the bot's next login.
+     */
+    static void ApplyXpGainPolicy(Player* bot);
+
+    /// One report for .rndbot eras: how many bots are assigned to each ceiling and how many have
+    /// actually reached it. The phase's acceptance test is that these numbers stop moving.
+    static std::string DescribeEraPopulation();
 
     void LoadConfig();
     void LogStartupSummary() const;
@@ -72,6 +100,9 @@ private:
         std::vector<int>& actualCounts, std::vector<int> const& desiredCounts, std::vector<int> const& targetRanges);
     void ProcessPendingLevelResets();
 
+    /// Bring bots that sit above their era ceiling down onto it, a few at a time.
+    void RunEraSeedingPass();
+
     // ---- Level reset sub-feature ----
     uint8 ComputeResetChance(uint8 level) const;
     void ResetBot(Player* player, uint8 currentLevel);
@@ -91,6 +122,8 @@ private:
     uint32 _bracketsTimer = 0; // Level brackets: distribution adjustments
     uint32 _flaggedTimer = 0;  // Level brackets: pending reset checks
     uint32 _resetTimer = 0;    // Level reset: played-time based reset checks
+    uint32 _eraSeedTimer = 0;  // Era caps: bringing bots above their ceiling down onto it
+    uint32 _eraSeeded = 0;
 };
 
 // Registers the random bot level brackets + level reset world/player scripts.

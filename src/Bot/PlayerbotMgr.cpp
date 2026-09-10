@@ -4,6 +4,7 @@
  */
 
 #include "PlayerbotMgr.h"
+#include "RandomBotLevelMgr.h"
 #include "BroadcastHelper.h"
 #include "ChannelMgr.h"
 #include "CharacterCache.h"
@@ -582,16 +583,10 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     //     // bot->TeleportTo(master);
     // }
     uint32 accountId = bot->GetSession()->GetAccountId();
-    bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
 
-    if (isRandomAccount && sPlayerbotAIConfig.randomBotFixedLevel)
-    {
-        bot->SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }
-    else if (isRandomAccount && !sPlayerbotAIConfig.randomBotFixedLevel)
-    {
-        bot->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }
+    // Era caps live here too: a bot logging in at its ceiling must come back with XP still off.
+    // The policy tests IsRandomBot itself, which is what the account-list check here was for.
+    RandomBotLevelMgr::ApplyXpGainPolicy(bot);
 
     bot->SaveToDB(false, false);
     bool addClassBot = sRandomPlayerbotMgr.IsAccountType(accountId, 2);
