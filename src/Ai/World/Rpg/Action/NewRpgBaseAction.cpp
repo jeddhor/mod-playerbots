@@ -2120,8 +2120,13 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
     Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, targets, check);
     Cell::VisitObjects(bot, searcher, sPlayerbotAIConfig.dungeonPullSearchRange);
 
-    Unit* nearest = nullptr;
-    float nearestDist = FLT_MAX;
+    // Candidates that pass the cheap tests, nearest first. The expensive test -- asking mmap for a
+    // route -- then runs over as few of them as possible.
+    std::vector<std::pair<float, Unit*>> candidates;
+
+    uint32 rejectedEngaged = 0;
+    uint32 rejectedKind = 0;
+    uint32 rejectedTarget = 0;
 
     for (Unit* unit : targets)
     {
@@ -2130,45 +2135,94 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
 
         // Already engaged is not a pull; the combat engine is handling it.
         if (unit->IsInCombat())
+        {
+            ++rejectedEngaged;
             continue;
+        }
 
         Creature* creature = unit->ToCreature();
         if (!creature || creature->IsCritter() || creature->IsTotem())
-            continue;
-
-        // Walk to something the bot will actually be willing to fight when it arrives.
-        //
-        // This search and the one behind "attack anything" were answering different questions. This
-        // one asked "is there a creature over there", accepting anything unfriendly through a wall
-        // or on another floor; the attack asked "may I engage this", which additionally requires
-        // line of sight and an acceptable target. A leader therefore walked confidently to a pack it
-        // was never going to pull, arrived, found nothing to attack, and wandered on the spot --
-        // which is exactly what an operator watching it described as running side to side.
-        //
-        // Asking the same question in both places is the fix. Line of sight also keeps the leader
-        // from choosing a pack through the floor of the room above it, which no amount of pathing
-        // would have got it to.
-        if (!AttackersValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.dungeonPullSearchRange))
-            continue;
-
-        if (!bot->IsHostileTo(unit))
-            continue;
-
-        if (!bot->IsWithinLOSInMap(unit))
-            continue;
-
-        float const dist = bot->GetDistance(unit);
-        if (dist < nearestDist)
         {
-            nearestDist = dist;
-            nearest = unit;
+            ++rejectedKind;
+            continue;
         }
+
+        // Walk to something the bot will actually be willing to fight when it arrives. This search
+        // and the one behind "attack anything" used to answer different questions -- one asked "is
+        // there a creature over there", the other "may I engage this" -- so a leader walked to a
+        // pack it was never going to pull, arrived, found nothing, and wandered on the spot.
+        if (!AttackersValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.dungeonPullSearchRange) ||
+            !bot->IsHostileTo(unit))
+        {
+            ++rejectedTarget;
+            continue;
+        }
+
+        candidates.emplace_back(bot->GetDistance(unit), unit);
     }
 
-    if (!nearest)
-        return WorldPosition();
+    std::sort(candidates.begin(), candidates.end(),
+              [](auto const& a, auto const& b) { return a.first < b.first; });
 
-    return WorldPosition(map->GetId(), nearest->GetPositionX(), nearest->GetPositionY(), nearest->GetPositionZ());
+    // Reachability, not line of sight.
+    //
+    // This check used to be IsWithinLOSInMap. Line of sight answers "can I attack this from where I
+    // stand", which is the right question for the combat engine and the wrong one for deciding
+    // where a group goes next: clearing a dungeon means walking to packs you cannot currently see,
+    // because they are behind the door you have not opened yet. Ragefire Chasm is one open spiral,
+    // so it happened to work there; Shadowfang Keep is rooms and doorways, and a group stood at the
+    // entrance reporting "resting" with the first pack two rooms away and plainly visible on the
+    // map, just not from that spot.
+    //
+    // Asking mmap whether the leader can walk there keeps the property line of sight was added for
+    // -- a pack through a wall or on the floor above has no route, so the leader still will not set
+    // off toward one -- while letting the group round a corner.
+    //
+    // Bounded twice over, because this is the expensive part of the search: only the nearest few
+    // candidates are tested, and a route far longer than the straight line is treated as no route,
+    // which rejects the case where mmap loops the entire level to reach something on the other side
+    // of a wall.
+    constexpr size_t MAX_PATH_TESTS = 6;
+    constexpr float MAX_DETOUR_FACTOR = 3.0f;
+
+    uint32 rejectedUnreachable = 0;
+    size_t tested = 0;
+
+    for (auto const& [dist, unit] : candidates)
+    {
+        if (tested++ >= MAX_PATH_TESTS)
+            break;
+
+        PathGenerator path(bot);
+        path.CalculatePath(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+
+        PathType const type = path.GetPathType();
+        if (!(type & PATHFIND_NORMAL) || (type & PATHFIND_NOPATH))
+        {
+            ++rejectedUnreachable;
+            continue;
+        }
+
+        if (path.getPathLength() > std::max(dist, 10.0f) * MAX_DETOUR_FACTOR)
+        {
+            ++rejectedUnreachable;
+            continue;
+        }
+
+        return WorldPosition(map->GetId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+    }
+
+    // Says which test emptied the list. "Found nothing" covered four very different situations --
+    // an empty room, a pack already in combat, a pack that cannot be attacked, and one with no
+    // route -- and they need different fixes.
+    if (!candidates.empty() || rejectedEngaged || rejectedKind || rejectedTarget)
+        LOG_DEBUG("playerbots",
+                  "[Dungeon] {} pull search: {} candidate(s), rejected {} engaged, {} kind, {} untargetable, "
+                  "{} unreachable",
+                  bot->GetName(), uint32(candidates.size()), rejectedEngaged, rejectedKind, rejectedTarget,
+                  rejectedUnreachable);
+
+    return WorldPosition();
 }
 
 /**
