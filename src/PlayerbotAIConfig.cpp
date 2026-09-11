@@ -866,7 +866,7 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxPricePct", 90);
     // ITEM_QUALITY_EPIC: disenchant anything the skill allows, listing only what cannot be broken.
     economyDisenchantMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.DisenchantMaxQuality", 4);
-    economyMaxListingAttempts = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingAttempts", 5);
+    economyMaxListingAttempts = sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.MaxListingAttempts", 3);
 
     agendaEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Agenda.Enabled", true);
     agendaTickMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Agenda.TickMs", 2000);

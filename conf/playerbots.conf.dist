@@ -2867,12 +2867,16 @@ AiPlayerbot.Economy.DisenchantMaxQuality = 4
 #
 #    AiPlayerbot.Economy.MaxListingAttempts
 #        How many times a bot relists an item before giving up and vendoring it. An auction runs
-#        at most 48 hours, so the default of 5 gives an item about ten days on the house before the
+#        at most 48 hours, so the default of 3 gives an item about six days on the house before the
 #        bot accepts that nobody wants it. Set to 0 to relist forever.
-#        Default: 5
+#
+#        This is also what makes it safe to list white gear at all. Unbound gear a bot cannot use
+#        goes to the house first and to the vendor only after this many failed listings, so unwanted
+#        goods clear themselves out instead of forming a permanent floor of junk nobody bids on.
+#        Default: 3
 #
 
-AiPlayerbot.Economy.MaxListingAttempts = 5
+AiPlayerbot.Economy.MaxListingAttempts = 3
 
 #
 #    AiPlayerbot.Agenda.Enabled

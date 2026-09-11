@@ -251,13 +251,26 @@ ItemUsage ItemUsageValue::Calculate()
     // Need to add something like free bagspace or item value.
     if (proto->SellPrice > 0)
     {
-        // Auction uncommon (green) and better only. The old threshold was ITEM_QUALITY_NORMAL,
-        // which sent every white item to the auction house - thousands of near-worthless listings
-        // that bury the goods players actually want and give the price index nothing but noise.
-        // Whites still have value, so they go to the vendor rather than being destroyed.
         bool const listable = !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP;
 
         if (proto->Quality >= ITEM_QUALITY_UNCOMMON && listable)
+            return ITEM_USAGE_AH;
+
+        // White gear the bot cannot use, or has outgrown, goes to the house too.
+        //
+        // This was once restricted to uncommon and better, on the grounds that listing every white
+        // item buries the goods players actually want. That reasoning assumed a listing was forever.
+        // It is not: PostAuctionAction gives up after AiPlayerbot.Economy.MaxListingAttempts full
+        // listings and vendors the item instead, so an unwanted white leaves the house by itself.
+        //
+        // Without this the item had nowhere to go at all. Whites classified as vendor fodder, and
+        // the vendor path only sells gear that is soulbound -- so unbound white gear was neither
+        // listed nor sold, and simply accumulated. One level 16 character was carrying thirty-five
+        // pieces of it.
+        //
+        // Gear only: trade goods and recipes are handled just below, and everything else white is
+        // better off going straight to the vendor than taking up an auction slot.
+        if (listable && (proto->Class == ITEM_CLASS_ARMOR || proto->Class == ITEM_CLASS_WEAPON))
             return ITEM_USAGE_AH;
 
         // Crafting inputs are the deliberate exception to the quality rule. Ore, herbs, leather and
