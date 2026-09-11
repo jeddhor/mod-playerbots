@@ -741,6 +741,21 @@ void BotInspectorMgr::HandleSelfStat(Player* to)
     rows.push_back(Acore::StringFormat("zone:{}", to->GetZoneId()));
     rows.push_back(Acore::StringFormat("gold:{}", to->GetMoney() / GOLD));
 
+    // Mirrored to the log. The panel shows this to whoever is playing, but when a character parks
+    // and the answer is "which of these fields is wrong", reading it after the fact beats asking
+    // someone to read numbers off their screen. Self bots only, so this is one line per request per
+    // played character.
+    {
+        std::string joined;
+        for (std::string const& row : rows)
+        {
+            if (!joined.empty())
+                joined += " ";
+            joined += row;
+        }
+        LOG_DEBUG("playerbots", "[SelfStat] {}", joined);
+    }
+
     Reply(to, "SELFSTAT", "0", rows);
 }
 

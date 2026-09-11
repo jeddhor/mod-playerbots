@@ -183,15 +183,53 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
 
     // stuck check
     float disToDest = bot->GetDistance(dest);
+
+    // Distance to the destination is not the only evidence of progress.
+    //
+    // A route around a lake, a ridge or a canyon spends whole legs moving sideways or away from the
+    // destination, and this check only runs once the bot has reached the waypoint it was walking
+    // to. So a bot walking a perfectly good path scored a stuck attempt at every waypoint whose leg
+    // did not happen to close the straight line by five yards -- in open country, with nothing
+    // wrong, on its way to arriving. An operator watched a character sit at "3/5 stuck" in an open
+    // field, and at 5 the recovery below teleports, which is what a character blinking across the
+    // zone looks like from the outside.
+    //
+    // Ground covered since progress was last accepted separates the two cases. A bot taking the
+    // long way round is far from where it was judged; a bot oscillating around an obstacle returns
+    // to roughly the same place however much it moves, so its distance from that snapshot stays
+    // small. Measured against the snapshot rather than the previous tick for exactly that reason.
+    constexpr float PROGRESS_TRAVEL_YARDS = 40.0f;
+
+    // First time through for this destination there is nothing to compare against. Seed it here so
+    // the very next evaluation has a baseline; without this the snapshot would only ever be written
+    // by the progress branch below, and a bot that never closes the straight line -- the exact case
+    // this exists for -- would never get one.
+    if (!botAI->rpgInfo.stuckCheckPosValid)
+    {
+        botAI->rpgInfo.stuckCheckPos = WorldPosition(bot);
+        botAI->rpgInfo.stuckCheckPosValid = true;
+    }
+
+    bool const travelled = botAI->rpgInfo.stuckCheckPosValid &&
+                           bot->GetMapId() == botAI->rpgInfo.stuckCheckPos.GetMapId() &&
+                           bot->GetExactDist(botAI->rpgInfo.stuckCheckPos.GetPositionX(),
+                                             botAI->rpgInfo.stuckCheckPos.GetPositionY(),
+                                             botAI->rpgInfo.stuckCheckPos.GetPositionZ()) > PROGRESS_TRAVEL_YARDS;
+
     // Require a meaningful improvement (5yd) to reset the stuck counter.
     // The old 1yd threshold was small enough that bots oscillating back
     // and forth around an obstacle would keep "making progress" forever
     // and never trigger the teleport recovery below.
-    if (disToDest + 5.0f < botAI->rpgInfo.nearestMoveFarDis)
+    if (disToDest + 5.0f < botAI->rpgInfo.nearestMoveFarDis || travelled)
     {
-        botAI->rpgInfo.nearestMoveFarDis = disToDest;
+        // Only ever lower the best-distance mark. Taking the long way round means the current
+        // distance can be worse than the best already achieved, and raising the mark would hand the
+        // bot a fresh five yards of slack every leg and defeat the oscillation check.
+        botAI->rpgInfo.nearestMoveFarDis = std::min(botAI->rpgInfo.nearestMoveFarDis, disToDest);
         botAI->rpgInfo.stuckTs = getMSTime();
         botAI->rpgInfo.stuckAttempts = 0;
+        botAI->rpgInfo.stuckCheckPos = WorldPosition(bot);
+        botAI->rpgInfo.stuckCheckPosValid = true;
     }
     else if (++botAI->rpgInfo.stuckAttempts >= 5 && GetMSTimeDiffToNow(botAI->rpgInfo.stuckTs) >= stuckTime)
     {
@@ -997,8 +1035,26 @@ uint32 NewRpgBaseAction::AutoCompleteTrivialQuests()
         if (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE)
             continue;
 
+        // Only advance a quest whose objectives are actually met.
+        //
+        // This used to mark the quest complete unconditionally and leave CanRewardQuest below to
+        // sort it out. CanRewardQuest re-derives completion from the objectives, so for any quest
+        // the bot had not really done it refused -- and the `continue` walked away leaving the
+        // quest stored QUEST_STATUS_COMPLETE with its objectives unmet.
+        //
+        // That record is a permanent stall, not a missed reward. The questgiver marker and the
+        // bot's turn-in planning read the stored status, so the giver wears a yellow '?' and the
+        // bot walks to it; the hand-in re-validates and refuses; the stored status still says
+        // complete, so it goes straight back. It also survived logout, which is why the same two
+        // quests kept reappearing after being repaired at login -- the repair was correct and this
+        // ran again minutes later.
         if (status == QUEST_STATUS_INCOMPLETE)
+        {
+            if (!bot->CanCompleteQuest(questId))
+                continue;
+
             bot->CompleteQuest(questId);
+        }
 
         // Pick a reward the bot would actually want, rather than always taking the first option.
         // ItemUsageValue already knows this bot's class, spec and what it is wearing, so the choice
@@ -1034,7 +1090,16 @@ uint32 NewRpgBaseAction::AutoCompleteTrivialQuests()
         }
 
         if (!bot->CanRewardQuest(quest, choice, false))
+        {
+            // Put back what we changed. The guard above means the objectives are met, but this can
+            // still refuse for reasons of its own -- no bag space for the reward item is the common
+            // one -- and leaving our own mark behind would recreate exactly the corruption this
+            // function is now careful not to produce.
+            if (status == QUEST_STATUS_INCOMPLETE)
+                bot->IncompleteQuest(questId);
+
             continue;
+        }
 
         // The bot itself stands in for the quest giver. Skipping the walk back is the same
         // sanctioned abstraction as posting to the auction house without an auctioneer: the reward,

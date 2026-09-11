@@ -583,6 +583,17 @@ private:
         if (!botAI)
             return;
 
+        // Records whether the client sends movement input at all while the server is driving the
+        // character. An operator reports that a self bot cannot be interrupted by the keyboard
+        // while it is walking to a waypoint, but can be at other times, which is what a client
+        // ignoring input for the duration of a server spline would look like. If that is right,
+        // nothing is logged here during a walk and the fix has to give the client windows of
+        // control rather than listen harder. If packets do arrive, the fault is on this side.
+        // Only self bots reach this line, so the volume is one character's key presses.
+        LOG_DEBUG("playerbots", "[HumanInput] {} opcode 0x{:X} moving={} genType={}",
+                  player->GetName(), opcode, player->isMoving() ? 1 : 0,
+                  uint32(player->GetMotionMaster()->GetCurrentMovementGeneratorType()));
+
         switch (kind)
         {
             case Kind::Down:

@@ -118,6 +118,11 @@ struct NewRpgInfo
     uint32 stuckTs{0};
     uint32 stuckAttempts{0};
     WorldPosition moveFarPos;
+    // Where the bot was when its progress was last accepted. Compared against the bot's current
+    // position to tell a long way round from genuine oscillation: both fail to shrink the straight
+    // line to the destination, but only one of them actually goes anywhere.
+    WorldPosition stuckCheckPos;
+    bool stuckCheckPosValid{false};
     // END MOVE_FAR
 
     using RpgData = std::variant<

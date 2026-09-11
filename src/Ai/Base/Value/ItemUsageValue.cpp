@@ -155,7 +155,22 @@ ItemUsage ItemUsageValue::Calculate()
     {
         std::string const foodType = GetConsumableType(proto, bot->GetPower(POWER_MANA));
 
-        if (!foodType.empty() && bot->CanUseItem(proto) == EQUIP_ERR_OK)
+        // Plain food and drink are dead weight while the food cheat is on.
+        //
+        // With it a bot sits down and recovers without consuming anything, so ordinary bread and
+        // water do nothing it does not already get for free -- and the block below would still have
+        // it hold two stacks of each and buy more to get there. The comment above this function has
+        // said as much since P7.8; the GrantsWellFed early return covers buff food, but nothing
+        // stopped plain food falling through to here and being kept anyway.
+        //
+        // Conditional on the cheat because it is a cheat: an operator who turns it off has bots
+        // that really do need to carry food, and junking it then would starve them. Potions and
+        // bandages are never in scope -- a bot uses those from its bags in combat.
+        bool const eatsWithoutFood = botAI->HasCheat(BotCheatMask::food);
+        bool const plainSustenance = (foodType == "food" || foodType == "drink");
+
+        if (!foodType.empty() && !(eatsWithoutFood && plainSustenance) &&
+            bot->CanUseItem(proto) == EQUIP_ERR_OK)
         {
             float stacks = BetterStacks(proto, foodType);
             if (stacks < 2)

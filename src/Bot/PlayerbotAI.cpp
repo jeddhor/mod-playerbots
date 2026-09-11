@@ -6093,8 +6093,23 @@ void PlayerbotAI::RefreshHumanMovementInput()
     // Only meaningful while a key is believed down. A heartbeat on its own is not evidence that a
     // person is steering -- it is just the client reporting a position -- so this never starts a
     // hold, it only keeps an existing one from expiring.
-    if (_humanHoldingKey)
-        _humanInputMs = getMSTime();
+    if (!_humanHoldingKey)
+        return;
+
+    // And only while the character is actually going somewhere.
+    //
+    // A held movement key moves you. If the client is reporting position while the character stands
+    // still, whatever put _humanHoldingKey up is no longer true -- most likely a key-down whose
+    // matching stop never arrived, which happens when the server was driving the character at the
+    // time and the client swallowed the release.
+    //
+    // Without this test those heartbeats renewed the hold forever and the AI never moved again. It
+    // still fought and buffed, because only movement consults HumanIsDriving, so the character sat
+    // in one place refreshing Blessing of Might -- which is exactly what an operator watched.
+    if (!bot || !bot->isMoving())
+        return;
+
+    _humanInputMs = getMSTime();
 }
 
 bool PlayerbotAI::HumanIsDriving() const

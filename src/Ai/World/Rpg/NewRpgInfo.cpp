@@ -121,6 +121,7 @@ void NewRpgInfo::SetMoveFarTo(WorldPosition pos)
     stuckTs = 0;
     stuckAttempts = 0;
     moveFarPos = pos;
+    stuckCheckPosValid = false;
 }
 
 NewRpgStatus NewRpgInfo::StatusFromString(std::string const& name)
