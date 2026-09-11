@@ -3121,6 +3121,43 @@ AiPlayerbot.HumanControlEnabled = 1
 
 AiPlayerbot.SuppressSelfBotSpellErrors = 1
 
+#
+#    AiPlayerbot.SelfBotMoveReissueMs
+#        Description: Least time between two server-issued movement splines for a self bot that is
+#                     already walking. The server rebuilding a walk it has already committed to is
+#                     invisible on a clientless bot but resyncs the owner's client every time, which
+#                     looks like the character briefly outrunning a mount.
+#        Default:     1500
+#
+
+AiPlayerbot.SelfBotMoveReissueMs = 1500
+
+#
+#    AiPlayerbot.GrindMaxLevelDiffSolo / GrindMaxLevelDiffGrouped
+#        Description: How many levels above its own a bot will pick a fight with. Two is yellow,
+#                     which is what a person solos; four is orange, which they take when they have
+#                     help. Previously four applied whether the bot had help or not.
+#        Default:     2 solo, 4 grouped
+#
+
+AiPlayerbot.GrindMaxLevelDiffSolo = 2
+AiPlayerbot.GrindMaxLevelDiffGrouped = 4
+
+#
+#    AiPlayerbot.EatHealthThreshold / DrinkManaThreshold
+#        Description: Below what percentage a bot sits down to eat or drink. This was effectively
+#                     100 -- any missing point at all was reason enough -- and because grinding
+#                     lists eating and drinking as default actions with no trigger behind them,
+#                     that meant sitting down after almost every fight.
+#        Default:     80
+#
+
+AiPlayerbot.EatHealthThreshold = 80
+AiPlayerbot.DrinkManaThreshold = 80
+
+
+
+
 
 #
 #    AiPlayerbot.EnemyTerritoryPolicy

@@ -3367,6 +3367,22 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
 
     uint32 CastingTime = !spellInfo->IsChanneled() ? spellInfo->CalcCastTime(bot) : spellInfo->GetDuration();
     // bool interruptOnMove = spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT;
+    // A spell the caster is currently locked out of.
+    //
+    // Forbearance is the case that shows: a paladin at low health tries Divine Shield, Divine
+    // Protection, Hand of Protection and Lay on Hands in turn, every one of them refused, and the
+    // owner of a self bot watches "You can't do that yet" scroll past while the character dies.
+    // Nothing in the module had ever heard of Forbearance.
+    //
+    // Asked through ExcludeCasterAuraSpell rather than by spell id, because that is how the game
+    // itself expresses the rule -- so this covers every other lockout of the same shape, for every
+    // class, without a list to maintain.
+    if (spellInfo->ExcludeCasterAuraSpell && bot->HasAura(spellInfo->ExcludeCasterAuraSpell))
+        return false;
+
+    if (target && spellInfo->ExcludeTargetAuraSpell && target->HasAura(spellInfo->ExcludeTargetAuraSpell))
+        return false;
+
     if ((CastingTime || spellInfo->IsAutoRepeatRangedSpell()) && bot->isMoving())
     {
         if (!sPlayerbotAIConfig.logInGroupOnly || (bot->GetGroup() && HasGameClientMaster()))

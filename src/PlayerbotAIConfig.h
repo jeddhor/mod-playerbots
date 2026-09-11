@@ -308,6 +308,17 @@ public:
     // Hide the cast failures a self bot's own AI provokes by design from its owner's client.
     bool suppressSelfBotSpellErrors;
 
+    // Least time between two server-issued splines for a self bot that is already walking.
+    uint32 selfBotMoveReissueMs;
+
+    // Levels above its own a bot will pick a fight with, alone and in a group.
+    // Below what percentage a bot will sit down to eat or drink.
+    uint32 eatHealthThreshold;
+    uint32 drinkManaThreshold;
+
+    uint32 grindMaxLevelDiffSolo;
+    uint32 grindMaxLevelDiffGrouped;
+
     bool humanControlEnabled;
     uint32 humanControlGraceMs;
 

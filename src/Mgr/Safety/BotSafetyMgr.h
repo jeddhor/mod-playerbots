@@ -78,7 +78,16 @@ private:
         uint32 lastFailureMap{0};
         uint32 consecutive{0};
         uint32 lastRecoveryMs{0};
+
+        // Where a self bot was at the previous check, for the impossible-speed detector. Only self
+        // bots are tracked: a character with no client cannot disagree with one about where it is.
+        Position lastSeen;
+        uint32 lastSeenMs{0};
+        uint32 lastSeenMap{0};
     };
+
+    /// Log movement the character's own speed could not have produced. Self bots only.
+    void ReportImpossibleMovement(Player* bot);
 
     /// True if the bot is below the map's floor -- the core's own out-of-world test.
     static bool IsOutOfWorld(Player* bot);

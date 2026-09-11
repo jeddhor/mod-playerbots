@@ -74,8 +74,12 @@ bool DrinkAction::Execute(Event event)
 
 bool DrinkAction::isUseful()
 {
+    // Anything below full counted, so a bot sat down to drink at 99% mana -- and since grinding
+    // lists drinking as a default action with no trigger behind it, that meant sitting down after
+    // almost every fight. A person drinks when they are low enough that the next fight is a
+    // problem, not to top off a sliver.
     return UseItemAction::isUseful() && AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") < 100;
+           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.drinkManaThreshold;
 }
 
 bool DrinkAction::isPossible()
@@ -131,7 +135,12 @@ bool EatAction::Execute(Event event)
     return UseItemAction::Execute(event);
 }
 
-bool EatAction::isUseful() { return UseItemAction::isUseful() && AI_VALUE2(uint8, "health", "self target") < 100; }
+bool EatAction::isUseful()
+{
+    // See DrinkAction::isUseful -- same reasoning, same off-by-a-sliver.
+    return UseItemAction::isUseful() &&
+           AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.eatHealthThreshold;
+}
 
 bool EatAction::isPossible()
 {

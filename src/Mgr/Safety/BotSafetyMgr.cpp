@@ -6,6 +6,8 @@
 
 #include "BotSafetyMgr.h"
 
+#include <algorithm>
+
 #include "Log.h"
 #include "Map.h"
 #include "GameGraveyard.h"
@@ -119,6 +121,61 @@ bool BotSafetyMgr::IsOnSafeGround(Player* bot)
     return std::fabs(bot->GetPositionZ() - ground) <= SAFE_GROUND_TOLERANCE;
 }
 
+void BotSafetyMgr::ReportImpossibleMovement(Player* bot)
+{
+    ObjectGuid const guid = bot->GetGUID();
+    uint32 const now = getMSTime();
+
+    Position previous;
+    uint32 previousMs = 0;
+    uint32 previousMap = 0;
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        if (auto const itr = _anchors.find(guid); itr != _anchors.end())
+        {
+            previous = itr->second.lastSeen;
+            previousMs = itr->second.lastSeenMs;
+            previousMap = itr->second.lastSeenMap;
+        }
+    }
+
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        Anchor& anchor = _anchors[guid];
+        anchor.lastSeen.Relocate(bot);
+        anchor.lastSeenMs = now;
+        anchor.lastSeenMap = bot->GetMapId();
+    }
+
+    // A first sample, a map change, or a teleport in progress: nothing meaningful to compare.
+    if (!previousMs || previousMap != bot->GetMapId() || bot->IsBeingTeleported() || bot->IsInFlight())
+        return;
+
+    uint32 const elapsedMs = getMSTimeDiff(previousMs, now);
+    if (elapsedMs < 200 || elapsedMs > 5000)
+        return;
+
+    float const travelled = bot->GetExactDist(&previous);
+    float const implied = travelled / (float(elapsedMs) / 1000.0f);
+
+    // Generous on purpose. This is looking for movement that is impossible, not movement that is
+    // merely brisk, and a half-second of network jitter should never produce a line in the log.
+    float const allowed =
+        std::max({bot->GetSpeed(MOVE_RUN), bot->GetSpeed(MOVE_SWIM), bot->GetSpeed(MOVE_FLIGHT)}) *
+            1.5f + 5.0f;
+
+    if (implied <= allowed)
+        return;
+
+    LOG_INFO("playerbots",
+             "[SelfBotJump] {} covered {:.0f} yards in {} ms ({:.0f} yd/s) on map {}; its run speed "
+             "is {:.1f} yd/s. ({:.0f},{:.0f},{:.0f}) -> ({:.0f},{:.0f},{:.0f}), {}",
+             bot->GetName(), travelled, elapsedMs, implied, bot->GetMapId(), bot->GetSpeed(MOVE_RUN),
+             previous.GetPositionX(), previous.GetPositionY(), previous.GetPositionZ(),
+             bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+             bot->isMoving() ? "still moving" : "stopped");
+}
+
 void BotSafetyMgr::Update(Player* bot, uint32 diff)
 {
     if (!bot || !sPlayerbotAIConfig.safetyRecoverFromFalls)
@@ -138,6 +195,16 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
 
         anchor.timer = 0;
     }
+
+    // Did the character cover more ground than its own speed allows?
+    //
+    // A self bot was seen repeatedly crossing the map faster than any mount, and there was no way to
+    // tell a genuine speed change apart from the client and server disagreeing about where it is.
+    // The two need different fixes and look identical from the outside, so measure it instead of
+    // guessing: a jump the character's own speed could not have produced is a desync; one it could
+    // have is something having actually changed the speed.
+    if (IsSelfBot(bot))
+        ReportImpossibleMovement(bot);
 
     if (IsOutOfWorld(bot) || IsUnderTerrain(bot))
     {

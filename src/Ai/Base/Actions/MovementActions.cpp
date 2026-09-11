@@ -211,10 +211,25 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
                                           std::pow(lastMove.lastMoveToY - y, 2.0f) +
                                           std::pow(lastMove.lastMoveToZ - z, 2.0f));
 
-            // Still walking, and still walking somewhere close enough to where it is now being
-            // asked to go that reissuing would only restate the same intent.
+            // Still walking somewhere close enough to where it is now being asked to go that
+            // reissuing would only restate the same intent.
             if (committed > 10.0f && drift < 10.0f)
                 return true;
+
+            // The destination moving is not evidence that anything changed.
+            //
+            // MoveFarTo hands this function the furthest waypoint mmap could reach, not the place
+            // the bot is going, and that waypoint advances as the bot does. So on exactly the long
+            // walks where spline churn matters, the drift test above almost never fires and the
+            // spline is torn down and rebuilt anyway. Rate limiting is the honest guard: a self bot
+            // that is already walking does not need a new spline several times a second, whatever
+            // the destination is doing, and a genuinely new target is still honoured within a
+            // fraction of a second.
+            if (committed > 10.0f &&
+                getMSTimeDiff(lastMove.msTime, getMSTime()) < sPlayerbotAIConfig.selfBotMoveReissueMs)
+            {
+                return true;
+            }
         }
     }
 

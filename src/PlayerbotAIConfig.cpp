@@ -475,6 +475,19 @@ bool PlayerbotAIConfig::Initialize()
     suppressSelfBotSpellErrors =
         sConfigMgr->GetOption<bool>("AiPlayerbot.SuppressSelfBotSpellErrors", true);
 
+    // Long enough to stop a walk being rebuilt continuously, short enough that changing target is
+    // still acted on immediately by eye.
+    selfBotMoveReissueMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.SelfBotMoveReissueMs", 1500);
+
+    // Two is yellow, which is what a person solos. Four is orange, which is what they take with
+    // help -- and was until now what every bot took regardless of whether it had any.
+    // Was effectively 100 -- any missing point at all was reason enough to sit down.
+    eatHealthThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.EatHealthThreshold", 80);
+    drinkManaThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.DrinkManaThreshold", 80);
+
+    grindMaxLevelDiffSolo = sConfigMgr->GetOption<uint32>("AiPlayerbot.GrindMaxLevelDiffSolo", 2);
+    grindMaxLevelDiffGrouped = sConfigMgr->GetOption<uint32>("AiPlayerbot.GrindMaxLevelDiffGrouped", 4);
+
     humanControlEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HumanControlEnabled", true);
     humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
 

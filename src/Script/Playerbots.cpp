@@ -427,7 +427,19 @@ public:
         if (!sPlayerbotAIConfig.suppressSelfBotSpellErrors)
             return true;
 
-        if (packet.GetOpcode() != SMSG_CAST_FAILED)
+        uint16 const opcode = packet.GetOpcode();
+
+        // Melee swing complaints are the same problem as the cast failures below, on a different
+        // opcode. A bot closing on a target swings before it is in reach, every swing produces "You
+        // are too far away", and an owner with error speech on hears it for the whole approach.
+        // Bad facing is the same: the bot turns as it arrives.
+        //
+        // Dead target and cannot-attack are deliberately not suppressed, because those say the bot
+        // is doing something pointless rather than something premature.
+        bool const isSwingNoise =
+            opcode == SMSG_ATTACKSWING_NOTINRANGE || opcode == SMSG_ATTACKSWING_BADFACING;
+
+        if (opcode != SMSG_CAST_FAILED && !isSwingNoise)
             return true;
 
         Player* player = session ? session->GetPlayer() : nullptr;
@@ -439,6 +451,10 @@ public:
         // hear about.
         if (!botAI || botAI->HumanIsDriving())
             return true;
+
+        // Swing errors carry no body to inspect; the opcode is the whole message.
+        if (isSwingNoise)
+            return false;
 
         // uint8 castCount, uint32 spellId, uint8 result -- read from a copy, because the packet is
         // on its way to the client and moving its read position would corrupt what it sends.
@@ -506,18 +522,32 @@ private:
             case MSG_MOVE_START_BACKWARD:
             case MSG_MOVE_START_STRAFE_LEFT:
             case MSG_MOVE_START_STRAFE_RIGHT:
-            case MSG_MOVE_START_TURN_LEFT:
-            case MSG_MOVE_START_TURN_RIGHT:
             case MSG_MOVE_START_SWIM:
                 kind = Kind::Down;
                 break;
 
             case MSG_MOVE_STOP:
             case MSG_MOVE_STOP_STRAFE:
-            case MSG_MOVE_STOP_TURN:
             case MSG_MOVE_STOP_SWIM:
                 kind = Kind::Up;
                 break;
+
+            // Turning is deliberately not steering.
+            //
+            // The client sends turn packets for things that are not a person driving: the camera
+            // auto-adjusting behind a running character, and the character turning to follow a
+            // spline the server issued. Counting those started a hold nobody asked for, and the
+            // heartbeats that flow while the character moves then kept it alive -- so the AI
+            // believed somebody had their hand on the key for as long as it was moving, refused to
+            // steer, and the character pottered about in a small circle reporting that its owner
+            // was driving it. Which they were not.
+            //
+            // Only translation counts. Going somewhere is the thing the AI has to get out of the
+            // way of; facing a different direction is not.
+            case MSG_MOVE_START_TURN_LEFT:
+            case MSG_MOVE_START_TURN_RIGHT:
+            case MSG_MOVE_STOP_TURN:
+                return;
 
             // Jump only. The landing is deliberately not counted: a self bot walking off a step
             // sends one too, and treating that as input would pause the AI for the grace period

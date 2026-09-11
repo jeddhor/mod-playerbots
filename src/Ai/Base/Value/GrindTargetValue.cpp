@@ -110,7 +110,18 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
             continue;
         }
 
-        if (!bot->InBattleground() && (int)unit->GetLevel() - (int)bot->GetLevel() > 4 && !unit->GetGUID().IsPlayer())
+        // How far above its own level the bot will pick a fight.
+        //
+        // Four was the flat allowance, which is orange: three or four levels up. That is a fair
+        // fight for a group and a bad one for anybody alone, and watching a level 14 on her own
+        // choose an orange mob is watching her choose to lose about a third of the time. A person
+        // soloing picks yellow and green; they take orange when they have help.
+        int32 const levelDiff = int32(unit->GetLevel()) - int32(bot->GetLevel());
+        int32 const allowed = (group && group->GetMembersCount() > 1)
+                                  ? int32(sPlayerbotAIConfig.grindMaxLevelDiffGrouped)
+                                  : int32(sPlayerbotAIConfig.grindMaxLevelDiffSolo);
+
+        if (!bot->InBattleground() && levelDiff > allowed && !unit->GetGUID().IsPlayer())
             continue;
 
         if (Creature* creature = unit->ToCreature())
