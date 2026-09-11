@@ -22,6 +22,20 @@ void GenericPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("hammer of justice on enemy healer", ACTION_INTERRUPT) }));
     triggers.push_back(new TriggerNode("hammer of justice on snare target",
         { NextAction("hammer of justice on snare target", ACTION_INTERRUPT) }));
+    // Stun the thing that is hurting you.
+    //
+    // Hammer of Justice had three triggers and all of them were about somebody else's behaviour:
+    // the target casting, the target being an enemy healer, the target running away. Against an
+    // ordinary mob that just stands and hits you, nothing fired it at all -- so a paladin levelling
+    // through the world never used its stun once, which is not how anybody plays one.
+    //
+    // Gated on the bot's own health rather than fired every fight. Six seconds of a mob not
+    // attacking is worth a great deal when a fight is going badly and close to nothing when it is
+    // already won, and a minute-long cooldown spent on something about to die is a cooldown that is
+    // missing from the fight after it.
+    triggers.push_back(new TriggerNode("medium health",
+        { NextAction("hammer of justice", ACTION_HIGH + 2) }));
+
     triggers.push_back(new TriggerNode("critical health", { NextAction("divine shield", ACTION_EMERGENCY) }));
     triggers.push_back(new TriggerNode("critical health", { NextAction("lay on hands", ACTION_EMERGENCY + 1) }));
     triggers.push_back(new TriggerNode("party member critical health",
