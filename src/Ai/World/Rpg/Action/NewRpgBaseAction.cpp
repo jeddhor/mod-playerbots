@@ -1682,9 +1682,9 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
         if (bot->GetMapId() != loc.GetMapId())
             continue;
 
-        // Not the other faction's capital. See IsHostileTerritory: contested ground is fair game,
-        // a city full of guards that aggro on sight is not a destination, it is a death.
-        if (IsHostileTerritory(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
+        // Enemy territory policy: always skip their capital, and by default only rarely accept
+        // anywhere else of theirs. See ShouldAvoidArea.
+        if (ShouldAvoidArea(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
             continue;
 
         if (bot->GetExactDist(loc) > sPlayerbotAIConfig.questObjectiveMaxDistance)
@@ -1757,7 +1757,7 @@ WorldPosition NewRpgBaseAction::SelectRandomCampPos(Player* bot)
         if (bot->GetMapId() != loc.GetMapId())
             continue;
 
-        if (IsHostileTerritory(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
+        if (ShouldAvoidArea(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
             continue;
 
         float range = bot->GetLevel() <= 5 ? 500.0f : 2500.0f;
@@ -1986,7 +1986,7 @@ int32 NewRpgBaseAction::QuestWorkPriority(uint32 questId, Quest const* quest)
  * machinery do the travelling and hand over to WANDER_RANDOM to fight, so this adds a destination
  * rather than a second movement system.
  */
-bool NewRpgBaseAction::IsHostileTerritory(Player* bot, uint32 areaOrZoneId)
+bool NewRpgBaseAction::IsEnemyArea(Player* bot, uint32 areaOrZoneId)
 {
     if (!bot || !areaOrZoneId)
         return false;
@@ -1995,23 +1995,53 @@ bool NewRpgBaseAction::IsHostileTerritory(Player* bot, uint32 areaOrZoneId)
     if (!area)
         return false;
 
+    // Only about seventy of the two thousand three hundred areas name a side at all, and they are
+    // almost exactly the faction levelling zones -- Elwynn and Westfall to the Alliance, Tirisfal
+    // and Silverpine and the blood elf zones to the Horde. Everywhere else is nobody's, which is
+    // why this is a narrow rule rather than a map-wide one.
     uint32 const owner = area->team;
     if (owner == AREATEAM_NONE || owner == AREATEAM_ANY)
         return false;
 
     bool const botIsAlliance = bot->GetTeamId() == TEAM_ALLIANCE;
     bool const areaIsAlliance = owner == AREATEAM_ALLY;
-    if (botIsAlliance == areaIsAlliance)
+    return botIsAlliance != areaIsAlliance;
+}
+
+bool NewRpgBaseAction::IsEnemyCapital(Player* bot, uint32 areaOrZoneId)
+{
+    if (!IsEnemyArea(bot, areaOrZoneId))
         return false;
 
-    // Contested ground is the game. Walking into the other side's quest hubs, running their zones,
-    // being killed for it -- all of that is a world behaving as it should, and a bot that refused
-    // to leave its own territory would be a duller thing than one that occasionally dies for it.
-    //
-    // A capital is different in kind. It is wall-to-wall high level guards that aggro on sight, and
-    // there is nothing in one for a visiting bot except a walk to the graveyard. Nobody plays that
-    // way on purpose, so nothing should route there on purpose either.
-    return (area->flags & AREA_FLAG_CAPITAL) != 0;
+    AreaTableEntry const* area = sAreaTableStore.LookupEntry(areaOrZoneId);
+    return area && (area->flags & AREA_FLAG_CAPITAL) != 0;
+}
+
+bool NewRpgBaseAction::ShouldAvoidArea(Player* bot, uint32 areaOrZoneId)
+{
+    if (!IsEnemyArea(bot, areaOrZoneId))
+        return false;
+
+    // A capital is not a destination, it is a death: wall-to-wall high level guards that aggro on
+    // sight and nothing in it for a visitor. Nobody plays that way on purpose, so nothing routes
+    // there on purpose, whatever the policy for ordinary territory is.
+    if (IsEnemyCapital(bot, areaOrZoneId))
+        return true;
+
+    switch (sPlayerbotAIConfig.enemyTerritoryPolicy)
+    {
+        case 0:   // allow
+            return false;
+        case 2:   // block
+            return true;
+        default:  // discourage
+            break;
+    }
+
+    // Rolled per candidate rather than filtered outright, so enemy ground stays reachable but rare.
+    // A bot that occasionally turns up somewhere it has no business being is the kind of thing that
+    // makes a realm look inhabited; one that does it constantly is the bug this came from.
+    return urand(1, 100) > sPlayerbotAIConfig.enemyTerritoryChance;
 }
 
 WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
@@ -2423,9 +2453,9 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
                 // Climb as well as distance. A route 380 yards away is unremarkable; the same route
                 // 380 yards away and 150 yards up is a mountaineering trip, and the two are
                 // indistinguishable in a log that only reports the horizontal.
-                if (IsHostileTerritory(bot, route->zoneId))
+                if (ShouldAvoidArea(bot, route->zoneId))
                 {
-                    LOG_DEBUG("playerbots", "[GatherStart] {} skipped route in zone {}: enemy capital",
+                    LOG_DEBUG("playerbots", "[GatherStart] {} skipped route in zone {}: enemy territory",
                               bot->GetName(), route->zoneId);
                     return false;
                 }

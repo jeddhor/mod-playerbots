@@ -3107,6 +3107,31 @@ AiPlayerbot.HumanControlGraceMs = 1500
 
 AiPlayerbot.HumanControlEnabled = 1
 
+#
+#    AiPlayerbot.EnemyTerritoryPolicy
+#        Description: What a bot does about destinations in the other faction's territory -- the
+#                     faction levelling zones such as Elwynn and Westfall, or Tirisfal and
+#                     Silverpine. 0 allow freely, 1 discourage, 2 block outright.
+#                     The other faction's capital is always avoided whatever this is set to: it is
+#                     wall-to-wall guards that aggro on sight and there is nothing there for a
+#                     visiting bot.
+#        Default:     1 (discourage)
+#
+
+AiPlayerbot.EnemyTerritoryPolicy = 1
+
+#
+#    AiPlayerbot.EnemyTerritoryChance
+#        Description: With the policy set to discourage, the percent chance an enemy-territory
+#                     destination is kept rather than passed over. Rolled per candidate, so a bot
+#                     turning up somewhere it has no business being stays a curiosity rather than
+#                     a pattern. Ignored when the policy is allow or block.
+#        Default:     10
+#
+
+AiPlayerbot.EnemyTerritoryChance = 10
+
+
 
 
 

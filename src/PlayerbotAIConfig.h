@@ -299,6 +299,12 @@ public:
     uint32 unfinishedLootRetrySeconds;
 
     // How long after a person lets go of the movement keys the AI waits before steering again.
+    // What a bot does about destinations in the other faction's territory.
+    // 0 allow freely, 1 discourage (default), 2 block outright. Enemy capitals are always avoided
+    // whatever this says.
+    uint32 enemyTerritoryPolicy;
+    uint32 enemyTerritoryChance;
+
     bool humanControlEnabled;
     uint32 humanControlGraceMs;
 

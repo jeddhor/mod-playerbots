@@ -462,6 +462,16 @@ bool PlayerbotAIConfig::Initialize()
     // A kill switch, because the failure mode of this feature is severe and silent: if it ever
     // decides a person is steering when they are not, the bot can still fight and loot but cannot
     // walk anywhere, which from inside the game looks like the AI simply not working.
+    // Discouraged rather than blocked by default. A world where nobody ever strays across the
+    // border is a tidier world and a deader one; the occasional bot somewhere it should not be is
+    // the sort of thing that makes a realm feel inhabited. Blocking is there for when it is simply
+    // not wanted.
+    enemyTerritoryPolicy = sConfigMgr->GetOption<uint32>("AiPlayerbot.EnemyTerritoryPolicy", 1);
+    // Percent of enemy-territory destinations kept when discouraging. One in ten is rare enough to
+    // be a curiosity rather than a pattern.
+    enemyTerritoryChance = std::min<uint32>(100,
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.EnemyTerritoryChance", 10));
+
     humanControlEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HumanControlEnabled", true);
     humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
 

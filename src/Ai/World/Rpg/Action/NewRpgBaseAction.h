@@ -136,7 +136,19 @@ protected:
      * fighting back bypasses the level filter, correctly. The mistake was made long before, when
      * something chose a destination in a city her faction cannot enter.
      */
-    static bool IsHostileTerritory(Player* bot, uint32 areaOrZoneId);
+    /// Whose side an area belongs to, if anyone's. Most areas belong to nobody.
+    static bool IsEnemyArea(Player* bot, uint32 areaOrZoneId);
+
+    /// An enemy capital specifically. Always avoided, whatever the territory policy says.
+    static bool IsEnemyCapital(Player* bot, uint32 areaOrZoneId);
+
+    /**
+     * Should a destination here be passed over?
+     *
+     * Answers the whole policy, including the roll when enemy territory is merely discouraged, so
+     * every caller that picks a destination asks one question and gets one answer.
+     */
+    static bool ShouldAvoidArea(Player* bot, uint32 areaOrZoneId);
 
     /// Is this activity permitted for this bot -- base weight, with any archetype override?
     bool IsRpgStatusPermitted(NewRpgStatus status);
