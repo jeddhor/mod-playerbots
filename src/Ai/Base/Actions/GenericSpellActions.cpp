@@ -185,19 +185,6 @@ bool CastSpellAction::isUseful()
     if (botAI->IsInVehicle() && !botAI->IsInVehicle(false, false, true))
         return false;
 
-    // A spell the character has not learned.
-    //
-    // Every class strategy lists the whole kit, so a level 15 paladin carries actions for Divine
-    // Storm and Crusader Strike, which are sixty levels away. The name resolved to spell id zero,
-    // the cast was refused, and the engine pushed it again next tick: 388 refused casts in one
-    // short run from a single character, and every low-level bot on the realm doing the same
-    // invisibly because the log only reports it for bots grouped with a person.
-    //
-    // Checked here rather than in the several dozen actions that would each need it, and by spell
-    // id rather than by level so it stays right for talents, ranks and anything a bot unlearns.
-    if (!spell.empty() && spell != "mount" && !AI_VALUE2(uint32, "spell id", spell))
-        return false;
-
     if (spell == "mount" && !bot->IsMounted() && !bot->IsInCombat())
         return true;
 
@@ -240,6 +227,26 @@ bool CastSpellAction::isPossible()
         bot->Dismount();
         return false;
     }
+
+    // A spell the character has not learned.
+    //
+    // Every class strategy lists the whole kit, so a level 15 paladin carries actions for Divine
+    // Storm and Crusader Strike, which are sixty levels away. The name resolves to spell id zero and
+    // the cast is refused; without this the refusal came from CanCastSpell, which logged it every
+    // time -- 388 refused casts in one short run from a single character.
+    //
+    // It belongs here, in isPossible, and not in isUseful. The engine treats the two answers very
+    // differently: an impossible action hands its turn to the alternatives listed after it, while a
+    // useless one is simply dropped. Class strategies lean on that -- a paladin's seal is written as
+    // corruption, falling back to vengeance, to command, to righteousness -- so a low level paladin
+    // has to fail its way down that chain to reach the only seal it knows. Answering "useless" for
+    // the unknown first link killed the chain and left the character with no seal at all, and so no
+    // Judgement either.
+    //
+    // Checked by spell id rather than by level so it stays right for talents, ranks and anything a
+    // bot unlearns, and before CanCastSpell so the log stays quiet.
+    if (!spell.empty() && !AI_VALUE2(uint32, "spell id", spell))
+        return false;
 
     // Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL); //not used, line marked for removal.
     return botAI->CanCastSpell(spell, GetTarget());
