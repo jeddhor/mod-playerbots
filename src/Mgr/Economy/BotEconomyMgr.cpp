@@ -497,16 +497,24 @@ bool BotEconomyMgr::ShouldPost(Item* item) const
     if (proto->Quality < ITEM_QUALITY_NORMAL)
         return false;
 
-    // Whites are only worth listing when they are an input to something: reagents and recipes.
-    // A white sword is vendor fodder.
+    // White items are listable when they are an input to something -- reagents and recipes -- and
+    // when they are gear.
     //
-    // Consumables are deliberately NOT here. They were, and bots promptly auctioned their own
+    // Gear was excluded on the grounds that a white sword is vendor fodder. That was true while the
+    // only two outcomes were "listed forever" or "vendored", but PostAuctionAction now gives up
+    // after Economy.MaxListingAttempts listings and vendors the item, so an unwanted white sword
+    // leaves the house by itself. Excluding it here left unbound white gear with nowhere to go at
+    // all: not listable, and not sellable either, because the vendor path only takes gear that is
+    // soulbound. It just accumulated -- one level 16 character was carrying thirty-five pieces.
+    //
+    // Consumables are deliberately NOT here. They were once, and bots promptly auctioned their own
     // healing potions, poisons and sharpening stones -- every white listing in the first economy
     // run was a consumable the bot should have been drinking. Whether a *particular* bot needs a
     // particular consumable is a per-bot question this class cannot answer; the caller asks
     // ItemUsageValue.
     if (proto->Quality == ITEM_QUALITY_NORMAL && proto->Class != ITEM_CLASS_TRADE_GOODS &&
-        proto->Class != ITEM_CLASS_RECIPE)
+        proto->Class != ITEM_CLASS_RECIPE && proto->Class != ITEM_CLASS_ARMOR &&
+        proto->Class != ITEM_CLASS_WEAPON)
         return false;
 
     // Depth control: above the target the house already has more of this than it can clear, so

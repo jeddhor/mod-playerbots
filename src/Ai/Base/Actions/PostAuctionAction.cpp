@@ -168,8 +168,16 @@ bool PostAuctionAction::Execute(Event /*event*/)
             // the bot would sit stuck. Take the vendor price and move on. Without this the
             // depth-control mechanism, which exists to protect the market, becomes a way for a bot
             // to deadlock itself.
+            // Gear is here alongside trade goods because it can deadlock the same way. Common
+            // white drops saturate depth almost immediately -- every bot in a levelling zone loots
+            // the same handful of items -- so without this a bot whose bags are full of suppressed
+            // white gear has no move at all: it cannot list it, and the vendor path only takes gear
+            // that is soulbound.
             if (bagsUnderPressure && sBotEconomyMgr.IsAuctionable(item) &&
-                item->GetTemplate()->Class == ITEM_CLASS_TRADE_GOODS && item->GetTemplate()->SellPrice)
+                (item->GetTemplate()->Class == ITEM_CLASS_TRADE_GOODS ||
+                 item->GetTemplate()->Class == ITEM_CLASS_ARMOR ||
+                 item->GetTemplate()->Class == ITEM_CLASS_WEAPON) &&
+                item->GetTemplate()->SellPrice)
             {
                 std::string const name = item->GetTemplate()->Name1;
                 uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
