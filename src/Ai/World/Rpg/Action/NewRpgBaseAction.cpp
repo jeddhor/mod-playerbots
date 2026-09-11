@@ -2182,8 +2182,22 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
     // candidates are tested, and a route far longer than the straight line is treated as no route,
     // which rejects the case where mmap loops the entire level to reach something on the other side
     // of a wall.
-    constexpr size_t MAX_PATH_TESTS = 6;
-    constexpr float MAX_DETOUR_FACTOR = 3.0f;
+    // Both of these were first set by guesswork and then corrected by the diagnostic below, which
+    // reported a Wailing Caverns leader looking at thirty perfectly good candidates, testing six,
+    // and resting. A cap that stops before it reaches a reachable target is indistinguishable from
+    // an empty room.
+    //
+    // Sixteen is enough to get past a wall of near-but-unreachable mobs -- the far side of a chasm,
+    // the floor below -- without the search becoming unbounded. It only ever runs for the one bot
+    // leading a group inside an instance.
+    constexpr size_t MAX_PATH_TESTS = 16;
+
+    // A winding tunnel is a real route, not a detour to reject. Wailing Caverns and Maraudon both
+    // routinely path three or four times the straight-line distance, and for a target a few yards
+    // away through a doorway the ratio is meaningless -- hence the floor, which matters more than
+    // the factor at close range.
+    constexpr float MAX_DETOUR_FACTOR = 4.0f;
+    constexpr float MIN_DETOUR_ALLOWANCE = 80.0f;
 
     uint32 rejectedUnreachable = 0;
     size_t tested = 0;
@@ -2203,7 +2217,7 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
             continue;
         }
 
-        if (path.getPathLength() > std::max(dist, 10.0f) * MAX_DETOUR_FACTOR)
+        if (path.getPathLength() > std::max(dist * MAX_DETOUR_FACTOR, MIN_DETOUR_ALLOWANCE))
         {
             ++rejectedUnreachable;
             continue;
@@ -2217,10 +2231,10 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
     // route -- and they need different fixes.
     if (!candidates.empty() || rejectedEngaged || rejectedKind || rejectedTarget)
         LOG_DEBUG("playerbots",
-                  "[Dungeon] {} pull search: {} candidate(s), rejected {} engaged, {} kind, {} untargetable, "
-                  "{} unreachable",
-                  bot->GetName(), uint32(candidates.size()), rejectedEngaged, rejectedKind, rejectedTarget,
-                  rejectedUnreachable);
+                  "[Dungeon] {} pull search: {} candidate(s), {} routed, rejected {} engaged, {} kind, "
+                  "{} untargetable, {} unreachable",
+                  bot->GetName(), uint32(candidates.size()), uint32(tested), rejectedEngaged, rejectedKind,
+                  rejectedTarget, rejectedUnreachable);
 
     return WorldPosition();
 }

@@ -5,6 +5,7 @@
  */
 
 #include "AiFactory.h"
+#include "LFGMgr.h"
 #include "BattlegroundMgr.h"
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
@@ -387,10 +388,33 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategiesNoInit("resto", "cure", "dps assist", "tranquility", nullptr);
             else
             {
-                if (player->HasSpell(SPELL_CAT_FORM) && !player->HasAura(SPELL_DRUID_THICK_HIDE))
-                    engine->addStrategiesNoInit("cat", "aoe", "cc", "dps assist", "feral charge", nullptr);
-                else
+                // Whether a feral druid tanks was decided entirely by talents: cat unless it had
+                // Thick Hide, which sits deep in the tree. So every feral druid below that talent
+                // was given the dps strategy no matter what its group needed, and a level 25 druid
+                // sent into Wailing Caverns as the tank fought in cat form.
+                //
+                // PlayerbotAI::IsTank cannot answer this. For a druid it reports true only when the
+                // character is *already* in bear form -- and the strategy that shifts to bear is the
+                // one being chosen here, so nothing ever breaks the circle.
+                //
+                // The Dungeon Finder's own assignment does answer it, and it is the authority:
+                // LfgRolesFor advertises a druid as able to tank, the queue places it on that basis,
+                // and this is the one place that was not told. Outside the Finder there is no such
+                // assignment and the talent heuristic is still the best guess available.
+                bool tankRole = player->HasAura(SPELL_DRUID_THICK_HIDE) || !player->HasSpell(SPELL_CAT_FORM);
+
+                if (uint8 const lfgRoles = sLFGMgr->GetRoles(player->GetGUID()))
+                {
+                    if (lfgRoles & lfg::PLAYER_ROLE_TANK)
+                        tankRole = true;
+                    else if (lfgRoles & (lfg::PLAYER_ROLE_HEALER | lfg::PLAYER_ROLE_DAMAGE))
+                        tankRole = false;
+                }
+
+                if (tankRole)
                     engine->addStrategiesNoInit("bear", "tank assist", "pull", "pull back", "feral charge", nullptr);
+                else
+                    engine->addStrategiesNoInit("cat", "aoe", "cc", "dps assist", "feral charge", nullptr);
             }
             break;
         case CLASS_HUNTER:
