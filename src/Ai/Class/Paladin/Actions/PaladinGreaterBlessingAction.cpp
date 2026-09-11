@@ -1130,7 +1130,27 @@ CastGreaterBlessingAssignmentAction::CastGreaterBlessingAssignmentAction(
 
 bool CastGreaterBlessingAssignmentAction::isUseful()
 {
-    return ai::gbless::IsEligibleGroupForAutoBlessings(bot->GetGroup());
+    if (!ai::gbless::IsEligibleGroupForAutoBlessings(bot->GetGroup()))
+        return false;
+
+    // Knowing one of them is a separate question from the group wanting them, and it was never
+    // asked. Greater blessings are learned at 60, so every paladin below that in an eligible group
+    // ran this action every tick, resolved a spell id of zero and failed the cast -- 4695 times in
+    // forty minutes for a single level 13, which is the whole of what an operator saw as "she cast
+    // an unknown spell". The cast itself was always refused, so nothing broke; it was just steady
+    // wasted work on every paladin on the realm, visible only on the one bot whose log was on.
+    //
+    // Asked by knowledge rather than by level so that it stays right if the spells ever move.
+    for (uint8 type = ai::gbless::BLESSING_MIGHT_GREATER; type <= ai::gbless::BLESSING_SANCTUARY_GREATER;
+         type += 2)
+    {
+        std::string const name =
+            ai::gbless::BlessingSpellName(static_cast<ai::gbless::BlessingType>(type));
+        if (!name.empty() && botAI->GetAiObjectContext()->GetValue<uint32>("spell id", name)->Get())
+            return true;
+    }
+
+    return false;
 }
 
 bool CastGreaterBlessingAssignmentAction::HasPendingAssignment()

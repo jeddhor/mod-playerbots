@@ -46,6 +46,9 @@ end
 -- catches it whichever order they fire in, then stops. Polling forever would be wasteful for
 -- something that only matters for a second or two after a roll begins.
 local SWEEP_SECONDS = 2.0
+-- Longer, for the case where the roll arrived before we knew whether self-bot mode was on. The
+-- answer has to make a round trip to the server and back before the sweep can act on it.
+local UNKNOWN_SWEEP_SECONDS = 6.0
 local sweepLeft = 0
 
 local watcher = CreateFrame("Frame")
@@ -63,9 +66,18 @@ watcher:SetScript("OnEvent", function(self, event)
     end
 
     if not selfBotActive() then
-        -- Unknown state is not the same as "off". Ask, so the next roll is handled correctly rather
-        -- than silently leaving stale dialogs for the rest of the session.
-        if BI.selfInfo == nil and BI.RequestAlts then BI:RequestAlts() end
+        if BI.selfInfo ~= nil then
+            -- Known to be off. The dialog is the player's to answer.
+            return
+        end
+
+        -- Unknown state. Asking was not enough on its own: the answer arrives a moment later and
+        -- nothing re-ran the hide, so the roll that triggered the question stayed on screen for the
+        -- player to answer -- which is the one outcome this file exists to prevent. Start sweeping
+        -- now instead; OnUpdate re-checks every frame and hides as soon as the answer lands.
+        if BI.RequestAlts then BI:RequestAlts() end
+        sweepLeft = UNKNOWN_SWEEP_SECONDS
+        self:Show()
         return
     end
 

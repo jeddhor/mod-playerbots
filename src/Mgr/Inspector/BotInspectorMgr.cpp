@@ -663,6 +663,14 @@ void BotInspectorMgr::HandleSelfStat(Player* to)
     NewRpgStatus const status = rpg.GetStatus();
 
     rows.push_back(Acore::StringFormat("act:{}", DescribeRpgStatus(status)));
+
+    // Whether the character is fighting, which is not the same question as which activity it chose.
+    //
+    // The activity is set once and then persists for up to half an hour; combat runs on a different
+    // engine entirely. A character being jumped repeatedly on its way to a gather route reports
+    // "Gathering" for the whole run while never taking a step, and the display said so without ever
+    // mentioning the fighting -- which reads as the activity being wrong rather than interrupted.
+    rows.push_back(Acore::StringFormat("combat:{}", to->IsInCombat() ? 1 : 0));
     rows.push_back(Acore::StringFormat("secs:{}", GetMSTimeDiffToNow(rpg.startT) / 1000));
 
     // What the engine actually ran last tick. "Heading to grind" says what it intends; this says

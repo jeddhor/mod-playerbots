@@ -21,7 +21,13 @@ local DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH = 300, 200, 640
 local FIELDS = {
     {
         label = "Doing",
-        get = function(s) return s.act end,
+        -- Combat is called out beside the activity rather than replacing it. Both are true at once
+        -- and they explain each other: an activity that has not advanced in twenty minutes makes
+        -- sense the moment you can see the character has been fighting the whole time.
+        get = function(s)
+            if s.combat then return (s.act or "?") .. " |cffff8844(fighting)|r" end
+            return s.act
+        end,
     },
     {
         label = "For",

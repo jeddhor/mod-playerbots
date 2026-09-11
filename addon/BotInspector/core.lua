@@ -329,7 +329,7 @@ local function dispatch(verb, key, rows)
                 stat.routeZone = tonumber(f[4])
             elseif key == "off" then
                 stat.off = true
-            elseif key == "move" or key == "human" then
+            elseif key == "move" or key == "human" or key == "combat" then
                 stat[key] = f[2] == "1"
             elseif key then
                 stat[key] = tonumber(f[2]) or f[2]

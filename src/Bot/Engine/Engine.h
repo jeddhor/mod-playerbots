@@ -79,6 +79,16 @@ public:
     void ChangeStrategy(std::string const names);
     std::string const GetLastAction() { return lastAction; }
 
+    /**
+     * The name of the last action that actually ran.
+     *
+     * Not GetLastAction, despite the name: that returns a 512 character rolling trace of everything
+     * the engine considered -- ticks, pushes, rejections -- and showing it to somebody produces a
+     * fragment like "PUSH:follow" with no way to tell it apart from an answer. This is the single
+     * action that returned success.
+     */
+    std::string const& GetLastExecutedAction() const { return lastExecutedAction; }
+
     virtual bool DoNextAction(Unit*, uint32 depth = 0, bool minimal = false);
     ActionResult ExecuteAction(std::string const name, Event event = Event(), std::string const qualifier = "");
 
@@ -115,6 +125,7 @@ protected:
     std::map<std::string, Strategy*> strategies;
     float lastRelevance;
     std::string lastAction;
+    std::string lastExecutedAction;
     uint32 strategyTypeMask;
     bool hasTargetExclusions = false;
     NamedObjectFactoryList<ActionNode> actionNodeFactories;

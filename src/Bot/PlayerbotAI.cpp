@@ -6054,7 +6054,7 @@ std::string PlayerbotAI::GetLastAction(BotState state)
     if (state >= BOT_STATE_MAX || !engines[state])
         return "";
 
-    return engines[state]->GetLastAction();
+    return engines[state]->GetLastExecutedAction();
 }
 
 void PlayerbotAI::NoteHumanMovementInput(bool holding)
