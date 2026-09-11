@@ -555,6 +555,9 @@ public:
      */
     void NoteHumanMovementInput(bool holding);
 
+    /// Keep a believed key-hold alive. Called for movement heartbeats; never starts a hold.
+    void RefreshHumanMovementInput();
+
     /// True while the person is steering, or just was. Movement decisions must not run.
     bool HumanIsDriving() const;
 
@@ -663,6 +666,10 @@ protected:
     // grace period is measured from.
     bool _humanHoldingKey{false};
     uint32 _humanInputMs{0};
+
+    // Longest a key-down is believed without further confirmation. The release packet is not
+    // guaranteed to arrive, so this is what stops a missed one disabling the AI forever.
+    static constexpr uint32 HUMAN_HOLD_EXPIRY_MS = 3000;
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

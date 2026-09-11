@@ -299,6 +299,7 @@ public:
     uint32 unfinishedLootRetrySeconds;
 
     // How long after a person lets go of the movement keys the AI waits before steering again.
+    bool humanControlEnabled;
     uint32 humanControlGraceMs;
 
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.

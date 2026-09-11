@@ -427,7 +427,14 @@ private:
      */
     static void NoteHumanSteering(Player* player, uint16 opcode)
     {
-        bool holding;
+        // Three kinds, and the distinction matters more than it looks. A key going down has to be
+        // believed until it comes up; a key coming up ends that; and an action with no matching
+        // release must never be treated as a hold, because nothing would ever clear it. Jump is the
+        // trap -- there is no "stop jumping" opcode, so one jump used to leave a self bot able to
+        // fight and loot but unable to walk for the rest of the session.
+        enum class Kind : uint8 { Down, Up, Momentary, Heartbeat, Ignore };
+        Kind kind;
+
         switch (opcode)
         {
             case MSG_MOVE_START_FORWARD:
@@ -437,15 +444,28 @@ private:
             case MSG_MOVE_START_TURN_LEFT:
             case MSG_MOVE_START_TURN_RIGHT:
             case MSG_MOVE_START_SWIM:
-            case MSG_MOVE_JUMP:
-                holding = true;
+                kind = Kind::Down;
                 break;
 
             case MSG_MOVE_STOP:
             case MSG_MOVE_STOP_STRAFE:
             case MSG_MOVE_STOP_TURN:
             case MSG_MOVE_STOP_SWIM:
-                holding = false;
+                kind = Kind::Up;
+                break;
+
+            // Jump only. The landing is deliberately not counted: a self bot walking off a step
+            // sends one too, and treating that as input would pause the AI for the grace period
+            // every time it stepped down anything. A player-initiated jump has already started the
+            // grace here, so the landing adds nothing.
+            case MSG_MOVE_JUMP:
+                kind = Kind::Momentary;
+                break;
+
+            // Sent while the client is moving under its own power. Not evidence of steering on its
+            // own, but it is what keeps a real key-hold from expiring.
+            case MSG_MOVE_HEARTBEAT:
+                kind = Kind::Heartbeat;
                 break;
 
             default:
@@ -457,8 +477,26 @@ private:
         if (!IsSelfBot(player))
             return;
 
-        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
-            botAI->NoteHumanMovementInput(holding);
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+        if (!botAI)
+            return;
+
+        switch (kind)
+        {
+            case Kind::Down:
+                botAI->NoteHumanMovementInput(true);
+                break;
+            case Kind::Up:
+            case Kind::Momentary:
+                // Both start the grace period without latching anything.
+                botAI->NoteHumanMovementInput(false);
+                break;
+            case Kind::Heartbeat:
+                botAI->RefreshHumanMovementInput();
+                break;
+            case Kind::Ignore:
+                break;
+        }
     }
 
 public:

@@ -6064,15 +6064,39 @@ void PlayerbotAI::NoteHumanMovementInput(bool holding)
         ReleaseMovementToHuman();
 }
 
+void PlayerbotAI::RefreshHumanMovementInput()
+{
+    // Only meaningful while a key is believed down. A heartbeat on its own is not evidence that a
+    // person is steering -- it is just the client reporting a position -- so this never starts a
+    // hold, it only keeps an existing one from expiring.
+    if (_humanHoldingKey)
+        _humanInputMs = getMSTime();
+}
+
 bool PlayerbotAI::HumanIsDriving() const
 {
-    if (_humanHoldingKey)
-        return true;
+    if (!sPlayerbotAIConfig.humanControlEnabled)
+        return false;
 
     if (!_humanInputMs)
         return false;
 
-    return GetMSTimeDiffToNow(_humanInputMs) < sPlayerbotAIConfig.humanControlGraceMs;
+    uint32 const since = GetMSTimeDiffToNow(_humanInputMs);
+
+    // A held key is believed only while it keeps being confirmed.
+    //
+    // Nothing guarantees the matching release ever arrives. A jump has no "stop jumping" opcode at
+    // all, and a client that drops mid-stride never sends one either -- so a flag that could only
+    // be cleared by a packet strands the AI for good. It did exactly that: one jump left a self bot
+    // able to fight and loot but unable to walk anywhere, because every movement decision was still
+    // being told a person had their hand on the key.
+    //
+    // Heartbeats refresh it while the key really is down, so holding W keeps the AI out of the way
+    // for as long as it is held; letting go stops the heartbeats and this lapses on its own.
+    if (_humanHoldingKey && since < HUMAN_HOLD_EXPIRY_MS)
+        return true;
+
+    return since < sPlayerbotAIConfig.humanControlGraceMs;
 }
 
 void PlayerbotAI::ReleaseMovementToHuman()

@@ -3097,6 +3097,17 @@ AiPlayerbot.UnfinishedLootRetrySeconds = 300
 
 AiPlayerbot.HumanControlGraceMs = 1500
 
+#
+#    AiPlayerbot.HumanControlEnabled
+#        Description: Let a person's movement keys override the AI on a self bot. Set to 0 if a
+#                     self bot ever fights and loots but refuses to walk anywhere -- that is what
+#                     this feature looks like when it goes wrong.
+#        Default:     1
+#
+
+AiPlayerbot.HumanControlEnabled = 1
+
+
 
 
 

@@ -459,6 +459,10 @@ bool PlayerbotAIConfig::Initialize()
 
     // Long enough to cover the gap between two taps of a movement key, short enough that letting go
     // hands control back straight away. A person steering rarely holds one key down continuously.
+    // A kill switch, because the failure mode of this feature is severe and silent: if it ever
+    // decides a person is steering when they are not, the bot can still fight and loot but cannot
+    // walk anywhere, which from inside the game looks like the AI simply not working.
+    humanControlEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HumanControlEnabled", true);
     humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
 
     // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
