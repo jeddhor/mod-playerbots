@@ -55,6 +55,20 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
 
     float distance = 0;
     Unit* result = nullptr;
+
+    // The best candidate that some quest in the log actually wants, tracked apart from the rest.
+    //
+    // Selection below is nearest-wins, which in a busy place means a bot on a kill quest fights
+    // whatever is closest and never touches its objective. Watched directly: a character with "Down
+    // the Dead Scar" stood in the Dead Scar killing Gangled Cannibals for minutes with the quest
+    // stuck at 1 of 10, because a Cannibal was always nearer than a Risen Hungerer.
+    //
+    // Preferring the quest mob is what a person does -- you walk past the thing that is not on your
+    // list. Anything already attacking the bot is unaffected: the attackers loop above returns
+    // before any of this, so self defence still comes first.
+    float questDistance = 0;
+    Unit* questResult = nullptr;
+
     std::unordered_map<uint32, bool> needForQuestMap;
 
     // Two of the filters below are tuned for open-world grinding and are actively wrong in a
@@ -168,6 +182,16 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
                 continue;
         }
 
+        // Cached per creature entry, so a crowd of the same mob costs one lookup rather than one
+        // per candidate.
+        if (needForQuestMap.find(unit->GetEntry()) == needForQuestMap.end())
+            needForQuestMap[unit->GetEntry()] = needForQuest(unit);
+
+        bool const wanted = needForQuestMap[unit->GetEntry()];
+
+        float candidateDistance = 0.0f;
+        bool measured = false;
+
         if (group)
         {
             Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
@@ -178,25 +202,40 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
                     continue;
 
                 float d = member->GetDistance(unit);
-                if (!result || d < distance)
+                if (!measured || d < candidateDistance)
                 {
-                    distance = d;
-                    result = unit;
+                    candidateDistance = d;
+                    measured = true;
                 }
             }
         }
         else
         {
-            float newdistance = bot->GetDistance(unit);
-            if (!result || (newdistance < distance))
+            candidateDistance = bot->GetDistance(unit);
+            measured = true;
+        }
+
+        if (!measured)
+            continue;
+
+        if (wanted)
+        {
+            if (!questResult || candidateDistance < questDistance)
             {
-                distance = newdistance;
-                result = unit;
+                questDistance = candidateDistance;
+                questResult = unit;
             }
+        }
+
+        if (!result || candidateDistance < distance)
+        {
+            distance = candidateDistance;
+            result = unit;
         }
     }
 
-    return result;
+    // A quest mob anywhere in range beats the nearest of anything else.
+    return questResult ? questResult : result;
 }
 
 bool GrindTargetValue::needForQuestBy(Player* who, Unit* target)
