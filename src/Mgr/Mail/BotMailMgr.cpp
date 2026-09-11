@@ -5,6 +5,7 @@
  */
 
 #include "BotMailMgr.h"
+#include "BotEventLogMgr.h"
 
 #include "DatabaseEnv.h"
 #include "GameTime.h"
@@ -165,6 +166,11 @@ bool BotMailMgr::Collect(Player* bot)
         // minimap icon, which is the symptom that started this.
         LOG_DEBUG("playerbots", "[Logistics] {} collected {} copper and {} item(s) from mail, cleared {} mail(s)",
                   bot->GetName(), money, collected, emptied.size());
+
+        sBotEventLogMgr.Record(bot, BotEventLogMgr::Cat::Mail,
+                               Acore::StringFormat("read mail: {} item(s), {} mail(s) cleared", collected,
+                                                   uint32(emptied.size())),
+                               int64(money));
 
         std::unique_lock<std::shared_mutex> guard(instance()._mutex);
         ++instance()._collections;

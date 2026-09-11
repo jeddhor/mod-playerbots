@@ -94,6 +94,16 @@ private:
      */
     void HandleSelfStat(Player* to);
 
+    /**
+     * Recent activity for the caller's own self bot, newer than the sequence they already hold.
+     *
+     * Incremental on purpose. The panel polls, and resending a four hundred entry history every
+     * couple of seconds would cost more bandwidth than everything else the inspector does put
+     * together; passing back the highest sequence seen also means a client that missed a poll
+     * catches up without a special case for it.
+     */
+    void HandleSelfLog(Player* to, uint32 afterSeq);
+
     /// Put `bot` in `master`'s group, creating the group if this is the first member. True on success.
     bool JoinMasterParty(Player* master, Player* bot);
 

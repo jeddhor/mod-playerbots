@@ -5,6 +5,7 @@
  */
 
 #include "BotInspectorMgr.h"
+#include "BotEventLogMgr.h"
 #include "NewRpgInfo.h"
 #include "MapMgr.h"
 
@@ -759,6 +760,23 @@ void BotInspectorMgr::HandleSelfStat(Player* to)
     Reply(to, "SELFSTAT", "0", rows);
 }
 
+void BotInspectorMgr::HandleSelfLog(Player* to, uint32 afterSeq)
+{
+    if (!to)
+        return;
+
+    // Capped per reply rather than per poll. A client arriving late asks from sequence 0 and would
+    // otherwise pull the whole ring in one message; it simply asks again with a higher sequence and
+    // walks forward a page at a time.
+    constexpr uint32 MAX_ROWS_PER_REPLY = 60;
+
+    std::vector<std::string> rows = sBotEventLogMgr.GetSince(to, afterSeq, MAX_ROWS_PER_REPLY);
+
+    // The key carries the sequence the client asked from, so a reply that crosses with a newer
+    // request can be recognised as stale rather than appended twice.
+    Reply(to, "SELFLOG", std::to_string(afterSeq), rows);
+}
+
 bool BotInspectorMgr::JoinMasterParty(Player* master, Player* bot)
 {
     if (!master || !bot || master == bot)
@@ -1046,6 +1064,10 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
         HandleAlts(sender);
     else if (verb == "SELFSTAT")
         HandleSelfStat(sender);
+    else if (verb == "SELFLOG")
+        HandleSelfLog(sender, parts.size() >= 4
+                                  ? static_cast<uint32>(std::strtoul(parts[3].c_str(), nullptr, 10))
+                                  : 0u);
     else if (verb == "ALTCTL" && parts.size() >= 5)
         HandleAltControl(sender, parts[3],
                          static_cast<ObjectGuid::LowType>(std::strtoul(parts[4].c_str(), nullptr, 10)));

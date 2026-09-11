@@ -5,6 +5,7 @@
  */
 
 #include "UseItemAction.h"
+#include "BotEventLogMgr.h"
 #include "ChatHelper.h"
 #include "Event.h"
 #include "ItemPackets.h"
@@ -70,6 +71,13 @@ bool UseItemAction::UseItem(Item* item, ObjectGuid goGuid, Item* itemTarget, Uni
 
     if (bot->IsNonMeleeSpellCast(false))
         return false;
+
+    // The single funnel every use goes through -- auto, on a game object, and on another item all
+    // arrive here -- so one line covers the lot. Recorded on the attempt rather than on the result
+    // because the cast is queued, not resolved, by the time this returns.
+    if (item && item->GetTemplate())
+        sBotEventLogMgr.Record(bot, BotEventLogMgr::Cat::Use,
+                               Acore::StringFormat("used {}", item->GetTemplate()->Name1));
 
     uint8 bagIndex = item->GetBagSlot();
     uint8 slot = item->GetSlot();

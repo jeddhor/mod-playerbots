@@ -5,6 +5,7 @@
  */
 
 #include "BotEconomyMgr.h"
+#include "BotEventLogMgr.h"
 
 #include "AuctionHouseMgr.h"
 #include "DatabaseEnv.h"
@@ -252,6 +253,11 @@ uint32 BotEconomyMgr::SellToVendor(Player* bot, Item* item, bool goldCheat)
 
     uint32 const price = proto->SellPrice * item->GetCount();
     uint32 const itemGuid = item->GetGUID().GetCounter();
+
+    // Named before the item is destroyed, because afterwards there is nothing left to name it by.
+    sBotEventLogMgr.Record(bot, BotEventLogMgr::Cat::Sell,
+                           Acore::StringFormat("sold {}x{} to vendor", item->GetCount(), proto->Name1),
+                           goldCheat ? 0 : int64(price));
 
     bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
 
@@ -626,6 +632,13 @@ bool BotEconomyMgr::PostAuction(Player* bot, Item* item)
     LOG_DEBUG("playerbots", "[Economy] {} listed {}x{} ({}) for {}c buyout (depth {}, factor {:.2f})",
               bot->GetName(), count, proto->Name1, proto->ItemId, buyout, depth, depthFactor);
 
+    // No money moves yet -- it arrives by mail if someone buys, and the item comes back if nobody
+    // does -- so this records no delta. The attempt number is the useful part: it is what decides
+    // whether the next failure sends the item to a vendor instead.
+    sBotEventLogMgr.Record(bot, BotEventLogMgr::Cat::Auction,
+                           Acore::StringFormat("listed {}x{} for {}c (attempt {})", count, proto->Name1,
+                                               buyout, GetListingAttempts(item->GetGUID()) + 1));
+
     return true;
 }
 
@@ -694,6 +707,13 @@ bool BotEconomyMgr::BuyoutAuction(Player* bot, uint32 auctionId, AuctionHouseId 
     // Mirrors the buyout branch of WorldSession::HandleAuctionPlaceBid. The mails are what actually
     // pay the seller and deliver the goods, and they must be inside the transaction.
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+
+    // Recorded here, while the auction still exists to be named. RemoveAuction below frees it, and
+    // everything after that point has only the id.
+    if (ItemTemplate const* boughtProto = sObjectMgr->GetItemTemplate(auction->item_template))
+        sBotEventLogMgr.Record(bot, BotEventLogMgr::Cat::Auction,
+                               Acore::StringFormat("bought {} at auction for {}c", boughtProto->Name1, buyout),
+                               -int64(buyout));
 
     bot->ModifyMoney(-int32(buyout));
     if (auction->bidder)

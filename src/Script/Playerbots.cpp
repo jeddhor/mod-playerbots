@@ -38,6 +38,7 @@
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
 #include "QuestIntegrityMgr.h"
+#include "BotEventLogMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
 #include "cmath"
@@ -99,8 +100,81 @@ public:
         PLAYERHOOK_ON_GIVE_EXP,
         PLAYERHOOK_ON_BEFORE_TELEPORT,
         PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE,
-        PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE
+        PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE,
+        // Feed the self-bot event log. All four are no-ops for anyone without a self bot attached.
+        PLAYERHOOK_ON_PLAYER_JUST_DIED,
+        PLAYERHOOK_ON_PVP_KILL,
+        PLAYERHOOK_ON_MONEY_CHANGED,
+        PLAYERHOOK_ON_LOOT_ITEM
     }) {}
+
+    /**
+     * What killed the character.
+     *
+     * OnPlayerKilledByCreature names the creature, and PvP deaths name the player, but neither
+     * fires for a fall, a drowning or a hostile spell whose caster has already gone. OnPlayerJustDied
+     * fires for all of them, so it is the backstop: it records the death, and the two specific hooks
+     * add the culprit when there is one to add.
+     */
+    void OnPlayerJustDied(Player* player) override
+    {
+        if (!player)
+            return;
+
+        std::string what = "died";
+        if (Unit* killer = player->GetVictim())
+            what = Acore::StringFormat("died fighting {} (level {})", killer->GetName(), killer->GetLevel());
+
+        sBotEventLogMgr.Record(player, BotEventLogMgr::Cat::Death,
+                               Acore::StringFormat("{} in {}", what,
+                                                   PlayerbotAI::GetLocalizedAreaName(
+                                                       sAreaTableStore.LookupEntry(player->GetAreaId()))));
+    }
+
+    void OnPlayerPVPKill(Player* killer, Player* killed) override
+    {
+        if (killed && killer)
+            sBotEventLogMgr.Record(killed, BotEventLogMgr::Cat::Death,
+                                   Acore::StringFormat("killed by player {} (level {})", killer->GetName(),
+                                                       killer->GetLevel()));
+    }
+
+    /**
+     * Money in and out that nothing more specific has already explained.
+     *
+     * Vendoring, auctions and mail record their own lines with the item named, which is far more
+     * use than "+44c". This catches everything else -- quest rewards, loot, training, repairs, taxi
+     * fares -- so the running balance in the panel always adds up even when the cause is something
+     * nobody thought to instrument.
+     */
+    void OnPlayerMoneyChanged(Player* player, int32& amount) override
+    {
+        if (!player || !amount)
+            return;
+
+        // Small change is noise. A bot picks up coin from every corpse it loots, and a log where
+        // every one of those is a line is a log nobody reads.
+        constexpr int32 NOTABLE_COPPER = 1000;
+        if (amount > -NOTABLE_COPPER && amount < NOTABLE_COPPER)
+            return;
+
+        sBotEventLogMgr.Record(player, BotEventLogMgr::Cat::Gold,
+                               amount > 0 ? "gained coin" : "spent coin", amount);
+    }
+
+    void OnPlayerLootItem(Player* player, Item* item, uint32 count, ObjectGuid /*lootguid*/) override
+    {
+        if (!player || !item || !item->GetTemplate())
+            return;
+
+        // Only what is worth reading back. Greys and commons are the bulk of looting and would bury
+        // everything else in the panel.
+        if (item->GetTemplate()->Quality < ITEM_QUALITY_UNCOMMON)
+            return;
+
+        sBotEventLogMgr.Record(player, BotEventLogMgr::Cat::Loot,
+                               Acore::StringFormat("looted {}x{}", count, item->GetTemplate()->Name1));
+    }
 
     /**
      * Death is the sensor for the help signal.
@@ -759,6 +833,10 @@ public:
         }
 
         sRandomPlayerbotMgr.OnPlayerLogout(player);
+
+        // The event log is a session view of what this character did, not a record to keep.
+        if (player)
+            sBotEventLogMgr.Forget(player->GetGUID());
     }
 
     void OnPlayerbotLogoutBots() override
