@@ -63,20 +63,26 @@ bool VendorJunkAction::IsJunk(Item* item) const
     // quest needs, ammo, profession reagents and the master's requirements. Only sell what it
     // independently agrees is vendor fodder.
     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", proto->ItemId);
-    if (usage != ITEM_USAGE_VENDOR && usage != ITEM_USAGE_NONE)
-        return false;
 
+    // Above the junk threshold, outgrown soulbound gear is the only other thing worth selling, and
+    // it needs a different test -- checked before the VENDOR/NONE filter because the classification
+    // it acts on, ITEM_USAGE_BAD_EQUIP, would not survive it.
     if (proto->Quality > sPlayerbotAIConfig.autoVendorJunkMaxQuality)
         return IsOutleveledGear(item, proto, usage);
+
+    if (usage != ITEM_USAGE_VENDOR && usage != ITEM_USAGE_NONE)
+        return false;
 
     return true;
 }
 
 bool VendorJunkAction::IsOutleveledGear(Item* item, ItemTemplate const* proto, ItemUsage usage) const
 {
-    // Only the classifier's own verdict qualifies. ITEM_USAGE_NONE means "no opinion", which is a
-    // fine reason to sell a grey but not nearly enough to justify destroying a rare.
-    if (usage != ITEM_USAGE_VENDOR)
+    // ITEM_USAGE_BAD_EQUIP is the verdict that matters here: it means the bot weighed this piece
+    // against what it is wearing and decided against it. ITEM_USAGE_VENDOR counts too, for gear it
+    // cannot use at all. ITEM_USAGE_NONE deliberately does not -- "no opinion" is a fine reason to
+    // sell a grey and nowhere near enough to justify destroying a rare.
+    if (usage != ITEM_USAGE_BAD_EQUIP && usage != ITEM_USAGE_VENDOR)
         return false;
 
     // Gear only. Restricting the class keeps this away from containers, reagents and consumables --
@@ -102,7 +108,18 @@ bool VendorJunkAction::IsOutleveledGear(Item* item, ItemTemplate const* proto, I
     if (!item->IsSoulBound())
         return false;
 
-    return true;
+    // The bot must already be wearing something in the slot this would go to.
+    //
+    // BAD_EQUIP does not only mean "worse than what I have". It is also returned for an empty slot
+    // whose candidate scored zero, which is most low level armour -- it carries no stats, so its
+    // whole score is a tiebreaker. Selling on the verdict alone would strip bots of the only gear
+    // they had for that slot, which is the opposite of the point. An occupied slot is what makes
+    // this surplus rather than the bot's only option.
+    uint8 const slot = botAI->FindEquipSlot(proto, NULL_SLOT, true);
+    if (slot == NULL_SLOT)
+        return false;
+
+    return bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) != nullptr;
 }
 
 uint32 VendorJunkAction::SellWithoutVendor(Item* item)
