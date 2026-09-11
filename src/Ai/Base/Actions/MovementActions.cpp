@@ -185,6 +185,39 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
         return false;
     }
 
+    // Do not tear down a spline a self bot is still walking.
+    //
+    // IsWaitingForLastMove caps its stored delay at maxWaitForMove (5s), but a three hundred yard
+    // walk takes the better part of a minute. So once the cap lapses this function is re-entered
+    // every few seconds and DoMovePoint issues mm->Clear() followed by a fresh MovePoint from
+    // wherever the bot has got to.
+    //
+    // For the two hundred clientless bots that costs nothing: the server owns their position and
+    // simply recomputes. A self bot's client owns its position too, so every rebuild is a resync
+    // between the two, and a run of them reads in game as the character briefly moving faster than
+    // any ground mount. MoveFarTo already guards this for the RPG layer; every other caller of
+    // MoveTo -- following, gathering, approaching -- had no such protection.
+    //
+    // Scoped to self bots on purpose. The clientless path is long-tested and this changes nothing
+    // about it.
+    if (IsSelfBot(bot) && bot->isMoving())
+    {
+        LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+        if (lastMove.lastMoveToMapId == bot->GetMapId())
+        {
+            float const committed =
+                bot->GetExactDist(lastMove.lastMoveToX, lastMove.lastMoveToY, lastMove.lastMoveToZ);
+            float const drift = std::sqrt(std::pow(lastMove.lastMoveToX - x, 2.0f) +
+                                          std::pow(lastMove.lastMoveToY - y, 2.0f) +
+                                          std::pow(lastMove.lastMoveToZ - z, 2.0f));
+
+            // Still walking, and still walking somewhere close enough to where it is now being
+            // asked to go that reissuing would only restate the same intent.
+            if (committed > 10.0f && drift < 10.0f)
+                return true;
+        }
+    }
+
     bool generatePath = !bot->IsFlying() && !bot->isSwimming();
 
     // Snap the destination to a height the character may legally occupy -- but only for a bot with
@@ -201,6 +234,10 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
     // sits commented out in the dead upstream block below; this puts it back where it is needed and
     // nowhere else, so the two hundred bots that never had the problem keep the behaviour they have
     // been tested with.
+    // Far enough away that a building's floor is no longer a plausible explanation for a height
+    // disagreement. Chosen as roughly the span of a large interior rather than tuned.
+    constexpr float NEARBY_FLOOR_DISTANCE = 60.0f;
+
     if (generatePath && IsSelfBot(bot))
     {
         // Start the floor search from whichever surface the bot is actually standing on, not from
@@ -221,7 +258,19 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
         // that puts a bot inside geometry, so it stays tightly bounded -- and a large jump either
         // way means the query found ground somewhere unrelated, which would be its own bug.
         float const delta = allowedZ - z;
-        bool accept = delta >= 0.0f ? delta < 25.0f : delta > -10.0f;
+
+        // The generous upward allowance exists for one specific case: the bot is standing on a
+        // floor -- a church, a ramp -- and the caller handed it a terrain-level Z from underneath
+        // that building. Raising a whole storey is right there, and that case is always *close*,
+        // because the bot is standing on the very surface it is being asked to walk along.
+        //
+        // A destination hundreds of yards away is a different thing entirely. Lifting that by
+        // twenty-odd yards does not correct a floor, it invents a point in mid-air on the far side
+        // of whatever is between here and there, and the bot sets off towards it. So the storey-
+        // sized allowance is scoped to the distance where a storey is a plausible explanation.
+        float const destDistance = bot->GetExactDist2d(x, y);
+        float const upwardAllowance = destDistance <= NEARBY_FLOOR_DISTANCE ? 25.0f : 5.0f;
+        bool accept = delta >= 0.0f ? delta < upwardAllowance : delta > -10.0f;
 
         // A raise has to be somewhere the bot could actually walk to from where it stands.
         //
@@ -237,7 +286,26 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
             accept = false;
 
         if (accept)
+        {
+            // Logged because this is invisible from inside the game: a destination quietly moved
+            // upward looks like the character deciding to fly, and nothing else in the log says it
+            // happened. Only meaningful lifts, so a walk across flat ground stays silent.
+            if (std::fabs(delta) > 3.0f)
+            {
+                LOG_DEBUG("playerbots",
+                          "[SelfBotZ] {} destination Z {:.1f} -> {:.1f} (delta {:+.1f}) at {:.0f} "
+                          "yards; bot stands at {:.1f}",
+                          bot->GetName(), z, allowedZ, delta, destDistance, bot->GetPositionZ());
+            }
+
             z = allowedZ;
+        }
+        else if (std::fabs(delta) > 3.0f)
+        {
+            LOG_DEBUG("playerbots",
+                      "[SelfBotZ] {} refused a {:+.1f} yard Z correction at {:.0f} yards",
+                      bot->GetName(), delta, destDistance);
+        }
     }
 
     bool disableMoveSplinePath =

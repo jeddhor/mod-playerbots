@@ -44,6 +44,18 @@ constexpr float CLUSTER_RADIUS = 50.0f;
  */
 constexpr float CLUSTER_VERTICAL_BAND = 15.0f;
 
+// How much height a single hop along a route may cover.
+//
+// Link distance is measured in 2D, so until this existed a route could chain a node in the valley
+// to one 150 yards up a ridge, back down, and up again -- all within the 300 yard horizontal bound.
+// Mining nodes love ridgelines, so in a zone like Elwynn that is not a rare shape, it is the usual
+// one, and the result is a bot mountaineering between ore veins for minutes at a time.
+//
+// The nodes are still worth mining; they just belong to a route of their own, walked by a bot that
+// is already up there, rather than being stitched into a valley route. Forty yards is about the
+// rise of a hillside path -- enough for undulating ground, not enough for a climb.
+constexpr float MAX_LINK_CLIMB = 40.0f;
+
 float Dist2(GatherRouteMgr::Node const& a, GatherRouteMgr::Node const& b)
 {
     float dx = a.x - b.x;
@@ -226,6 +238,10 @@ void GatherRouteMgr::BuildRoutesForBucket(uint32 zoneId, uint32 skillId, std::ve
             for (size_t i = 0; i < nodes.size(); ++i)
             {
                 if (used[i] || nodes[i].mapId != from.mapId)
+                    continue;
+
+                // Vertical first: it is the cheap test, and it is the one that actually rejects.
+                if (std::fabs(nodes[i].z - from.z) > MAX_LINK_CLIMB)
                     continue;
 
                 float d2 = Dist2(from, nodes[i]);

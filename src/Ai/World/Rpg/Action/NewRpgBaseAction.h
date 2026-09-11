@@ -127,6 +127,17 @@ protected:
     /// P13.4 -- the next pull inside an instance, or an empty position when there is none.
     WorldPosition SelectDungeonPullPos();
 
+    /**
+     * Is this area somewhere the other faction owns?
+     *
+     * Nothing in destination selection asked this, so a level 13 blood elf walked out of a gather
+     * route in Elwynn, through the gates of Stormwind, and started trading blows with a level 22
+     * guard. She was not doing anything wrong by her own rules -- the guard struck first, and
+     * fighting back bypasses the level filter, correctly. The mistake was made long before, when
+     * something chose a destination in a city her faction cannot enter.
+     */
+    static bool IsHostileTerritory(Player* bot, uint32 areaOrZoneId);
+
     /// Is this activity permitted for this bot -- base weight, with any archetype override?
     bool IsRpgStatusPermitted(NewRpgStatus status);
 

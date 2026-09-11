@@ -19,6 +19,8 @@
 #include "IVMapMgr.h"
 #include "NewRpgInfo.h"
 #include "AttackersValue.h"
+#include "DBCStores.h"
+#include "MapMgr.h"
 #include "NewRpgStrategy.h"
 #include "Object.h"
 #include "ObjectAccessor.h"
@@ -157,6 +159,26 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
             if (remaining > 10.0f)
                 return true;
         }
+    }
+
+    // Fighting is not being stuck.
+    //
+    // A walk across a zone gets interrupted by whatever aggroes on the way. The bot stops, kills it,
+    // and resumes -- and for the whole of that fight it makes no progress toward the destination, so
+    // the counter below treats every interruption as evidence that the route is impossible. Three
+    // fights along one route was enough to reach the threshold and teleport, which is exactly what
+    // an operator watched happen: a few attempts to set off, a mob each time, and then the bot gave
+    // up and blinked across the zone.
+    //
+    // The timer is reset rather than merely paused, because the fight moved the bot -- often
+    // backwards, chasing something -- and the distance it had made before the fight is no longer the
+    // baseline to judge the next attempt against.
+    if (bot->IsInCombat())
+    {
+        botAI->rpgInfo.stuckTs = getMSTime();
+        botAI->rpgInfo.stuckAttempts = 0;
+        botAI->rpgInfo.nearestMoveFarDis = bot->GetDistance(dest);
+        return true;
     }
 
     // stuck check
@@ -1660,6 +1682,11 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
         if (bot->GetMapId() != loc.GetMapId())
             continue;
 
+        // Not the other faction's capital. See IsHostileTerritory: contested ground is fair game,
+        // a city full of guards that aggro on sight is not a destination, it is a death.
+        if (IsHostileTerritory(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
+            continue;
+
         if (bot->GetExactDist(loc) > sPlayerbotAIConfig.questObjectiveMaxDistance)
             continue;
 
@@ -1728,6 +1755,9 @@ WorldPosition NewRpgBaseAction::SelectRandomCampPos(Player* bot)
     for (auto& loc : locs)
     {
         if (bot->GetMapId() != loc.GetMapId())
+            continue;
+
+        if (IsHostileTerritory(bot, sMapMgr->GetAreaId(bot->GetPhaseMask(), loc)))
             continue;
 
         float range = bot->GetLevel() <= 5 ? 500.0f : 2500.0f;
@@ -1956,6 +1986,34 @@ int32 NewRpgBaseAction::QuestWorkPriority(uint32 questId, Quest const* quest)
  * machinery do the travelling and hand over to WANDER_RANDOM to fight, so this adds a destination
  * rather than a second movement system.
  */
+bool NewRpgBaseAction::IsHostileTerritory(Player* bot, uint32 areaOrZoneId)
+{
+    if (!bot || !areaOrZoneId)
+        return false;
+
+    AreaTableEntry const* area = sAreaTableStore.LookupEntry(areaOrZoneId);
+    if (!area)
+        return false;
+
+    uint32 const owner = area->team;
+    if (owner == AREATEAM_NONE || owner == AREATEAM_ANY)
+        return false;
+
+    bool const botIsAlliance = bot->GetTeamId() == TEAM_ALLIANCE;
+    bool const areaIsAlliance = owner == AREATEAM_ALLY;
+    if (botIsAlliance == areaIsAlliance)
+        return false;
+
+    // Contested ground is the game. Walking into the other side's quest hubs, running their zones,
+    // being killed for it -- all of that is a world behaving as it should, and a bot that refused
+    // to leave its own territory would be a duller thing than one that occasionally dies for it.
+    //
+    // A capital is different in kind. It is wall-to-wall high level guards that aggro on sight, and
+    // there is nothing in one for a visiting bot except a walk to the graveyard. Nobody plays that
+    // way on purpose, so nothing should route there on purpose either.
+    return (area->flags & AREA_FLAG_CAPITAL) != 0;
+}
+
 WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
 {
     Map* map = bot->FindMap();
@@ -2362,8 +2420,23 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
                 float const travel = route->nodes.empty()
                                          ? 0.0f
                                          : bot->GetDistance2d(route->nodes.front().x, route->nodes.front().y);
-                LOG_DEBUG("playerbots", "[GatherStart] {} zone {} -> route zone {}, {:.0f} yards to first node",
-                          bot->GetName(), bot->GetZoneId(), route->zoneId, travel);
+                // Climb as well as distance. A route 380 yards away is unremarkable; the same route
+                // 380 yards away and 150 yards up is a mountaineering trip, and the two are
+                // indistinguishable in a log that only reports the horizontal.
+                if (IsHostileTerritory(bot, route->zoneId))
+                {
+                    LOG_DEBUG("playerbots", "[GatherStart] {} skipped route in zone {}: enemy capital",
+                              bot->GetName(), route->zoneId);
+                    return false;
+                }
+
+                float const climb = route->nodes.empty()
+                                        ? 0.0f
+                                        : route->nodes.front().z - bot->GetPositionZ();
+                LOG_DEBUG("playerbots",
+                          "[GatherStart] {} zone {} -> route zone {}, {:.0f} yards to first node "
+                          "({:+.0f} yards of climb)",
+                          bot->GetName(), bot->GetZoneId(), route->zoneId, travel, climb);
 
                 botAI->rpgInfo.ChangeToGather(route->zoneId, route->skillId);
                 return true;
