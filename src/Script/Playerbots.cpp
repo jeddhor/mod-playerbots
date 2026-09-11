@@ -28,6 +28,9 @@
 #include "BotFollowMgr.h"
 #include "BotMailMgr.h"
 #include "Opcodes.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
+#include "SharedDefines.h"
 #include "BotDungeonMgr.h"
 #include "BotLfgMgr.h"
 #include "BotToolMgr.h"
@@ -399,8 +402,70 @@ class PlayerbotsServerScript : public ServerScript
 {
 public:
     PlayerbotsServerScript() : ServerScript("PlayerbotsServerScript", {
-        SERVERHOOK_CAN_PACKET_RECEIVE
+        SERVERHOOK_CAN_PACKET_RECEIVE,
+        SERVERHOOK_CAN_PACKET_SEND
     }) {}
+
+    /**
+     * Keep the AI's own rejected casts out of a self bot owner's face.
+     *
+     * CanCastSpell deliberately answers "yes" to out of range, not in front, and moving: the bot
+     * commits to the spell and the movement layer closes the distance, and the attempt the server
+     * refuses in the meantime costs a clientless bot nothing. A self bot has a real client, so every
+     * one of those refusals arrives as an error -- and with error speech on, it is said out loud,
+     * over and over, for the whole of a fight.
+     *
+     * Suppressed here rather than by not attempting the cast, because the attempting is correct and
+     * long tested for the two hundred bots that do it invisibly. What is wrong is telling a person
+     * about a decision their AI already knows is fine.
+     *
+     * Only the results the AI knowingly provokes. Out of mana, on cooldown, immune and the rest all
+     * still reach the player, because those are answers to something they may well have asked for.
+     */
+    bool CanPacketSend(WorldSession* session, WorldPacket const& packet) override
+    {
+        if (!sPlayerbotAIConfig.suppressSelfBotSpellErrors)
+            return true;
+
+        if (packet.GetOpcode() != SMSG_CAST_FAILED)
+            return true;
+
+        Player* player = session ? session->GetPlayer() : nullptr;
+        if (!player || !IsSelfBot(player))
+            return true;
+
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+        // While a person is steering they may be casting too, and their own mistakes are theirs to
+        // hear about.
+        if (!botAI || botAI->HumanIsDriving())
+            return true;
+
+        // uint8 castCount, uint32 spellId, uint8 result -- read from a copy, because the packet is
+        // on its way to the client and moving its read position would corrupt what it sends.
+        if (packet.size() < 6)
+            return true;
+
+        WorldPacket copy(packet);
+        copy.rpos(0);
+
+        uint8 castCount;
+        uint32 spellId;
+        uint8 result;
+        copy >> castCount >> spellId >> result;
+
+        switch (result)
+        {
+            case SPELL_FAILED_OUT_OF_RANGE:
+            case SPELL_FAILED_NOT_INFRONT:
+            case SPELL_FAILED_UNIT_NOT_INFRONT:
+            case SPELL_FAILED_MOVING:
+            case SPELL_FAILED_TRY_AGAIN:
+            case SPELL_FAILED_NOT_STANDING:
+                return false;
+            default:
+                return true;
+        }
+    }
 
     void OnPacketReceived(WorldSession* session, WorldPacket const& packet) override
     {

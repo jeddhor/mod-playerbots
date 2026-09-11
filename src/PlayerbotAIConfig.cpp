@@ -472,6 +472,9 @@ bool PlayerbotAIConfig::Initialize()
     enemyTerritoryChance = std::min<uint32>(100,
         sConfigMgr->GetOption<uint32>("AiPlayerbot.EnemyTerritoryChance", 10));
 
+    suppressSelfBotSpellErrors =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.SuppressSelfBotSpellErrors", true);
+
     humanControlEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HumanControlEnabled", true);
     humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
 

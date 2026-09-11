@@ -3108,6 +3108,21 @@ AiPlayerbot.HumanControlGraceMs = 1500
 AiPlayerbot.HumanControlEnabled = 1
 
 #
+#    AiPlayerbot.SuppressSelfBotSpellErrors
+#        Description: Hide the spell failures a self bot's own AI provokes by design -- out of
+#                     range, not in front, moving -- from the owner's client. The AI commits to a
+#                     spell and lets movement close the distance, which costs a clientless bot
+#                     nothing but produces a stream of red text, and spoken errors, for a person
+#                     playing a self bot. Failures the player might actually care about, such as
+#                     out of mana or on cooldown, are never suppressed.
+#                     Nothing is hidden while the player is steering with the movement keys.
+#        Default:     1
+#
+
+AiPlayerbot.SuppressSelfBotSpellErrors = 1
+
+
+#
 #    AiPlayerbot.EnemyTerritoryPolicy
 #        Description: What a bot does about destinations in the other faction's territory -- the
 #                     faction levelling zones such as Elwynn and Westfall, or Tirisfal and

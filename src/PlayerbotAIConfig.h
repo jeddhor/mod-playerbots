@@ -305,6 +305,9 @@ public:
     uint32 enemyTerritoryPolicy;
     uint32 enemyTerritoryChance;
 
+    // Hide the cast failures a self bot's own AI provokes by design from its owner's client.
+    bool suppressSelfBotSpellErrors;
+
     bool humanControlEnabled;
     uint32 humanControlGraceMs;
 
