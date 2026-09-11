@@ -6049,6 +6049,14 @@ int32 PlayerbotAI::GetNearGroupMemberCount(float dis)
     return count;
 }
 
+std::string PlayerbotAI::GetLastAction(BotState state)
+{
+    if (state >= BOT_STATE_MAX || !engines[state])
+        return "";
+
+    return engines[state]->GetLastAction();
+}
+
 void PlayerbotAI::NoteHumanMovementInput(bool holding)
 {
     bool const wasDriving = HumanIsDriving();

@@ -282,7 +282,7 @@ end
 local selfPanel = W.Panel(page, 0, 0, 0, 0.30)
 selfPanel:SetPoint("BOTTOMLEFT", 8, 38)
 selfPanel:SetPoint("BOTTOMRIGHT", -8, 38)
-selfPanel:SetHeight(46)
+selfPanel:SetHeight(66)
 UI.selfPanel = selfPanel
 
 local selfLabel = selfPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -335,8 +335,45 @@ for _, def in ipairs({ { "Tank", "ROLE_TANK" }, { "Heal", "ROLE_HEAL" }, { "DPS"
 end
 UI.selfRoleButtons = selfRoleButtons
 
+--- Stats display toggle.
+--
+-- Lives here rather than in a settings screen because it belongs to the self bot, and this is the
+-- one place a person already goes to turn self-bot mode on. The display itself is a separate frame
+-- that stays up while playing; see ui_selfstat.lua.
+local statsCheck = W.Create("CheckButton", "BotInspectorSelfStatCheck", selfPanel, "UICheckButtonTemplate")
+statsCheck:SetWidth(20); statsCheck:SetHeight(20)
+statsCheck:SetPoint("TOPLEFT", 6, -38)
+
+local statsLabel = selfPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+statsLabel:SetPoint("LEFT", statsCheck, "RIGHT", 2, 0)
+statsLabel:SetText("Show stats display")
+
+statsCheck:SetScript("OnClick", function(self)
+    if UI.SetSelfStatShown then
+        UI.SetSelfStatShown(self:GetChecked() and true or false)
+    end
+end)
+
+statsCheck:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(statsCheck, "ANCHOR_RIGHT")
+    GameTooltip:SetText("A small movable display of what this character's AI is doing:")
+    GameTooltip:AddLine("activity, destination, stuck attempts, current target.", 1, 1, 1, true)
+    GameTooltip:AddLine("Drag to move it. Click its pin to lock it in place.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+end)
+statsCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+UI.selfStatsCheck = statsCheck
+UI.selfStatsLabel = statsLabel
+
 --- Redraw the self panel from whatever the server last reported.
 function redrawSelf()
+    -- The checkbox reflects saved state, not the panel being open, so it is correct on first draw
+    -- and after a reload rather than only after somebody clicks it.
+    if statsCheck and UI.IsSelfStatShown then
+        statsCheck:SetChecked(UI.IsSelfStatShown())
+    end
+
     local info = BI.selfInfo
     if not info then
         selfState:SetText("|cff999999not reported|r")

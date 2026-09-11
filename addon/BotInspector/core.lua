@@ -42,6 +42,7 @@ BI.detail  = {}   -- guid -> { CORE = {...}, GEAR = {...}, ... }
 BI.lastError = nil
 BI.alts      = {}   -- { {guid, name, level, class, race, state, role}, ... }
 BI.selfInfo  = nil -- { guid, name, active, role } for the character being played
+BI.selfStat  = nil -- live debugging state for a self bot; see RequestSelfStat
 BI.can       = { appear = false, summon = false }   -- filled in by the ZONES reply
 
 -- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
@@ -83,6 +84,16 @@ function BI:RequestDetail(guid, section)
 end
 
 --- The account's other characters, online or not.
+--- Live debugging state for the character being played, when it is a self bot.
+--
+-- Polled while the stats display is open, so it is deliberately cheap on both sides: one request,
+-- one small reply, no assembly across messages in practice. Unlike the other verbs this one is
+-- expected to be asked repeatedly, so it does not go through MarkSent -- an in-flight guard that
+-- retries on timeout is the wrong shape for something already on a timer.
+function BI:RequestSelfStat()
+    self:Send("SELFSTAT", "0")
+end
+
 function BI:RequestAlts()
     self:Send("ALTS")
     self:MarkSent("ALTS", "0", function() BI:RequestAlts() end)
@@ -292,6 +303,36 @@ local function dispatch(verb, key, rows)
             end
         end
         if handlers.OnFind then handlers.OnFind(list, matched) end
+
+    elseif verb == "SELFSTAT" then
+        -- Flat field:value rows rather than a fixed column order, so the server can add a field
+        -- without the client needing to know about it first.
+        local stat = {}
+        for _, row in ipairs(rows) do
+            local f = split(row, ":")
+            local key = f[1]
+            if key == "dest" then
+                stat.destArea = tonumber(f[2])
+                stat.destDist = tonumber(f[3])
+                stat.destClimb = tonumber(f[4])
+            elseif key == "target" then
+                stat.targetName = f[2]
+                stat.targetLevel = tonumber(f[3])
+                stat.targetHp = tonumber(f[4])
+            elseif key == "route" then
+                stat.routeIndex = tonumber(f[2])
+                stat.routeVisited = tonumber(f[3])
+                stat.routeZone = tonumber(f[4])
+            elseif key == "off" then
+                stat.off = true
+            elseif key == "move" or key == "human" then
+                stat[key] = f[2] == "1"
+            elseif key then
+                stat[key] = tonumber(f[2]) or f[2]
+            end
+        end
+        BI.selfStat = stat
+        if handlers.OnSelfStat then handlers.OnSelfStat(stat) end
 
     elseif verb == "ALTS" then
         local list = {}

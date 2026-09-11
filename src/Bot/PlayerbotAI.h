@@ -555,6 +555,9 @@ public:
      */
     void NoteHumanMovementInput(bool holding);
 
+    /// The last action an engine actually ran. Read-only view for diagnostics; nothing acts on it.
+    std::string GetLastAction(BotState state);
+
     /// Keep a believed key-hold alive. Called for movement heartbeats; never starts a hold.
     void RefreshHumanMovementInput();
 

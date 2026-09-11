@@ -5,6 +5,8 @@
  */
 
 #include "BotInspectorMgr.h"
+#include "NewRpgInfo.h"
+#include "MapMgr.h"
 
 #include "AccountMgr.h"
 #include "Chat.h"
@@ -618,6 +620,95 @@ void BotInspectorMgr::HandleAlts(Player* to)
     Reply(to, "ALTS", "0", rows);
 }
 
+namespace
+{
+    /// Short, readable name for an RPG activity. The enum values mean nothing to a person.
+    char const* DescribeRpgStatus(NewRpgStatus status)
+    {
+        switch (status)
+        {
+            case RPG_IDLE:          return "Idle";
+            case RPG_GO_GRIND:      return "Heading to grind";
+            case RPG_GO_CAMP:       return "Heading to camp";
+            case RPG_WANDER_RANDOM: return "Wandering";
+            case RPG_WANDER_NPC:    return "Visiting an NPC";
+            case RPG_DO_QUEST:      return "Questing";
+            case RPG_TRAVEL_FLIGHT: return "Flying";
+            case RPG_REST:          return "Resting";
+            case RPG_OUTDOOR_PVP:   return "Outdoor PvP";
+            case RPG_VENDOR:        return "Vendoring";
+            case RPG_MAILBOX:       return "At the mailbox";
+            case RPG_GATHER:        return "Gathering";
+            case RPG_TRAIN:         return "Training";
+            default:                return "Unknown";
+        }
+    }
+}
+
+void BotInspectorMgr::HandleSelfStat(Player* to)
+{
+    std::vector<std::string> rows;
+
+    PlayerbotAI* const botAI = GET_PLAYERBOT_AI(to);
+    if (!botAI || !IsSelfBot(to))
+    {
+        // Answered rather than errored: the panel polls this, and an error would light up the
+        // client's error banner every couple of seconds for a character that is simply not a bot.
+        rows.push_back("off:1");
+        Reply(to, "SELFSTAT", "0", rows);
+        return;
+    }
+
+    NewRpgInfo& rpg = botAI->rpgInfo;
+    NewRpgStatus const status = rpg.GetStatus();
+
+    rows.push_back(Acore::StringFormat("act:{}", DescribeRpgStatus(status)));
+    rows.push_back(Acore::StringFormat("secs:{}", GetMSTimeDiffToNow(rpg.startT) / 1000));
+
+    // What the engine actually ran last tick. "Heading to grind" says what it intends; this says
+    // what it did, and the two disagreeing is exactly the situation worth seeing.
+    std::string const lastAction = botAI->GetLastAction(BOT_STATE_NON_COMBAT);
+    if (!lastAction.empty())
+        rows.push_back(Acore::StringFormat("action:{}", Escape(lastAction)));
+
+    // Where it is walking, and how far up or down. Climb is reported separately from distance
+    // because a flat four hundred yards and four hundred yards up a ridge are not the same walk.
+    WorldPosition const& dest = rpg.moveFarPos;
+    if (dest != WorldPosition() && dest.GetMapId() == to->GetMapId())
+    {
+        uint32 const destArea = sMapMgr->GetAreaId(to->GetPhaseMask(), dest);
+        rows.push_back(Acore::StringFormat("dest:{}:{}:{}", destArea,
+                                           uint32(to->GetExactDist2d(dest.GetPositionX(), dest.GetPositionY())),
+                                           int32(dest.GetPositionZ() - to->GetPositionZ())));
+    }
+
+    rows.push_back(Acore::StringFormat("move:{}", to->isMoving() ? 1 : 0));
+    rows.push_back(Acore::StringFormat("human:{}", botAI->HumanIsDriving() ? 1 : 0));
+
+    // Stuck attempts are the single most useful number here. Five of them teleports the character,
+    // and until now the only symptom was the character suddenly being somewhere else.
+    rows.push_back(Acore::StringFormat("stuck:{}", rpg.stuckAttempts));
+
+    if (Unit* victim = to->GetVictim())
+    {
+        uint32 const pct = victim->GetMaxHealth() ? uint32(victim->GetHealthPct()) : 0;
+        rows.push_back(Acore::StringFormat("target:{}:{}:{}", Escape(victim->GetName()),
+                                           victim->GetLevel(), pct));
+    }
+
+    if (status == RPG_GATHER)
+    {
+        if (auto const* gather = std::get_if<NewRpgInfo::Gather>(&rpg.data))
+            rows.push_back(Acore::StringFormat("route:{}:{}:{}", gather->routeIndex,
+                                               gather->nodesVisited, gather->zoneId));
+    }
+
+    rows.push_back(Acore::StringFormat("zone:{}", to->GetZoneId()));
+    rows.push_back(Acore::StringFormat("gold:{}", to->GetMoney() / GOLD));
+
+    Reply(to, "SELFSTAT", "0", rows);
+}
+
 bool BotInspectorMgr::JoinMasterParty(Player* master, Player* bot)
 {
     if (!master || !bot || master == bot)
@@ -876,6 +967,8 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
                      parts[4]);
     else if (verb == "ALTS")
         HandleAlts(sender);
+    else if (verb == "SELFSTAT")
+        HandleSelfStat(sender);
     else if (verb == "ALTCTL" && parts.size() >= 5)
         HandleAltControl(sender, parts[3],
                          static_cast<ObjectGuid::LowType>(std::strtoul(parts[4].c_str(), nullptr, 10)));

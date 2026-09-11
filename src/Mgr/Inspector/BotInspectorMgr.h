@@ -84,6 +84,16 @@ private:
     /// ADD / REMOVE / INVITE for one of the requesting account's own characters.
     void HandleAltControl(Player* to, std::string const& action, ObjectGuid::LowType altGuid);
 
+    /**
+     * Live debugging state for the character being played, when it is a self bot.
+     *
+     * Everything here is already in the server's head and nowhere a person can see it. Watching a
+     * bot walk off and having no idea whether it is heading for a gather node, a quest giver or a
+     * grind spot -- and no way to tell a long walk apart from a stuck one -- is most of what has
+     * made self-bot behaviour hard to reason about. This is that state, cheap enough to poll.
+     */
+    void HandleSelfStat(Player* to);
+
     /// Put `bot` in `master`'s group, creating the group if this is the first member. True on success.
     bool JoinMasterParty(Player* master, Player* bot);
 
