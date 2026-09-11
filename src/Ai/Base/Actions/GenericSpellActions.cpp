@@ -185,6 +185,19 @@ bool CastSpellAction::isUseful()
     if (botAI->IsInVehicle() && !botAI->IsInVehicle(false, false, true))
         return false;
 
+    // A spell the character has not learned.
+    //
+    // Every class strategy lists the whole kit, so a level 15 paladin carries actions for Divine
+    // Storm and Crusader Strike, which are sixty levels away. The name resolved to spell id zero,
+    // the cast was refused, and the engine pushed it again next tick: 388 refused casts in one
+    // short run from a single character, and every low-level bot on the realm doing the same
+    // invisibly because the log only reports it for bots grouped with a person.
+    //
+    // Checked here rather than in the several dozen actions that would each need it, and by spell
+    // id rather than by level so it stays right for talents, ranks and anything a bot unlearns.
+    if (!spell.empty() && spell != "mount" && !AI_VALUE2(uint32, "spell id", spell))
+        return false;
+
     if (spell == "mount" && !bot->IsMounted() && !bot->IsInCombat())
         return true;
 

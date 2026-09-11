@@ -123,6 +123,21 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericWarriorStrategy::InitTriggers(triggers);
 
+    // Stun the thing that is hurting you. Concussion Blow had one trigger and it was a snare check,
+    // so it only ever fired at something already running away -- the same shape of gap Hammer of
+    // Justice had, where a stun existed and nothing in an ordinary fight ever asked for it.
+    //
+    // Gated on the warrior's own health for the same reason: a stun is worth a great deal when a
+    // fight is going badly and close to nothing when it is already won.
+    triggers.push_back(
+        new TriggerNode(
+            "medium health",
+            {
+                NextAction("concussion blow", ACTION_HIGH + 2)
+            }
+        )
+    );
+
     triggers.push_back(
         new TriggerNode(
             "vigilance",

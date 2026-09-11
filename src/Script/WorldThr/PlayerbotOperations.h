@@ -53,6 +53,16 @@ public:
 
         Group* group = bot->GetGroup();
 
+        // Never across factions. This adds to a Group directly rather than sending an invite, so
+        // nothing else in the path would have objected -- and an alt bot logging in while its owner
+        // had a group of the other faction was added without a question being asked.
+        if (bot->GetTeamId() != target->GetTeamId())
+        {
+            LOG_DEBUG("playerbots", "GroupInviteOperation: refusing to group {} with {}: opposing factions",
+                      target->GetName(), bot->GetName());
+            return false;
+        }
+
         // Create group if bot doesn't have one
         if (!group)
         {

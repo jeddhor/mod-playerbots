@@ -99,7 +99,26 @@ end
 
 --- What clicking this row should do, or nil when the row offers nothing.
 -- Returns action, label, enabled.
+-- Alliance races. Everything else is Horde.
+local ALLIANCE_RACES = { [1] = true, [3] = true, [4] = true, [7] = true, [11] = true }
+
+local function sameFactionAsPlayer(alt)
+    if not alt or not alt.race then return true end
+    local _, _, playerRace = UnitRace("player")
+    -- UnitRace's third return is the race id on 3.3.5. If it is unavailable, do not block anything:
+    -- the server refuses cross-faction grouping regardless, and a greyed-out button based on a bad
+    -- guess would be worse than a refusal that explains itself.
+    if not playerRace then return true end
+    return (ALLIANCE_RACES[alt.race] or false) == (ALLIANCE_RACES[playerRace] or false)
+end
+
 local function actionFor(alt, full)
+    -- Cross-faction grouping did not exist in 3.3.5. The panel used to offer the button anyway and
+    -- the server used to honour it, which is how a blood elf ended up in a party of five humans.
+    if not sameFactionAsPlayer(alt) then
+        return nil, "other faction", false
+    end
+
     if alt.state == "party" then
         return "REMOVE", "Dismiss", true
     elseif alt.state == "bot" then

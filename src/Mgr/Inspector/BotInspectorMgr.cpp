@@ -749,6 +749,16 @@ bool BotInspectorMgr::JoinMasterParty(Player* master, Player* bot)
     if (!master || !bot || master == bot)
         return false;
 
+    // Not across factions.
+    //
+    // The client cannot form such a group and neither could anybody in 3.3.5 -- cross-faction
+    // grouping arrived many expansions later. But this adds a member to a Group directly rather
+    // than going through an invite, so nothing was ever asked, and picking alts from the panel
+    // quietly put a blood elf in a party of five humans. It then sat there as a stale raid on a
+    // different continent, costing her the group experience rate for kills nobody else was near.
+    if (master->GetTeamId() != bot->GetTeamId())
+        return false;
+
     if (Group* existing = bot->GetGroup())
     {
         // Already where it was asked to be.
@@ -793,6 +803,23 @@ void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, Ob
     {
         SendError(to, 403, "not your character");
         return;
+    }
+
+    // Owning both characters does not make them groupable. Cross-faction grouping did not exist in
+    // 3.3.5 and the client cannot produce it, but this panel adds members to a Group directly, so
+    // the question had never been asked and picking alts from the list happily put a blood elf in
+    // a party of five humans.
+    //
+    // Refused here rather than only inside JoinMasterParty, because that failure path queues a
+    // pending invite and answers "pending" -- so the panel would have shown a request that was
+    // never going to complete, which is a worse answer than no.
+    if (CharacterCacheEntry const* cached = sCharacterCache->GetCharacterCacheByGuid(guid))
+    {
+        if (Player::TeamIdForRace(cached->Race) != to->GetTeamId())
+        {
+            SendError(to, 409, "that character is on the other faction");
+            return;
+        }
     }
 
     PlayerbotMgr* const mgr = GET_PLAYERBOT_MGR(to);

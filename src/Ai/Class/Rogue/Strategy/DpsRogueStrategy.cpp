@@ -78,6 +78,19 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     MeleeCombatStrategy::InitTriggers(triggers);
 
+    // Kidney Shot reached the engine only through the kick action node, which is to say only as an
+    // interrupt. A rogue in trouble stuns; spending combo points on six seconds of not being hit is
+    // a trade worth making when the fight is going badly, and the health gate is what keeps it from
+    // being spent on a fight already won, where those points belong in an Eviscerate.
+    triggers.push_back(
+        new TriggerNode(
+            "medium health",
+            {
+                NextAction("kidney shot", ACTION_HIGH + 2)
+            }
+        )
+    );
+
     triggers.push_back(
         new TriggerNode(
             "high energy available",

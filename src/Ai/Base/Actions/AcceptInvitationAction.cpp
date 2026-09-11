@@ -27,6 +27,18 @@ bool AcceptInvitationAction::Execute(Event event)
     if (!inviter)
         return false;
 
+    // Decline an invitation from the other faction. Nothing should be able to send one, but a bot
+    // accepts through HandleGroupAcceptOpcode rather than through a client, so it is the one place
+    // that would say yes to an invite the game itself could never have offered.
+    if (bot->GetTeamId() != inviter->GetTeamId())
+    {
+        WorldPacket data(SMSG_GROUP_DECLINE, 10);
+        data << bot->GetName();
+        inviter->SendDirectMessage(&data);
+        bot->UninviteFromGroup();
+        return false;
+    }
+
     if (!botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, false, inviter))
     {
         WorldPacket data(SMSG_GROUP_DECLINE, 10);
