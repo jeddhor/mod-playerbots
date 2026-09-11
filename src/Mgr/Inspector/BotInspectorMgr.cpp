@@ -682,6 +682,33 @@ void BotInspectorMgr::HandleSelfStat(Player* to)
                                            int32(dest.GetPositionZ() - to->GetPositionZ())));
     }
 
+    // What the server believes this character's speed is, for the mode it is actually in.
+    //
+    // Worth reporting because a self bot's client owns its own position, so the two can disagree:
+    // a character seen outrunning a mount while the server still says 7 yd/s is a desync, and one
+    // the server agrees is doing 25 is something having actually set its speed. Those need
+    // different fixes and look identical from inside the game.
+    UnitMoveType moveType = MOVE_RUN;
+    char const* moveMode = "run";
+    if (to->IsFlying())
+    {
+        moveType = MOVE_FLIGHT;
+        moveMode = "flight";
+    }
+    else if (to->isSwimming())
+    {
+        moveType = MOVE_SWIM;
+        moveMode = "swim";
+    }
+    else if (to->IsWalking())
+    {
+        moveType = MOVE_WALK;
+        moveMode = "walk";
+    }
+
+    rows.push_back(Acore::StringFormat("speed:{:.1f}:{}:{}", to->GetSpeed(moveType),
+                                       uint32(to->GetSpeedRate(moveType) * 100.0f), moveMode));
+
     rows.push_back(Acore::StringFormat("move:{}", to->isMoving() ? 1 : 0));
     rows.push_back(Acore::StringFormat("human:{}", botAI->HumanIsDriving() ? 1 : 0));
 

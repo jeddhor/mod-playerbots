@@ -319,6 +319,10 @@ local function dispatch(verb, key, rows)
                 stat.targetName = f[2]
                 stat.targetLevel = tonumber(f[3])
                 stat.targetHp = tonumber(f[4])
+            elseif key == "speed" then
+                stat.speed = tonumber(f[2])
+                stat.speedPct = tonumber(f[3])
+                stat.speedMode = f[4]
             elseif key == "route" then
                 stat.routeIndex = tonumber(f[2])
                 stat.routeVisited = tonumber(f[3])

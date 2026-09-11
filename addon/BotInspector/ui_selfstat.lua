@@ -13,7 +13,8 @@ local UI = BI.UI
 local W  = BI.W
 
 local POLL_SECONDS = 2.0
-local WIDTH, LINE_HEIGHT, PAD = 230, 13, 8
+local PAD, LABEL_W, LINE_GAP = 8, 62, 2
+local DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH = 300, 200, 640
 
 -- Fields in display order. Each returns a string, or nil to omit the line entirely -- a display
 -- that hides what does not apply stays readable, where one full of "n/a" does not.
@@ -48,6 +49,18 @@ local FIELDS = {
                 return string.format("%s, %d yd%s", where, s.destDist, rise)
             end
             return string.format("%d yd%s", s.destDist, rise)
+        end,
+    },
+    {
+        label = "Speed",
+        -- The server's own number, for the mode the character is actually in. A character seen
+        -- outrunning a mount while this still says 7.0 is a desync between client and server; one
+        -- where this says 25 is something having genuinely set the speed. They look identical from
+        -- inside the game and need different fixes.
+        get = function(s)
+            if not s.speed then return nil end
+            local pct = s.speedPct and string.format(" (%d%%)", s.speedPct) or ""
+            return string.format("%.1f yd/s %s%s", s.speed, s.speedMode or "", pct)
         end,
     },
     {
@@ -86,13 +99,18 @@ local FIELDS = {
 -- ---- frame ------------------------------------------------------------------------------------
 
 local frame = W.Create("Frame", "BotInspectorSelfStat", UIParent)
-frame:SetWidth(WIDTH)
+frame:SetWidth(DEFAULT_WIDTH)
 frame:SetHeight(120)
 frame:SetFrameStrata("MEDIUM")
 frame:SetClampedToScreen(true)
 frame:SetMovable(true)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
+-- Width only. Height is whatever the visible rows add up to, so letting it be dragged would just
+-- produce a number the next redraw throws away.
+frame:SetResizable(true)
+frame:SetMinResize(MIN_WIDTH, 40)
+frame:SetMaxResize(MAX_WIDTH, 2000)
 frame:Hide()
 UI.selfStatFrame = frame
 
@@ -118,20 +136,46 @@ pin:GetNormalTexture():SetTexCoord(0.2, 0.8, 0.2, 0.8)
 
 local status = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 status:SetPoint("TOPLEFT", PAD, -PAD - 15)
-status:SetWidth(WIDTH - PAD * 2)
 status:SetJustifyH("LEFT")
+
+-- A grab strip down the right edge. Thin, because it sits on top of the value text and anything
+-- wider would make the frame feel like it resists being clicked through to.
+local grip = W.Create("Frame", nil, frame)
+grip:SetWidth(6)
+grip:SetPoint("TOPRIGHT", 0, -PAD)
+grip:SetPoint("BOTTOMRIGHT", 0, PAD)
+grip:EnableMouse(true)
+
+local gripTex = grip:CreateTexture(nil, "OVERLAY")
+gripTex:SetAllPoints(grip)
+gripTex:SetTexture(1, 1, 1, 0.12)
 
 -- One label/value pair per field. Built once; hidden rows collapse so the frame has no gaps.
 local lines = {}
 for i = 1, #FIELDS do
     local row = {}
     row.label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.label:SetWidth(52)
     row.label:SetJustifyH("LEFT")
+    row.label:SetWidth(LABEL_W)
     row.value = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.value:SetWidth(WIDTH - PAD * 2 - 56)
     row.value:SetJustifyH("LEFT")
     lines[i] = row
+end
+
+-- Forward declaration: the resize handlers below are wired before the drawing code is defined,
+-- and a local declared later would be nil inside those closures rather than the function.
+local redraw
+
+--- Push the current frame width into everything that wraps.
+--
+-- A FontString with a fixed width wraps, and the layout below has to know the resulting height or
+-- the next row draws on top of it -- which is exactly what happened at the old fixed width.
+local function applyWidths()
+    local usable = frame:GetWidth() - PAD * 2
+    status:SetWidth(usable)
+    for _, row in ipairs(lines) do
+        row.value:SetWidth(math.max(40, usable - LABEL_W - 4))
+    end
 end
 
 -- ---- persistence ------------------------------------------------------------------------------
@@ -139,6 +183,16 @@ end
 local function db()
     BotInspectorDB = BotInspectorDB or {}
     return BotInspectorDB
+end
+
+local function saveWidth()
+    db().selfStatWidth = frame:GetWidth()
+end
+
+local function restoreWidth()
+    local w = tonumber(db().selfStatWidth) or DEFAULT_WIDTH
+    frame:SetWidth(math.max(MIN_WIDTH, math.min(MAX_WIDTH, w)))
+    applyWidths()
 end
 
 local function savePosition()
@@ -168,6 +222,11 @@ local function applyPinned()
     frame:EnableMouse(not pinned)
     frame:SetMovable(not pinned)
 
+    -- The grip is a child frame with its own mouse handling, so it has to be told separately or a
+    -- pinned display would still be resizable and still swallow clicks along its right edge.
+    grip:EnableMouse(not pinned)
+    if pinned then grip:Hide() else grip:Show() end
+
     if pinned then
         pin:GetNormalTexture():SetVertexColor(0.2, 1.0, 0.2)
     else
@@ -192,6 +251,29 @@ pin:SetScript("OnEnter", function()
 end)
 pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+grip:SetScript("OnMouseDown", function()
+    if not db().selfStatPinned then frame:StartSizing("RIGHT") end
+end)
+grip:SetScript("OnMouseUp", function()
+    frame:StopMovingOrSizing()
+    saveWidth()
+    applyWidths()
+    redraw()
+end)
+grip:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(grip, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Drag to change the width")
+    GameTooltip:Show()
+end)
+grip:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+-- Width changes while dragging, so the text has to re-wrap as it goes or the frame only looks
+-- right once the mouse is released.
+frame:SetScript("OnSizeChanged", function()
+    applyWidths()
+    redraw()
+end)
+
 frame:SetScript("OnDragStart", function(self)
     if not db().selfStatPinned then self:StartMoving() end
 end)
@@ -202,7 +284,7 @@ end)
 
 -- ---- drawing ----------------------------------------------------------------------------------
 
-local function redraw()
+function redraw()
     local stat = BI.selfStat
 
     if not stat then
@@ -215,10 +297,9 @@ local function redraw()
 
     local y = -PAD - 15
     if status:GetText() ~= "" then
-        y = y - LINE_HEIGHT
+        y = y - math.max(12, status:GetStringHeight() or 12) - LINE_GAP
     end
 
-    local shown = 0
     for i, field in ipairs(FIELDS) do
         local row = lines[i]
         local text = (stat and not stat.off) and field.get(stat) or nil
@@ -227,12 +308,16 @@ local function redraw()
             row.label:ClearAllPoints()
             row.value:ClearAllPoints()
             row.label:SetPoint("TOPLEFT", PAD, y)
-            row.value:SetPoint("TOPLEFT", PAD + 56, y)
+            row.value:SetPoint("TOPLEFT", PAD + LABEL_W, y)
             row.label:SetText(field.label)
             row.value:SetText(text)
             row.label:Show(); row.value:Show()
-            y = y - LINE_HEIGHT
-            shown = shown + 1
+
+            -- Advance by what the row actually occupies, not by a constant. A value long enough to
+            -- wrap is two or three lines tall, and stepping a fixed amount is what had "Heading"
+            -- drawing through "Moving" underneath it.
+            local h = math.max(row.label:GetStringHeight() or 12, row.value:GetStringHeight() or 12)
+            y = y - h - LINE_GAP
         else
             row.label:Hide(); row.value:Hide()
         end
@@ -260,6 +345,7 @@ function UI.SetSelfStatShown(shown)
     db().selfStatShown = shown and true or false
     if shown then
         restorePosition()
+        restoreWidth()
         applyPinned()
         redraw()
         frame:Show()
