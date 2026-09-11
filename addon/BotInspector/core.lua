@@ -43,6 +43,8 @@ BI.lastError = nil
 BI.alts      = {}   -- { {guid, name, level, class, race, state, role}, ... }
 BI.selfInfo  = nil -- { guid, name, active, role } for the character being played
 BI.selfStat  = nil -- live debugging state for a self bot; see RequestSelfStat
+BI.selfLog    = {}  -- accumulated self-bot events, oldest first; see RequestSelfLog
+BI.selfLogSeq = 0   -- highest event sequence held, so polls only fetch what is new
 BI.can       = { appear = false, summon = false }   -- filled in by the ZONES reply
 
 -- Preserves empty fields. The obvious "([^:]+)" pattern silently drops them, which shifts every
@@ -92,6 +94,14 @@ end
 -- retries on timeout is the wrong shape for something already on a timer.
 function BI:RequestSelfStat()
     self:Send("SELFSTAT", "0")
+end
+
+--- Ask for self-bot events newer than everything we already hold.
+-- The sequence is the whole protocol: the server returns only what is newer, so a poll costs
+-- almost nothing once the log is warm, and a client that missed a poll catches up by itself
+-- rather than needing a resync.
+function BI:RequestSelfLog()
+    self:Send("SELFLOG", tostring(BI.selfLogSeq or 0))
 end
 
 function BI:RequestAlts()
@@ -337,6 +347,38 @@ local function dispatch(verb, key, rows)
         end
         BI.selfStat = stat
         if handlers.OnSelfStat then handlers.OnSelfStat(stat) end
+
+    elseif verb == "SELFLOG" then
+        -- seq:when:cat:balance:delta:text, oldest first. Text may itself contain spaces but never
+        -- a colon: the server replaces them, because this row is colon-delimited.
+        local added = 0
+        for _, row in ipairs(rows) do
+            local f = split(row, ":")
+            local seq = tonumber(f[1])
+            if seq and seq > (BI.selfLogSeq or 0) then
+                table.insert(BI.selfLog, {
+                    seq     = seq,
+                    when    = tonumber(f[2]) or 0,
+                    cat     = f[3] or "N",
+                    balance = tonumber(f[4]) or 0,
+                    delta   = tonumber(f[5]) or 0,
+                    -- Rejoin: a message rebuilt from split() loses nothing only if everything
+                    -- after the fixed fields is put back the way it came.
+                    text    = table.concat(f, ":", 6),
+                })
+                BI.selfLogSeq = seq
+                added = added + 1
+            end
+        end
+
+        -- The client keeps its own bound. The server's ring is 400 and it only ever sends what is
+        -- new, so without this a long session grows the table without limit.
+        local MAX_CLIENT_EVENTS = 500
+        while #BI.selfLog > MAX_CLIENT_EVENTS do
+            table.remove(BI.selfLog, 1)
+        end
+
+        if handlers.OnSelfLog then handlers.OnSelfLog(BI.selfLog, added) end
 
     elseif verb == "ALTS" then
         local list = {}

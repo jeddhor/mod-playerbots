@@ -385,6 +385,34 @@ statsCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
 UI.selfStatsCheck = statsCheck
 UI.selfStatsLabel = statsLabel
 
+--- Event log toggle.
+--
+-- A button rather than a checkbox, because unlike the stats display this is something you open to
+-- read and then close again, rather than something you leave running. It still remembers whether
+-- it was open across a reload, so leaving it up is a choice rather than an accident.
+local logButton = W.Create("Button", "BotInspectorSelfLogButton", selfPanel, "UIPanelButtonTemplate")
+logButton:SetWidth(110); logButton:SetHeight(20)
+logButton:SetPoint("TOPLEFT", 6, -60)
+logButton:SetText("Event log")
+
+logButton:SetScript("OnClick", function()
+    if UI.SetSelfLogShown and UI.IsSelfLogShown then
+        UI.SetSelfLogShown(not UI.IsSelfLogShown())
+    end
+end)
+
+logButton:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(logButton, "ANCHOR_RIGHT")
+    GameTooltip:SetText("A scrolling record of what this character has done:")
+    GameTooltip:AddLine("items sold and used, auctions listed and bought, mail read,", 1, 1, 1, true)
+    GameTooltip:AddLine("gold in and out, and what killed it.", 1, 1, 1, true)
+    GameTooltip:AddLine("Drag to move, drag the corner to resize, pin to lock.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+end)
+logButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+UI.selfLogButton = logButton
+
 --- Redraw the self panel from whatever the server last reported.
 function redrawSelf()
     -- The checkbox reflects saved state, not the panel being open, so it is correct on first draw
