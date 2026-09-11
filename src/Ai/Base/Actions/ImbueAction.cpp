@@ -118,6 +118,7 @@ bool ImbueWithStoneAction::Execute(Event /*event*/)
 
     // Search and apply stone to weapons
     // Mainhand ...
+    bool applied = false;
     Item* stone = nullptr;
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     if (weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
@@ -127,6 +128,7 @@ bool ImbueWithStoneAction::Execute(Event /*event*/)
         {
             botAI->ImbueItem(stone, EQUIPMENT_SLOT_MAINHAND);
             botAI->SetNextCheckDelay(5);
+            applied = true;
         }
     }
 
@@ -139,10 +141,15 @@ bool ImbueWithStoneAction::Execute(Event /*event*/)
         {
             botAI->ImbueItem(stone, EQUIPMENT_SLOT_OFFHAND);
             botAI->SetNextCheckDelay(5);
+            applied = true;
         }
     }
 
-    return true;
+    // Only claim success when a stone actually went on. Returning true unconditionally told the
+    // engine this ran every time the "often" trigger fired -- with no stone to apply and nothing
+    // done -- so it became the bot's last successful action and sat in the stats display as what
+    // the character was doing. It also stopped anything of lower relevance getting a turn.
+    return applied;
 }
 
 // Search and apply oil to weapons

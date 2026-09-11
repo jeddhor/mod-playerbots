@@ -271,7 +271,17 @@ bool TurnInQueryQuestAction::Execute(Event event)
 
     if (sPlayerbotAIConfig.syncQuestWithPlayer)
     {
-        if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_FAILED)
+        // Synchronising with the player means catching up to what the player has already done. It
+        // does not mean completing anything the bot happens to be carrying, which is what this did:
+        // there was no condition on the master at all, so simply walking up to a quest giver
+        // completed whatever was in the log. A level 14 ended up with "The Party Never Ends" marked
+        // complete while holding none of its three items, and the giver showing a turn-in that
+        // could not be honoured.
+        //
+        // The sibling call site a hundred lines above already had the right condition. This is the
+        // same one.
+        if (master && master->GetQuestStatus(quest->GetQuestId()) == QUEST_STATUS_COMPLETE &&
+            (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_FAILED))
         {
             CompleteQuest(bot, quest->GetQuestId());
             status = bot->GetQuestStatus(quest->GetQuestId());

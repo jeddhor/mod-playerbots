@@ -93,14 +93,25 @@ bool QuestAction::CompleteQuest(Player* player, uint32 entry)
         }
 
         uint32 curItemCount = player->GetItemCount(id, true);
+        if (curItemCount >= count)
+            continue;
 
         ItemPosCountVec dest;
         uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, id, count - curItemCount);
-        if (msg == EQUIP_ERR_OK)
+        if (msg != EQUIP_ERR_OK)
         {
-            Item* item = player->StoreNewItem(dest, id, true);
-            player->SendNewItem(item, count - curItemCount, true, false);
+            // Bags full, usually. Completing anyway is what produced a quest marked complete with
+            // none of its items: the giver then shows a turn-in that cannot be honoured, and the
+            // chain advances past content the character never did. Better to leave the quest as it
+            // is and let the bot come back once it has space.
+            LOG_DEBUG("playerbots",
+                      "[Quest] {} could not be given {} x{} for quest {}; leaving it incomplete",
+                      player->GetName(), id, count - curItemCount, entry);
+            return false;
         }
+
+        Item* item = player->StoreNewItem(dest, id, true);
+        player->SendNewItem(item, count - curItemCount, true, false);
     }
 
     // All creature/GO slain/casted (not required, but otherwise it will display "Creature slain 0/10")
