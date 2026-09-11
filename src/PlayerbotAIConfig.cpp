@@ -854,6 +854,8 @@ bool PlayerbotAIConfig::Initialize()
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
     autoVendorJunk = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoVendorJunk", true);
     autoVendorJunkMaxQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.AutoVendorJunkMaxQuality", ITEM_QUALITY_POOR);
+    vendorOutleveledGearMaxQuality =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.VendorOutleveledGearMaxQuality", ITEM_QUALITY_RARE);
     botTypeParity = sConfigMgr->GetOption<bool>("AiPlayerbot.BotTypeParity", true);
 
     economyEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.Enabled", true);

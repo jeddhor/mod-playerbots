@@ -37,6 +37,7 @@
 #include "BotTrainingMgr.h"
 #include "BotEconomyMgr.h"
 #include "QuestBlacklistMgr.h"
+#include "QuestIntegrityMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
 #include "cmath"
@@ -138,6 +139,12 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
+        // Outside the IsBot() guard on purpose: a quest log stored as complete without the
+        // objectives to back it will park whoever owns it in front of a questgiver that keeps
+        // refusing the hand-in, and that is just as true of a player running as a self bot as it is
+        // of a random bot. Login is the one moment we are certain the log is loaded and idle.
+        QuestIntegrityMgr::RepairStoredCompletions(player);
+
         if (!player->GetSession()->IsBot())
         {
             PlayerbotsMgr::instance().AddPlayerbotData(player, false);

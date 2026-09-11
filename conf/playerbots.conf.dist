@@ -1485,6 +1485,25 @@ AiPlayerbot.AutoVendorJunk = 1
 AiPlayerbot.AutoVendorJunkMaxQuality = 0
 
 #
+#    AiPlayerbot.VendorOutleveledGearMaxQuality
+#        Description: Highest item quality that may be vendored as outgrown SOULBOUND gear.
+#                     This is a separate, narrower rule than AutoVendorJunkMaxQuality above, and all
+#                     four of its conditions must hold: the item is armour or a weapon, it is
+#                     soulbound, its required level is at or below the bot's own, and the item
+#                     classifier independently judged it worthless to this character.
+#                     Soulbound greens and blues cannot be listed, traded or given away, so once a
+#                     character has outgrown them the vendor is the only thing left to do with them.
+#                     Gear that is still tradeable never reaches this rule -- it is auctioned, or
+#                     disenchanted if the character is an enchanter.
+#                     The required-level condition is what stops a bot selling gear it has not grown
+#                     into yet. Set to 0 to disable this behaviour entirely.
+#                     0 = poor, 1 = common, 2 = uncommon/green, 3 = rare/blue, 4 = epic.
+#        Default:     3 - (up to rare/blue; soulbound epics are never sold automatically)
+#
+
+AiPlayerbot.VendorOutleveledGearMaxQuality = 3
+
+#
 #    AiPlayerbot.BotTypeParity
 #        Description: Decide a bot's autonomous behaviour from its SITUATION rather than from how
 #                     it was created.

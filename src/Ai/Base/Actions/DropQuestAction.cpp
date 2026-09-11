@@ -81,6 +81,7 @@ bool CleanQuestLogAction::Execute(Event event)
             {}));
 
     uint8 botLevel = bot->GetLevel();  // Get bot's level
+    uint32 dropped = 0;
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
@@ -118,6 +119,7 @@ bool CleanQuestLogAction::Execute(Event event)
                     {{"%title", quest->GetTitle()}}));
 
             // Remove quest
+            ++dropped;
             botAI->rpgStatistic.questDropped++;
             bot->SetQuestSlot(slot, 0);
             bot->TakeQuestSourceItem(questId, false);
@@ -152,7 +154,11 @@ bool CleanQuestLogAction::Execute(Event event)
         }
     }
 
-    return true;
+    // Only claim success if a quest was actually dropped. Returning true unconditionally made this
+    // the last action to "succeed" on almost every tick it ran, so it was what the inspector showed
+    // as the bot's current activity -- reading as a bot stuck cleaning its quest log when really it
+    // had walked the log, found nothing trivial, and moved on.
+    return dropped > 0;
 }
 
 void CleanQuestLogAction::DropQuestType(uint8& numQuest, uint8 wantNum, bool isGreen, bool hasProgress, bool isComplete)

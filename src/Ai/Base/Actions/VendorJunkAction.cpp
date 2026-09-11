@@ -51,9 +51,6 @@ bool VendorJunkAction::IsJunk(Item* item) const
     if (!proto->SellPrice)
         return false;
 
-    if (proto->Quality > sPlayerbotAIConfig.autoVendorJunkMaxQuality)
-        return false;
-
     // Never touch anything the bot is wearing or that is locked up in a trade/auction flow.
     if (item->IsEquipped() || item->IsInTrade())
         return false;
@@ -67,6 +64,42 @@ bool VendorJunkAction::IsJunk(Item* item) const
     // independently agrees is vendor fodder.
     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", proto->ItemId);
     if (usage != ITEM_USAGE_VENDOR && usage != ITEM_USAGE_NONE)
+        return false;
+
+    if (proto->Quality > sPlayerbotAIConfig.autoVendorJunkMaxQuality)
+        return IsOutleveledGear(item, proto, usage);
+
+    return true;
+}
+
+bool VendorJunkAction::IsOutleveledGear(Item* item, ItemTemplate const* proto, ItemUsage usage) const
+{
+    // Only the classifier's own verdict qualifies. ITEM_USAGE_NONE means "no opinion", which is a
+    // fine reason to sell a grey but not nearly enough to justify destroying a rare.
+    if (usage != ITEM_USAGE_VENDOR)
+        return false;
+
+    // Gear only. Restricting the class keeps this away from containers, reagents and consumables --
+    // a spare epic bag and a stack of rare crafting mats both reach the vendor branch for perfectly
+    // ordinary reasons, and neither is something to sell off behind the operator's back.
+    if (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON)
+        return false;
+
+    if (proto->Quality > sPlayerbotAIConfig.vendorOutleveledGearMaxQuality)
+        return false;
+
+    // The load-bearing guard. QueryItemUsageForEquip returns ITEM_USAGE_NONE both for gear the bot
+    // has outgrown and for gear it has not grown into yet -- BotCanUseItem fails the level check and
+    // the reason is gone by the time we see the answer. Without this, a level 13 character would
+    // vendor the level 20 blue it was saving, which is the one outcome worse than a full bag.
+    if (proto->RequiredLevel > bot->GetLevel())
+        return false;
+
+    // Soulbound is what makes this the last resort rather than the first. Anything still tradeable
+    // classifies as ITEM_USAGE_AH or ITEM_USAGE_DISENCHANT further up and never reaches here, so it
+    // goes to the auction house or the enchanter as it should; reaching this point means there is
+    // genuinely nothing else to be done with the item.
+    if (!item->IsSoulBound())
         return false;
 
     return true;

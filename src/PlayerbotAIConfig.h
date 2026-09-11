@@ -452,6 +452,10 @@ public:
     uint32 questBlacklistFailThreshold;
     bool autoVendorJunk;
     uint32 autoVendorJunkMaxQuality;
+    // Soulbound gear the bot has outgrown is dead weight: it cannot be traded, listed or given
+    // away, so the vendor is the only thing left to do with it. Capped at rare by default so a
+    // soulbound epic is never disposed of automatically.
+    uint32 vendorOutleveledGearMaxQuality;
     bool botTypeParity;
 
     // Economy / auction house (Phase 5).
