@@ -2109,6 +2109,94 @@ bool NewRpgBaseAction::ShouldAvoidArea(Player* bot, uint32 areaOrZoneId)
     return urand(1, 100) > sPlayerbotAIConfig.enemyTerritoryChance;
 }
 
+/**
+ * Talk to the NPC standing between the group and the rest of the dungeon.
+ *
+ * Not every door is opened by killing something. Shadowfang Keep's courtyard door is the clearest
+ * case: Rethilgore dies, the group has nothing left to pull, and the door stays shut because the
+ * actual mechanism is a gossip option on the prisoner in the cells -- SMART_EVENT_GOSSIP_SELECT on
+ * Deathstalker Adamant or Sorcerer Ashcrombe, who then walks to the door and unlocks it. A group of
+ * bots cleared the room and stood there for as long as anyone let them.
+ *
+ * Called only when the pull search has already come up empty, which is the honest signal that
+ * progress needs something other than violence. Restricted to instances, to friendly creatures that
+ * actually offer a gossip menu, and to NPCs whose flags say talking is all they are for -- a vendor
+ * or a trainer offers gossip too, and buying something is not progress.
+ *
+ * @return true if the bot moved toward an NPC or talked to one.
+ */
+bool NewRpgBaseAction::TryDungeonGossip()
+{
+    Map* map = bot->FindMap();
+    if (!map || !map->Instanceable())
+        return false;
+
+    std::list<Creature*> nearby;
+    Acore::AnyUnitInObjectRangeCheck check(bot, sPlayerbotAIConfig.dungeonPullSearchRange);
+    Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(bot, nearby, check);
+    Cell::VisitObjects(bot, searcher, sPlayerbotAIConfig.dungeonPullSearchRange);
+
+    // Anything that sells, trains, repairs, flies or banks is not a door mechanism. Innkeepers and
+    // auctioneers likewise. What is left in an instance is the NPC that is there to be spoken to.
+    constexpr uint32 NOT_PROGRESSION = UNIT_NPC_FLAG_VENDOR | UNIT_NPC_FLAG_TRAINER | UNIT_NPC_FLAG_REPAIR |
+                                       UNIT_NPC_FLAG_FLIGHTMASTER | UNIT_NPC_FLAG_BANKER |
+                                       UNIT_NPC_FLAG_INNKEEPER | UNIT_NPC_FLAG_AUCTIONEER |
+                                       UNIT_NPC_FLAG_SPIRITHEALER | UNIT_NPC_FLAG_STABLEMASTER;
+
+    Creature* talkTo = nullptr;
+    float bestDist = FLT_MAX;
+
+    for (Creature* creature : nearby)
+    {
+        if (!creature || !creature->IsAlive() || creature->IsHostileTo(bot))
+            continue;
+
+        if (!creature->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP) || creature->HasNpcFlag(NPCFlags(NOT_PROGRESSION)))
+            continue;
+
+        float const dist = bot->GetDistance(creature);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            talkTo = creature;
+        }
+    }
+
+    if (!talkTo)
+        return false;
+
+    if (bestDist > INTERACTION_DISTANCE)
+    {
+        LOG_DEBUG("playerbots", "[Dungeon] {} nothing to pull; walking to {} to talk", bot->GetName(),
+                  talkTo->GetName());
+        return MoveTo(map->GetId(), talkTo->GetPositionX(), talkTo->GetPositionY(), talkTo->GetPositionZ(),
+                      false, false, false, true);
+    }
+
+    bot->GetMotionMaster()->Clear();
+    bot->StopMoving();
+    bot->SetFacingToObject(talkTo);
+
+    WorldPacket hello(CMSG_GOSSIP_HELLO);
+    hello << talkTo->GetGUID();
+    bot->GetSession()->HandleGossipHelloOpcode(hello);
+
+    GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
+    if (!menu.GetMenuItemCount())
+        return false;
+
+    // The first option. These unlock NPCs offer exactly one thing, and guessing among several is
+    // not something to do blind -- if a menu ever has more, taking the first is still the option a
+    // person clicking through would take.
+    WorldPacket select(CMSG_GOSSIP_SELECT_OPTION);
+    select << talkTo->GetGUID() << uint32(menu.GetMenuId()) << uint32(0);
+    bot->GetSession()->HandleGossipSelectOptionOpcode(select);
+
+    LOG_DEBUG("playerbots", "[Dungeon] {} talked to {} (menu {}) with nothing left to pull", bot->GetName(),
+              talkTo->GetName(), menu.GetMenuId());
+    return true;
+}
+
 WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
 {
     Map* map = bot->FindMap();
@@ -2362,6 +2450,10 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
 
             LOG_DEBUG("playerbots", "[Dungeon] {} leads on map {} but found nothing to pull within {:.0f} yards",
                       bot->GetName(), map->GetId(), sPlayerbotAIConfig.dungeonPullSearchRange);
+
+            // Nothing to fight is not the same as nothing to do. Try the NPC before giving up.
+            if (TryDungeonGossip())
+                return true;
         }
 
         // Nothing left to pull, or not the leader. Resting beats wandering off in a dungeon.

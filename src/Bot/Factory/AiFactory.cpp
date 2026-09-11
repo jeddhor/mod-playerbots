@@ -29,6 +29,35 @@
 
 namespace
 {
+/**
+ * Did the Dungeon Finder put this character in the group as its tank?
+ *
+ * Deliberately reads the *group's* record and not LFGMgr's. LFGMgr::GetRoles returns what a player
+ * offered, and a bot offers everything its class can do -- a druid or paladin offers tank, healer
+ * and damage at once -- so testing it for PLAYER_ROLE_TANK is true for every one of them and would
+ * turn the whole class into tanks. The group stores the single role the proposal narrowed to, set
+ * by Group::SetLfgRoles when the group formed, which is the actual assignment.
+ *
+ * Returns false when there is no group or no role recorded, which is the honest answer: outside the
+ * Finder nothing has assigned a role and the caller should fall back to reading talents.
+ */
+bool AssignedTankByLfg(Player* player)
+{
+    Group* group = player ? player->GetGroup() : nullptr;
+    if (!group)
+        return false;
+
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        if (slot.guid == player->GetGUID())
+            return (slot.roles & lfg::PLAYER_ROLE_TANK) != 0;
+
+    return false;
+}
+}  // namespace
+
+
+namespace
+{
 constexpr uint32 SPELL_FROSTFIRE_BOLT = 44614;
 constexpr uint32 SPELL_ICE_SHARDS = 15047;
 constexpr uint32 SPELL_WHIRLWIND = 1680;
@@ -354,7 +383,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             engine->addStrategiesNoInit("dps", "dps assist", "cure", "cc", "aoe", nullptr);
             break;
         case CLASS_WARRIOR:
-            if (tab == WARRIOR_TAB_PROTECTION)
+            if (tab == WARRIOR_TAB_PROTECTION || AssignedTankByLfg(player))
                 engine->addStrategiesNoInit("tank", "tank assist", "pull", "pull back", "aoe", nullptr);
             else if (tab == WARRIOR_TAB_ARMS || !player->HasSpell(SPELL_WHIRLWIND))
                 engine->addStrategiesNoInit("arms", "aoe", "dps assist", nullptr);
@@ -372,7 +401,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             engine->addStrategiesNoInit("dps assist", "cure", "aoe", nullptr);
             break;
         case CLASS_PALADIN:
-            if (tab == PALADIN_TAB_PROTECTION)
+            // Spec alone decided this, so a paladin the Finder placed as the tank fought as
+            // retribution -- no Righteous Fury, no threat, in a dungeon that needed a tank.
+            if (tab == PALADIN_TAB_PROTECTION || AssignedTankByLfg(player))
                 engine->addStrategiesNoInit("tank", "tank assist", "pull", "pull back", "bthreat", "barmor", "cure", nullptr);
             else if (tab == PALADIN_TAB_HOLY)
                 engine->addStrategiesNoInit("heal", "dps assist", "cure", "bcast", nullptr);
@@ -401,15 +432,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 // LfgRolesFor advertises a druid as able to tank, the queue places it on that basis,
                 // and this is the one place that was not told. Outside the Finder there is no such
                 // assignment and the talent heuristic is still the best guess available.
-                bool tankRole = player->HasAura(SPELL_DRUID_THICK_HIDE) || !player->HasSpell(SPELL_CAT_FORM);
-
-                if (uint8 const lfgRoles = sLFGMgr->GetRoles(player->GetGUID()))
-                {
-                    if (lfgRoles & lfg::PLAYER_ROLE_TANK)
-                        tankRole = true;
-                    else if (lfgRoles & (lfg::PLAYER_ROLE_HEALER | lfg::PLAYER_ROLE_DAMAGE))
-                        tankRole = false;
-                }
+                bool const tankRole = AssignedTankByLfg(player) ||
+                                      player->HasAura(SPELL_DRUID_THICK_HIDE) ||
+                                      !player->HasSpell(SPELL_CAT_FORM);
 
                 if (tankRole)
                     engine->addStrategiesNoInit("bear", "tank assist", "pull", "pull back", "feral charge", nullptr);

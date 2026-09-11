@@ -126,6 +126,8 @@ protected:
     /// A completed quest whose hand-in is within the turn-in priority distance, or 0.
     /// P13.4 -- the next pull inside an instance, or an empty position when there is none.
     WorldPosition SelectDungeonPullPos();
+    /// Talk to a nearby progression NPC when a dungeon group has nothing left to pull.
+    bool TryDungeonGossip();
 
     /**
      * Is this area somewhere the other faction owns?
