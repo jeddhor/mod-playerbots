@@ -246,12 +246,31 @@ bool PetitionTurnInAction::Execute(Event /*event*/)
 
             Guild* guild = sGuildMgr->GetGuildById(bot->GetGuildId());
 
+            // The client draws a tabard from files it ships:
+            // Textures/GuildEmblems/<kind>_<style>_<colour>_t{l,u}_u.blp. A combination it has
+            // no file for simply does not draw -- in the game as much as in the Armory -- and
+            // the set is not rectangular. Emblem styles 0-169 each have 17 colours; border
+            // styles 0-5 have 17 but 6-9 have only 4. Backgrounds run 0-50.
+            //
+            // urand is inclusive at both ends, so the old upper bounds of 17, 51 and 180 were
+            // each one or more past the last real file, and the border colour was rolled
+            // without regard to the style it had to pair with. 7 of this realm's 21 guilds
+            // ended up with a tabard nothing could render.
+            static constexpr uint32 EMBLEM_STYLE_MAX = 169;
+            static constexpr uint32 EMBLEM_COLOR_MAX = 16;
+            static constexpr uint32 BORDER_STYLE_MAX = 9;
+            static constexpr uint32 BORDER_COLOR_MAX = 16;
+            static constexpr uint32 BACKGROUND_COLOR_MAX = 50;
+            // The first border style that ships four colours instead of seventeen.
+            static constexpr uint32 BORDER_STYLE_FEWER_COLORS = 6;
+            static constexpr uint32 BORDER_COLOR_FEWER_MAX = 3;
+
             uint32 st, cl, br, bc, bg;
-            bg = urand(0, 51);
-            bc = urand(0, 17);
-            cl = urand(0, 17);
-            br = urand(0, 7);
-            st = urand(0, 180);
+            bg = urand(0, BACKGROUND_COLOR_MAX);
+            cl = urand(0, EMBLEM_COLOR_MAX);
+            st = urand(0, EMBLEM_STYLE_MAX);
+            br = urand(0, BORDER_STYLE_MAX);
+            bc = urand(0, br >= BORDER_STYLE_FEWER_COLORS ? BORDER_COLOR_FEWER_MAX : BORDER_COLOR_MAX);
             EmblemInfo emblemInfo(st, cl, br, bc, bg);
 
             guild->HandleSetEmblem(emblemInfo); // official core handling
