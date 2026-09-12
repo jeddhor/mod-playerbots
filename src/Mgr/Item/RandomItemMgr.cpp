@@ -1447,6 +1447,27 @@ bool RandomItemMgr::IsValidItem(ItemTemplate const* proto)
     if (sPlayerbotAIConfig.unobtainableItems.contains(proto->ItemId))
         return false;
 
+    // Distrust a RequiredLevel of 1 on an item whose item level says otherwise.
+    //
+    // Gear is cached as equipCacheNew[RequiredLevel][slot] and looked up by a bot's own level, so
+    // one wrong column hands raid loot to a starting bot. The Ashen Verdict "Might" rings were the
+    // live case: 52569-52572 carried RequiredLevel 1 at item levels 251 to 277 while their sixteen
+    // siblings from the same import all said 80. In game they sit behind Exalted with the Ashen
+    // Verdict; bot gearing never consults reputation, so equipCacheNew[1][Finger] held a 277 ring.
+    //
+    // Exactly 1, not "<= 1". RequiredLevel 0 means the column was never set, which is ordinary --
+    // 2,060 items at item level 100 or better are in that state, mostly Outland quest rewards --
+    // and it lands in bucket 0, which no bot queries because no bot is level 0. Sweeping those up
+    // would remove two thousand usable items to fix four.
+    //
+    // Those four have since been corrected in the world database, so today this catches only
+    // three items that IsInternalItem already rejects by name. It is here because the correction
+    // is not durable: item_template comes from a downloaded world dump, and the next import brings
+    // RequiredLevel 1 back. The invariant outlives the row fix.
+    static constexpr uint32 IMPLAUSIBLE_ITEM_LEVEL = 100;
+    if (proto->RequiredLevel == 1 && proto->ItemLevel >= IMPLAUSIBLE_ITEM_LEVEL)
+        return false;
+
     return true;
 }
 

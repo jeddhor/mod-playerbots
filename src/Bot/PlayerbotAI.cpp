@@ -6075,16 +6075,35 @@ std::string PlayerbotAI::GetLastAction(BotState state)
 
 void PlayerbotAI::NoteHumanMovementInput(bool holding)
 {
-    bool const wasDriving = HumanIsDriving();
-
     _humanHoldingKey = holding;
     _humanInputMs = getMSTime();
 
     // Kill the spline on the *first* input, not on the next AI tick. A tick is up to a second away,
     // and a second of a character continuing to walk somewhere the person did not ask for is
-    // exactly the complaint. Only on the transition, so holding a key does not re-clear every
-    // packet and stutter the movement the person is trying to make.
-    if (holding && !wasDriving)
+    // exactly the complaint.
+    //
+    // Released on any steering packet, not only on a key-down. That was the bug behind "it is
+    // IMPOSSIBLE to stop her by just trying to control her": stopping *is* a stop packet. The
+    // [HumanInput] log of a real attempt to steer during a walk shows what arrives --
+    //
+    //   MSG_MOVE_STOP       moving=1 genType=8
+    //   MSG_MOVE_START_SWIM moving=1 genType=8
+    //   MSG_MOVE_STOP_SWIM  moving=1 genType=8
+    //
+    // -- two of the three being stop-type, which set the grace period and left the spline
+    // untouched. CanMove() then refused to issue *new* movement while the existing spline ran to
+    // its destination, so the character kept walking and would not take orders: the worst of both.
+    //
+    // The condition is what is driving the character, not which key moved. genType 8 is
+    // POINT_MOTION_TYPE, the AI walking somewhere; a person moving under their own power leaves
+    // the generator IDLE, which is what the same log shows for every packet sent while the AI was
+    // not moving. So this fires exactly when there is a server-issued spline to take away, and
+    // never while somebody is steering -- which is what the old key-down-only test was protecting
+    // against, and it kept the stutter guard by accident rather than on purpose.
+    MovementGeneratorType const driver =
+        bot && bot->GetMotionMaster() ? bot->GetMotionMaster()->GetCurrentMovementGeneratorType()
+                                      : IDLE_MOTION_TYPE;
+    if (driver != IDLE_MOTION_TYPE)
         ReleaseMovementToHuman();
 }
 
