@@ -510,6 +510,7 @@ public:
     uint32 gatheringMinFreeBagSlots;
     uint32 fishingMinFreeBagSlots;
     bool economySupervisedBotsSell;
+    uint32 economyClearUntilFreeSlots;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;

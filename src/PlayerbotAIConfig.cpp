@@ -916,6 +916,11 @@ bool PlayerbotAIConfig::Initialize()
     fishingMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Fishing.MinFreeBagSlots", 4);
     economySupervisedBotsSell =
         sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
+    // The high-water mark a clearing bot works towards, against Agenda.FreeSlotTarget as the low
+    // mark that starts it. Must be the larger of the two or a bot stops as soon as it starts.
+    economyClearUntilFreeSlots = std::max<uint32>(
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.ClearUntilFreeSlots", 24),
+        agendaFreeSlotTarget + 1);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
     randomBotGroupNearby = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotGroupNearby", true);

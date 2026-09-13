@@ -2919,6 +2919,23 @@ AiPlayerbot.Economy.MaxListingAttempts = 3
 AiPlayerbot.Economy.SupervisedBotsSell = 1
 
 #
+#    AiPlayerbot.Economy.ClearUntilFreeSlots
+#        Description: How much free space a bot clears *to*, once it has started clearing.
+#
+#                     Agenda.FreeSlotTarget is the low mark that starts a bot selling. This is the
+#                     high mark it works towards. They are deliberately different: with a single
+#                     threshold a bot stops the moment it crosses back over it, which in practice
+#                     meant an alt with 112 of 112 slots used emptied its backpack, reached 9 free
+#                     against a target of 8, and left 96 items sitting in its equipped bags.
+#
+#                     Raise it for tidier bags and more auction traffic; lower it to let bots hoard.
+#                     Always forced to at least Agenda.FreeSlotTarget + 1.
+#        Default:     24
+#
+
+AiPlayerbot.Economy.ClearUntilFreeSlots = 24
+
+#
 #    AiPlayerbot.Agenda.Enabled
 #        Bots pursue goals -- level up, earn gold, train a profession, clear their bags -- and those
 #        goals bias which activity they choose next. With this off every bot draws from the same

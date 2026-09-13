@@ -158,7 +158,7 @@ bool PostAuctionAction::isUseful()
         if (!sPlayerbotAIConfig.economySupervisedBotsSell)
             return false;
 
-        if (bot->GetFreeInventorySpace() >= sPlayerbotAIConfig.agendaFreeSlotTarget)
+        if (bot->GetFreeInventorySpace() >= sPlayerbotAIConfig.economyClearUntilFreeSlots)
             return false;
     }
 
@@ -175,7 +175,20 @@ bool PostAuctionAction::isUseful()
 bool PostAuctionAction::Execute(Event /*event*/)
 {
     uint32 const held = sBotEconomyMgr.GetBotListingCount(bot->GetGUID());
-    bool const bagsUnderPressure = bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
+    uint32 const freeSlots = bot->GetFreeInventorySpace();
+
+    // Two thresholds, not one, because entering and leaving on the same test makes a bot stop the
+    // instant it crosses back over it.
+    //
+    // That is precisely what an operator watched: an alt bot with 112 of 112 slots used cleared its
+    // backpack, reached 9 free against a target of 8, and stopped -- with 96 items still sitting in
+    // its equipped bags, which it never touched again. Clearing nine slots and calling the job done
+    // is not tidying a bag, it is oscillating on a boundary.
+    //
+    // So `underPressure` (the low mark) only decides how *aggressively* to work, and `shouldTidy`
+    // (the high mark) decides whether to work at all. A bot that starts clearing now finishes.
+    bool const bagsUnderPressure = freeSlots < sPlayerbotAIConfig.agendaFreeSlotTarget;
+    bool const shouldTidy = freeSlots < sPlayerbotAIConfig.economyClearUntilFreeSlots;
 
     // Two budgets, deliberately separate.
     //
@@ -193,7 +206,7 @@ bool PostAuctionAction::Execute(Event /*event*/)
                             : 0;
     listBudget = std::min<uint32>(listBudget, bagsUnderPressure ? 8 : 3);
 
-    uint32 const vendorBudget = bagsUnderPressure ? 8 : 1;
+    uint32 const vendorBudget = bagsUnderPressure ? 8 : (shouldTidy ? 3 : 1);
 
     CollectBagItemsVisitor visitor;
     IterateItems(&visitor, ITERATE_ITEMS_IN_BAGS);
@@ -226,7 +239,7 @@ bool PostAuctionAction::Execute(Event /*event*/)
             // using, wearing, questing with or feeding to a profession is protected; the rest is
             // fair game when the bags are full. Checked here rather than relying on the class list
             // because that list was a proxy for exactly this test.
-            if (vendored < vendorBudget && bagsUnderPressure && sBotEconomyMgr.IsAuctionable(item) &&
+            if (vendored < vendorBudget && shouldTidy && sBotEconomyMgr.IsAuctionable(item) &&
                 item->GetTemplate()->SellPrice)
             {
                 ItemUsage const suppressedUsage = AI_VALUE2(ItemUsage, "item usage", item->GetEntry());
