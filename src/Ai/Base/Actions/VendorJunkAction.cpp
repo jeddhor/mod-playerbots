@@ -70,8 +70,32 @@ bool VendorJunkAction::IsJunk(Item* item) const
     if (proto->Quality > sPlayerbotAIConfig.autoVendorJunkMaxQuality)
         return IsOutleveledGear(item, proto, usage);
 
+    // At or below the junk threshold, gear the bot will not wear is junk as well.
+    //
+    // The branch above already knows ITEM_USAGE_BAD_EQUIP cannot survive the VENDOR/NONE filter --
+    // its own comment says so -- but it only routes *above*-threshold items around it. Below the
+    // threshold they fell straight into the filter and were rejected, so grey **gear** could never
+    // be sold while every other kind of grey could. An operator watched a bot with full bags clear
+    // its cloth and vendor trash and sit on a Wooden Shield, Worn Mail Pants, a Worn Hatchet and a
+    // Chipped Quarterstaff indefinitely.
+    //
+    // A grey item the classifier does not want equipped has no other use: it cannot be listed,
+    // nobody wants it, and its vendor price is the whole of its value. That is what the quality
+    // threshold means. EQUIP and REPLACE are deliberately still excluded, because a low enough bot
+    // really may want to wear a grey.
+    if (usage == ITEM_USAGE_BAD_EQUIP || usage == ITEM_USAGE_BROKEN_EQUIP)
+        return true;
+
     if (usage != ITEM_USAGE_VENDOR && usage != ITEM_USAGE_NONE)
+    {
+        // Says which verdict kept a worthless item in the bags. Only fires for items at or below the
+        // junk threshold that were rejected anyway, which is rare and is exactly the case worth
+        // seeing: 638 grey weapons and armour sat across 160 bots and no count of what *was* sold
+        // could show why.
+        LOG_DEBUG("playerbots", "[JunkCheck] {} kept grey {} (class {}) -- usage {}", bot->GetName(),
+                  proto->Name1, uint32(proto->Class), uint32(usage));
         return false;
+    }
 
     return true;
 }

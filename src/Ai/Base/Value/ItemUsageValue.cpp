@@ -266,7 +266,18 @@ ItemUsage ItemUsageValue::Calculate()
     // Need to add something like free bagspace or item value.
     if (proto->SellPrice > 0)
     {
-        bool const listable = !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP;
+        // Quality belongs in "listable" because that word means exactly one thing: the auction
+        // house will accept it. BotEconomyMgr::ShouldPost refuses anything below normal quality
+        // outright -- greys bury real listings and nobody bids on them -- so classifying a grey as
+        // AH strands it. The house will not take it, and VendorJunkAction leaves it alone precisely
+        // because the classifier said "auction".
+        //
+        // That is how 638 grey weapons and armour piled up across 160 bots. The gear branch below
+        // says "white gear" in its own comment and simply had no floor to match, so every grey
+        // sword and belt fell into it. With the floor here, greys reach ITEM_USAGE_VENDOR at the
+        // bottom of this block, which is where the economy's own comment says they belong.
+        bool const listable = !isSoulbound && proto->Bonding != BIND_WHEN_PICKED_UP &&
+                              proto->Quality >= ITEM_QUALITY_NORMAL;
 
         if (proto->Quality >= ITEM_QUALITY_UNCOMMON && listable)
             return ITEM_USAGE_AH;
