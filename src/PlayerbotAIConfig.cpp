@@ -489,7 +489,10 @@ bool PlayerbotAIConfig::Initialize()
     grindMaxLevelDiffGrouped = sConfigMgr->GetOption<uint32>("AiPlayerbot.GrindMaxLevelDiffGrouped", 4);
 
     humanControlEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HumanControlEnabled", true);
-    humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 1500);
+    // 1500 was too twitchy to steer against: it is the pause after your last input before the
+    // AI starts walking again, and a second and a half is shorter than the gap between two
+    // deliberate key presses, so a person repositioning fought the bot for every step.
+    humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 5000);
 
     // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
     // currently below each ceiling, so the two numbers mean what an operator expects them to.

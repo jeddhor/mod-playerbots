@@ -6109,23 +6109,33 @@ void PlayerbotAI::NoteHumanMovementInput(bool holding)
 
 void PlayerbotAI::RefreshHumanMovementInput()
 {
-    // Only meaningful while a key is believed down. A heartbeat on its own is not evidence that a
-    // person is steering -- it is just the client reporting a position -- so this never starts a
-    // hold, it only keeps an existing one from expiring.
-    if (!_humanHoldingKey)
+    // Only while the character is actually going somewhere.
+    //
+    // A held movement key moves you. If the client reports position while the character stands
+    // still, nothing is being steered, and renewing the hold on those heartbeats stranded the AI
+    // for good: it still fought and buffed, because only movement consults HumanIsDriving, so the
+    // character sat in one place refreshing Blessing of Might -- which is what an operator watched.
+    if (!bot || !bot->isMoving())
         return;
 
-    // And only while the character is actually going somewhere.
+    // Moving with nothing on the server driving means the *client* is moving the character, and
+    // that is a person at the keyboard. It is a far better signal than the key latch, because it
+    // stays true for as long as they steer and needs no matching release to ever arrive.
     //
-    // A held movement key moves you. If the client is reporting position while the character stands
-    // still, whatever put _humanHoldingKey up is no longer true -- most likely a key-down whose
-    // matching stop never arrived, which happens when the server was driving the character at the
-    // time and the client swallowed the release.
+    // The latch alone was the bug behind "I cannot override her movement". It is one boolean set
+    // by the last packet, and the client interleaves starts and stops: tapping strafe while
+    // holding forward sends MSG_MOVE_STOP_STRAFE, which cleared it although forward was still
+    // down. This function then returned early, the heartbeats that prove the person is still
+    // walking were discarded, and the AI took movement back 1500ms later while they were mid-
+    // stride. A real trace of someone steering shows exactly that -- a burst of interleaved
+    // starts and stops, a stop last, then heartbeats at genType=0 that nothing was listening to.
     //
-    // Without this test those heartbeats renewed the hold forever and the AI never moved again. It
-    // still fought and buffed, because only movement consults HumanIsDriving, so the character sat
-    // in one place refreshing Blessing of Might -- which is exactly what an operator watched.
-    if (!bot || !bot->isMoving())
+    // The latch is still honoured, because a person can hold a key while the server drives and
+    // the generator is then not IDLE; this only adds the case it was missing.
+    bool const serverDriving =
+        bot->GetMotionMaster() &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE;
+    if (!_humanHoldingKey && serverDriving)
         return;
 
     _humanInputMs = getMSTime();

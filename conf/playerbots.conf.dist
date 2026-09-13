@@ -3115,10 +3115,10 @@ AiPlayerbot.UnfinishedLootRetrySeconds = 300
 #                     steers a self bot again. Pressing a movement key cancels whatever the AI had
 #                     in flight immediately; this only covers the gap between two taps so the AI
 #                     does not grab the character back mid-manoeuvre.
-#        Default:     1500
+#        Default:     5000
 #
 
-AiPlayerbot.HumanControlGraceMs = 1500
+AiPlayerbot.HumanControlGraceMs = 5000
 
 #
 #    AiPlayerbot.HumanControlEnabled
