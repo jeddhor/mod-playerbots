@@ -2683,6 +2683,26 @@ void PlayerbotFactory::EquipCarriedBags(Player* bot)
     }
 }
 
+void PlayerbotFactory::SpendFreeTalentPoints(Player* bot)
+{
+    if (!bot || bot->GetFreeTalentPoints() <= 0)
+        return;
+
+    // A random bot may be rebuilt from scratch. A character that belongs to a person may not:
+    // InitTalentsTree's reset flag calls resetTalents(), which throws away a build somebody
+    // chose. Owned bots therefore only ever have their *unspent* points filled in, and
+    // increment keeps whatever tree they are already in rather than rolling a new spec.
+    //
+    // Before this, owned bots picked no talents at all -- the whole path was behind an
+    // IsRandomBot check -- and 55 of this realm's 57 player-owned characters above level 10 had
+    // spent nothing, at an average level of 51. Random bots averaged 13.2 points spent.
+    bool const owned = !sRandomPlayerbotMgr.IsRandomBot(bot);
+
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.InitTalentsTree(true, true, !owned);
+    factory.InitPetTalents();
+}
+
 void PlayerbotFactory::EnsureStartingKit(Player* bot)
 {
     if (!bot)

@@ -483,6 +483,11 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     // and was going without bags entirely: 0.66 bags on average below level 10, against ~3.9 above.
     PlayerbotFactory::EnsureStartingKit(bot);
 
+    // Talents at login too, not only on the levelup trigger. The trigger fires when a bot gains a
+    // level, so a character that was already sitting at 51 with every point unspent would have
+    // waited for level 52 to get any of them -- and a level 80 would have waited forever.
+    PlayerbotFactory::SpendFreeTalentPoints(bot);
+
     Player* master = botAI->GetMaster();
 
     Group* group = bot->GetGroup();

@@ -36,15 +36,13 @@ void AutoMaintenanceOnLevelupAction::AutoTeleportForLevel()
 
 void AutoMaintenanceOnLevelupAction::AutoPickTalents()
 {
-    if (!sPlayerbotAIConfig.autoPickTalents || !sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sPlayerbotAIConfig.autoPickTalents)
         return;
 
     if (bot->GetFreeTalentPoints() <= 0)
         return;
 
-    PlayerbotFactory factory(bot, bot->GetLevel());
-    factory.InitTalentsTree(true, true, true);
-    factory.InitPetTalents();
+    PlayerbotFactory::SpendFreeTalentPoints(bot);
 }
 
 void AutoMaintenanceOnLevelupAction::AutoLearnSpell()

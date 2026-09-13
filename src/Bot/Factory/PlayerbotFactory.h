@@ -51,6 +51,10 @@ enum spec : uint8
 class PlayerbotFactory
 {
 public:
+    /// Spend whatever talent points a bot has left. Safe to call on any bot: a character that
+    /// belongs to a person keeps the tree it is already in and only has its unspent points filled.
+    static void SpendFreeTalentPoints(Player* bot);
+
     /// P13.1 -- bags for every bot, seed money for random ones. Safe to call on any bot.
     static void EnsureStartingKit(Player* bot);
 
