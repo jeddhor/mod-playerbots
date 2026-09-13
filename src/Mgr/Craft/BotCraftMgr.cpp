@@ -19,6 +19,7 @@
 #include "Playerbots.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "StatsWeightCalculator.h"
 #include "StringFormat.h"
 
 #include <algorithm>
@@ -32,6 +33,9 @@ constexpr uint32 CRAFT_INTERVAL_MS = 5 * 60 * 1000;
 /// Stock the market to this depth and no further. Enough that an enchanter looking for a rod finds
 /// one; few enough that blacksmiths do not spend their day making copper rods nobody wants.
 constexpr uint32 TARGET_LISTING_DEPTH = 3;
+
+/// An upgrade has to beat what is worn by this fraction before it is worth buying materials for.
+constexpr float UPGRADE_MARGIN = 0.05f;
 }  // namespace
 
 namespace
@@ -43,6 +47,31 @@ uint32 SkillLineOf(uint32 spellId)
     for (auto itr = bounds.first; itr != bounds.second; ++itr)
         if (itr->second && itr->second->SkillLine)
             return itr->second->SkillLine;
+
+    return 0;
+}
+
+/// Every reagent present in the quantity the recipe wants.
+bool HasAllReagents(Player* bot, SpellInfo const* info)
+{
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (info->Reagent[i] <= 0 || !info->ReagentCount[i])
+            continue;
+
+        if (bot->GetItemCount(uint32(info->Reagent[i]), false) < info->ReagentCount[i])
+            return false;
+    }
+
+    return true;
+}
+
+/// The item a crafting spell produces, or 0 if it makes nothing.
+uint32 CreatedItemOf(SpellInfo const* info)
+{
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].Effect == SPELL_EFFECT_CREATE_ITEM && info->Effects[i].ItemType)
+            return info->Effects[i].ItemType;
 
     return 0;
 }
@@ -274,7 +303,183 @@ bool BotCraftMgr::CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forM
         ++_listed;
     }
 
-    LOG_DEBUG("playerbots", "[Craft] {} made {} for the market", bot->GetName(), itemId);
+    // Announce it the way a real craft does. StoreNewItem puts the item in the bag but sends no
+    // SMSG_ITEM_PUSH_RESULT, and that packet is what drives the bot's equip check -- without it a
+    // crafted upgrade waits for the next periodic sweep instead of being worn straight away. On a
+    // self bot it is also what the owner's client shows as "you made this".
+    bot->SendNewItem(made, 1, false, true);
+
+    // The spell is never actually cast here -- the reagents are destroyed and the product stored
+    // directly -- so the skill-up the core grants on a real craft has to be asked for explicitly.
+    // Without this a blacksmith supplies rods to the market all day and ends the day at the skill
+    // it started with. UpdateCraftSkill does the colour roll itself, so a grey recipe correctly
+    // yields nothing.
+    bot->UpdateCraftSkill(spellId);
+
+    LOG_DEBUG("playerbots", "[Craft] {} made {} {}", bot->GetName(), itemId,
+              forMarket ? "for the market" : "for itself");
+    return true;
+}
+
+bool BotCraftMgr::CraftForSkillUp(Player* bot)
+{
+    uint32 bestSpell = 0;
+    uint32 bestItem = 0;
+    uint32 bestGreyAt = 0;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        uint32 const itemId = CreatedItemOf(info);
+        if (!itemId)
+            continue;
+
+        SkillLineAbilityMapBounds bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            SkillLineAbilityEntry const* ability = itr->second;
+            if (!ability || !ability->SkillLine || !ability->TrivialSkillLineRankHigh)
+                continue;
+
+            // TrivialSkillLineRankHigh is where the recipe goes grey and stops paying. At or above
+            // it, crafting consumes materials for nothing, which is worse than not crafting.
+            uint16 const skill = bot->GetPureSkillValue(ability->SkillLine);
+            if (!skill || skill < ability->MinSkillLineRank || skill >= ability->TrivialSkillLineRankHigh)
+                continue;
+
+            // Closest to grey first. Materials should go to the recipe that is about to stop paying
+            // rather than to one that will still be paying in fifty points' time -- the cheap
+            // low-level recipe is the one whose remaining value is expiring.
+            if (bestSpell && ability->TrivialSkillLineRankHigh >= bestGreyAt)
+                continue;
+
+            // Checked last because it is the expensive test, and only for a recipe that has already
+            // earned the right to be crafted.
+            if (!HasAllReagents(bot, info))
+                continue;
+
+            bestGreyAt = ability->TrivialSkillLineRankHigh;
+            bestSpell = spellId;
+            bestItem = itemId;
+        }
+    }
+
+    if (!bestSpell)
+        return false;
+
+    // forMarket is false: the product stays with the bot, and whether it is worth listing is the
+    // economy's decision made against the reserve. Food especially -- a cooked stack is what the
+    // eat/drink logic wants, and auctioning it the moment it is made defeats the point of cooking.
+    if (!CraftOne(bot, bestSpell, bestItem, false))
+        return false;
+
+    std::unique_lock<std::shared_mutex> guard(_mutex);
+    ++_skillCrafts;
+    return true;
+}
+
+bool BotCraftMgr::CraftUpgrade(Player* bot)
+{
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return false;
+
+    StatsWeightCalculator calculator(bot);
+    calculator.SetItemSetBonus(false);
+    calculator.SetOverflowPenalty(false);
+
+    uint32 bestSpell = 0;
+    uint32 bestItem = 0;
+    float bestGain = 0.0f;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        uint32 const itemId = CreatedItemOf(info);
+        if (!itemId)
+            continue;
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+        if (!proto || (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON))
+            continue;
+
+        // Class, race and level requirements. A tailor can make plate-wearer gear and a smith can
+        // make things it cannot lift; neither is an upgrade to the bot that made it.
+        if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
+            continue;
+
+        uint8 const slot = botAI->FindEquipSlot(proto, NULL_SLOT, true);
+        if (slot >= EQUIPMENT_SLOT_END)
+            continue;
+
+        float const newScore = calculator.CalculateItem(itemId);
+        if (newScore <= 0.0f)
+            continue;
+
+        Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        float const currentScore =
+            equipped ? calculator.CalculateItem(equipped->GetTemplate()->ItemId,
+                                                equipped->GetItemRandomPropertyId())
+                     : 0.0f;
+
+        // A genuine upgrade, not a rounding difference. Buying a stack of ore to gain half a point
+        // of attack power is how a bot spends its gold on nothing.
+        float const gain = newScore - currentScore;
+        if (gain <= 0.0f || gain < currentScore * UPGRADE_MARGIN)
+            continue;
+
+        if (gain <= bestGain)
+            continue;
+
+        bestGain = gain;
+        bestSpell = spellId;
+        bestItem = itemId;
+    }
+
+    if (!bestSpell)
+        return false;
+
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(bestSpell);
+    if (!info)
+        return false;
+
+    // Buy one missing reagent per pass rather than the whole shopping list at once. A bot that
+    // empties its purse in a single tick cannot react to what that purchase did to the price, and
+    // the five-minute interval makes the trickle invisible in play.
+    for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+    {
+        if (info->Reagent[r] <= 0 || !info->ReagentCount[r])
+            continue;
+
+        uint32 const reagent = uint32(info->Reagent[r]);
+        if (bot->GetItemCount(reagent, false) >= info->ReagentCount[r])
+            continue;
+
+        return BuyReagent(bot, reagent, info->ReagentCount[r]);
+    }
+
+    // Nothing missing: everything is in the bag and the thing is worth making.
+    if (!CraftOne(bot, bestSpell, bestItem, false))
+        return false;
+
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        ++_upgradeCrafts;
+    }
+
+    LOG_DEBUG("playerbots", "[Craft] {} crafted {} as an upgrade (+{:.1f})", bot->GetName(), bestItem, bestGain);
     return true;
 }
 
@@ -346,11 +551,22 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
             }
         }
     }
+
+    // The market comes first only because it almost never fires -- it is gated on the auction house
+    // actually being short of a blank.
+    //
+    // Then upgrades before skill-ups. An upgrade is worth buying materials for and a skill point is
+    // not, so the pass that is allowed to spend gold gets first refusal on the bot's attention; if
+    // it finds nothing worth making, the free pass over what is already in the bag runs instead.
+    if (CraftUpgrade(bot))
+        return;
+
+    CraftForSkillUp(bot);
 }
 
 std::string BotCraftMgr::DescribeStats() const
 {
     std::shared_lock<std::shared_mutex> guard(_mutex);
-    return Acore::StringFormat("craft: {} made, {} listed, {} passes short of reagents", _crafted, _listed,
-                               _shortReagents);
+    return Acore::StringFormat("craft: {} made ({} for skill, {} upgrades), {} listed, {} passes short of reagents",
+                               _crafted, _skillCrafts, _upgradeCrafts, _listed, _shortReagents);
 }

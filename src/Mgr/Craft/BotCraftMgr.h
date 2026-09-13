@@ -78,6 +78,33 @@ private:
     /// Craft one unit of the item this spell makes, consuming its reagents. False if short.
     bool CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket);
 
+    /**
+     * Craft one recipe that would still raise a profession skill, from reagents already in the bag.
+     *
+     * This is the half of crafting that was missing: the market loop above only ever makes tool
+     * blanks, so a bot with a known recipe, the reagents for it, and a skill that recipe would
+     * raise still never crafted. The visible form of that was a paladin holding twenty Stringy Wolf
+     * Meat that ReagentReserve kept back *for* cooking, which nothing then cooked -- the bag space
+     * spent and no skill gained.
+     *
+     * Reagents are never bought for this. Buying to level a skill is a gold sink with no economic
+     * signal behind it, and a bot that starts doing it keeps doing it until the gold is gone.
+     */
+    bool CraftForSkillUp(Player* bot);
+
+    /**
+     * Buy the materials for a known recipe that makes a genuine upgrade, and craft it.
+     *
+     * This is the consumption side of the economy. Everything else in the market is bots *selling*
+     * -- gathered ore, looted greens, surplus bars -- and a market with only sellers is a market
+     * whose prices fall until nothing is worth gathering. This is the one rule that makes a bot buy
+     * raw materials for a reason it would have anyway: it wants better gear.
+     *
+     * Deliberately the only place reagents are bought for the bot's own use. CraftForSkillUp will
+     * not buy, because "I want a skill point" is not a reason a market can price.
+     */
+    bool CraftUpgrade(Player* bot);
+
     std::once_flag _loadOnce;
 
     /// Items that are reagents of a tool recipe -- rod blanks and their equivalents.
@@ -87,6 +114,8 @@ private:
     std::unordered_map<ObjectGuid, uint32> _timers;
 
     uint32 _crafted{0};
+    uint32 _skillCrafts{0};
+    uint32 _upgradeCrafts{0};
     uint32 _listed{0};
     uint32 _shortReagents{0};
     uint32 _reagentsBought{0};

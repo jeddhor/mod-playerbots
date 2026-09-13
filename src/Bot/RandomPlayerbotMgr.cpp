@@ -11,6 +11,7 @@
 #include "BotDungeonMgr.h"
 #include "BotLfgMgr.h"
 #include "RandomBotLevelMgr.h"
+#include "BotCraftMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
@@ -2521,6 +2522,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "safety")
     {
         LOG_INFO("playerbots", "{}", sBotSafetyMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd == "craft")
+    {
+        LOG_INFO("playerbots", "{}", sBotCraftMgr.DescribeStats());
         return true;
     }
 
