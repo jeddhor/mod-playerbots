@@ -1438,8 +1438,21 @@ AiPlayerbot.RpgStatusProbWeight.Vendor = 10
 AiPlayerbot.RpgStatusProbWeight.Mailbox = 5
 AiPlayerbot.RpgStatusProbWeight.Gather = 20
 AiPlayerbot.RpgStatusProbWeight.Train = 8
+#    Fish is only ever offered to a bot already standing within casting reach of water, so it
+#    competes for far fewer rolls than the number suggests -- most bots never see it at all.
+AiPlayerbot.RpgStatusProbWeight.Fish = 10
 
 AiPlayerbot.Gathering.MinFreeBagSlots = 4
+
+#
+#    AiPlayerbot.Fishing.MinFreeBagSlots
+#        Description: Free bag slots a bot needs before it will start fishing, and the point at
+#                     which it stops. Fishing fills bags steadily, so this is checked every cast
+#                     rather than only on entry.
+#        Default:     4
+#
+
+AiPlayerbot.Fishing.MinFreeBagSlots = 4
 
 #
 #    AiPlayerbot.Quest.MaxDropsPerPass
@@ -2887,6 +2900,23 @@ AiPlayerbot.Economy.DisenchantMaxQuality = 4
 #
 
 AiPlayerbot.Economy.MaxListingAttempts = 3
+
+#
+#    AiPlayerbot.Economy.SupervisedBotsSell
+#        Description: May a bot under your command sell when its bags are full?
+#
+#                     Bots you are commanding do not trade routinely -- an alt bot should not be
+#                     quietly liquidating the bags you are looking at. But an alt bot that follows
+#                     you all evening loots the whole time and sells none of it, so it reaches a
+#                     full bag and stops: no looting, no quest items, no gathering.
+#
+#                     With this on, a commanded bot may sell once its free space falls below
+#                     Agenda.FreeSlotTarget, and only then. Set to 0 for the strict rule, where a
+#                     commanded bot never sells on its own and you manage its bags yourself.
+#        Default:     1 (enabled)
+#
+
+AiPlayerbot.Economy.SupervisedBotsSell = 1
 
 #
 #    AiPlayerbot.Agenda.Enabled

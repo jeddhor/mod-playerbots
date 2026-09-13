@@ -852,6 +852,10 @@ bool PlayerbotAIConfig::Initialize()
     RpgStatusProbWeight[RPG_MAILBOX] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Mailbox", 5);
     RpgStatusProbWeight[RPG_GATHER] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Gather", 20);
     RpgStatusProbWeight[RPG_TRAIN] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Train", 8);
+    // Low on purpose. Fishing is only ever available to a bot that is already standing near water,
+    // so this weight competes for far fewer rolls than it looks like it does -- most bots, most of
+    // the time, never see it offered at all.
+    RpgStatusProbWeight[RPG_FISH] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Fish", 10);
 
     questMaxDropsPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.MaxDropsPerPass", 1);
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
@@ -909,6 +913,9 @@ bool PlayerbotAIConfig::Initialize()
     inspectorMinSecurity = sConfigMgr->GetOption<uint32>("AiPlayerbot.Inspector.MinSecurityLevel", 2);
     inspectorMinIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Inspector.MinIntervalMs", 100);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
+    fishingMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Fishing.MinFreeBagSlots", 4);
+    economySupervisedBotsSell =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
 
     syncLevelWithPlayers = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncLevelWithPlayers", false);
     randomBotGroupNearby = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotGroupNearby", true);

@@ -110,9 +110,23 @@ public:
         uint32 const reserve = sBotCraftMgr.ReagentReserve(bot, entry);
 
         if (reserve && bot->GetItemCount(entry, false) - item->GetCount() < reserve)
+        {
+            LOG_DEBUG("playerbots", "[EconomyDrop] {} kept {} back: reagent reserve {}", bot->GetName(),
+                      proto->Name1, reserve);
             return false;
+        }
 
-        return sBotEconomyMgr.PostAuction(bot, item);
+        // Every exit above this one is silent, which is how 287 of one bot's 305 queue attempts
+        // disappeared with no way to tell which rule ate them. The manager's own counters covered
+        // the market side -- "0 failed, 13281 suppressed by depth" is what finally explained it --
+        // but nothing covered the per-bot rules in here.
+        if (!sBotEconomyMgr.PostAuction(bot, item))
+        {
+            LOG_DEBUG("playerbots", "[EconomyDrop] {} could not post {}", bot->GetName(), proto->Name1);
+            return false;
+        }
+
+        return true;
     }
 
     ObjectGuid GetBotGuid() const override { return _botGuid; }
@@ -131,35 +145,64 @@ bool PostAuctionAction::isUseful()
         return false;
 
     // A bot under a human's command should not be quietly liquidating the bags its owner is
-    // looking at. Only unsupervised bots trade on their own account.
+    // looking at -- that was the whole of this rule, and on its own it is too strong. An alt bot
+    // that follows you all evening loots the whole time and never sells any of it, so it arrives at
+    // a full bag and simply stops: it cannot loot, cannot pick up quest items, and cannot gather.
+    //
+    // So the rule now has an exception rather than an override. Routine trading while supervised is
+    // still off; selling when the bags are actually full is allowed, because at that point the
+    // choice is not "sell the owner's things or leave them alone", it is "sell them or let the
+    // character stop working". Set Economy.SupervisedBotsSell = 0 to restore the strict rule.
     if (botAI->GetMaster() && !GET_PLAYERBOT_AI(botAI->GetMaster()))
-        return false;
+    {
+        if (!sPlayerbotAIConfig.economySupervisedBotsSell)
+            return false;
 
-    return sBotEconomyMgr.GetBotListingCount(bot->GetGUID()) < sPlayerbotAIConfig.economyMaxListingsPerBot;
+        if (bot->GetFreeInventorySpace() >= sPlayerbotAIConfig.agendaFreeSlotTarget)
+            return false;
+    }
+
+    // Under the listing cap there is auction work to consider. At the cap there may still be
+    // vendoring to do, and a bot with a full auction book and full bags is precisely the bot that
+    // most needs to sell something -- refusing to run here is what left five bots on this realm
+    // unable to take any action at all.
+    if (sBotEconomyMgr.GetBotListingCount(bot->GetGUID()) < sPlayerbotAIConfig.economyMaxListingsPerBot)
+        return true;
+
+    return bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
 }
 
 bool PostAuctionAction::Execute(Event /*event*/)
 {
     uint32 const held = sBotEconomyMgr.GetBotListingCount(bot->GetGUID());
-    if (held >= sPlayerbotAIConfig.economyMaxListingsPerBot)
-        return false;
+    bool const bagsUnderPressure = bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
 
-    uint32 slots = sPlayerbotAIConfig.economyMaxListingsPerBot - held;
+    // Two budgets, deliberately separate.
+    //
+    // Listing is what the auction cap governs. Vendoring is not a listing and must not be rationed
+    // by it -- but both used to spend one `slots` allowance computed as (cap - held), so a bot with
+    // 23 of 24 listings could take exactly one disposal action per pass, and a bot at 24 returned
+    // before the loop and took none. That is the observed failure: an alt bot sitting at 112 of 112
+    // bag slots with 23 auctions out, 305 queue attempts, and 18 of its 112 items ever considered.
+    //
+    // A handful per pass still, because listing a whole bag in one tick floods the house in bursts
+    // and reads as a bot. A bot that is actually stuck gets a larger allowance, because pacing
+    // matters less than being able to loot at all.
+    uint32 listBudget = held < sPlayerbotAIConfig.economyMaxListingsPerBot
+                            ? sPlayerbotAIConfig.economyMaxListingsPerBot - held
+                            : 0;
+    listBudget = std::min<uint32>(listBudget, bagsUnderPressure ? 8 : 3);
 
-    // A handful per pass. Listing a full 24-slot bag in one tick makes every bot dump its inventory
-    // the instant it fills, which reads as a bot and floods the house in bursts. A bot that is
-    // actually stuck gets a larger allowance, because pacing matters less than being able to loot.
-    slots = std::min<uint32>(slots, bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget ? 8 : 3);
+    uint32 const vendorBudget = bagsUnderPressure ? 8 : 1;
 
     CollectBagItemsVisitor visitor;
     IterateItems(&visitor, ITERATE_ITEMS_IN_BAGS);
 
-    bool const bagsUnderPressure = bot->GetFreeInventorySpace() < sPlayerbotAIConfig.agendaFreeSlotTarget;
-
     uint32 queued = 0;
+    uint32 vendored = 0;
     for (Item* item : visitor.items)
     {
-        if (queued >= slots)
+        if (queued >= listBudget && vendored >= vendorBudget)
             break;
 
         if (!sBotEconomyMgr.ShouldPost(item))
@@ -173,17 +216,35 @@ bool PostAuctionAction::Execute(Event /*event*/)
             // the same handful of items -- so without this a bot whose bags are full of suppressed
             // white gear has no move at all: it cannot list it, and the vendor path only takes gear
             // that is soulbound.
-            if (bagsUnderPressure && sBotEconomyMgr.IsAuctionable(item) &&
-                (item->GetTemplate()->Class == ITEM_CLASS_TRADE_GOODS ||
-                 item->GetTemplate()->Class == ITEM_CLASS_ARMOR ||
-                 item->GetTemplate()->Class == ITEM_CLASS_WEAPON) &&
+            // The class list this used to carry -- trade goods, armour, weapons -- left everything
+            // else with no way out at all. The bot that prompted this was holding 20 stacks of
+            // suppressed white consumables and 6 spare bags, none of which any rule could dispose
+            // of, on top of the gear the list did cover.
+            //
+            // What replaces it is the classifier's own verdict, which is the right question anyway:
+            // not "what class is this" but "does this bot still want it". Anything it is keeping,
+            // using, wearing, questing with or feeding to a profession is protected; the rest is
+            // fair game when the bags are full. Checked here rather than relying on the class list
+            // because that list was a proxy for exactly this test.
+            if (vendored < vendorBudget && bagsUnderPressure && sBotEconomyMgr.IsAuctionable(item) &&
                 item->GetTemplate()->SellPrice)
             {
-                std::string const name = item->GetTemplate()->Name1;
-                uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
-                LOG_DEBUG("playerbots", "[Economy] {} vendored {} to free bag space ({}c)", bot->GetName(), name,
-                          earned);
-                ++queued;
+                ItemUsage const suppressedUsage = AI_VALUE2(ItemUsage, "item usage", item->GetEntry());
+                bool const wanted =
+                    suppressedUsage == ITEM_USAGE_EQUIP || suppressedUsage == ITEM_USAGE_REPLACE ||
+                    suppressedUsage == ITEM_USAGE_QUEST || suppressedUsage == ITEM_USAGE_SKILL ||
+                    suppressedUsage == ITEM_USAGE_USE || suppressedUsage == ITEM_USAGE_GUILD_TASK ||
+                    suppressedUsage == ITEM_USAGE_DISENCHANT || suppressedUsage == ITEM_USAGE_KEEP ||
+                    suppressedUsage == ITEM_USAGE_AMMO;
+
+                if (!wanted)
+                {
+                    std::string const name = item->GetTemplate()->Name1;
+                    uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
+                    LOG_DEBUG("playerbots", "[Economy] {} vendored {} to free bag space ({}c)", bot->GetName(), name,
+                              earned);
+                    ++vendored;
+                }
             }
             continue;
         }
@@ -195,11 +256,15 @@ bool PostAuctionAction::Execute(Event /*event*/)
         if (sPlayerbotAIConfig.economyMaxListingAttempts &&
             sBotEconomyMgr.GetListingAttempts(item->GetGUID()) >= sPlayerbotAIConfig.economyMaxListingAttempts)
         {
+            if (vendored >= vendorBudget)
+                continue;
+
             std::string const name = item->GetTemplate()->Name1;
             uint32 const earned = sBotEconomyMgr.SellToVendor(bot, item, botAI->HasCheat(BotCheatMask::gold));
 
             LOG_DEBUG("playerbots", "[Economy] {} gave up on {} after {} listings, vendored for {}c",
                       bot->GetName(), name, sPlayerbotAIConfig.economyMaxListingAttempts, earned);
+            ++vendored;
             continue;
         }
 
@@ -218,6 +283,9 @@ bool PostAuctionAction::Execute(Event /*event*/)
             continue;
         }
 
+        if (queued >= listBudget)
+            continue;
+
         auto op = std::make_unique<PostAuctionOperation>(bot->GetGUID(), item->GetGUID());
         if (!PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(op)))
             break;  // queue is full; try again next pass rather than spinning
@@ -228,5 +296,5 @@ bool PostAuctionAction::Execute(Event /*event*/)
                   item->GetTemplate()->Name1);
     }
 
-    return queued > 0;
+    return queued > 0 || vendored > 0;
 }

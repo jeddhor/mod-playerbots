@@ -82,7 +82,11 @@ enum NewRpgStatus : int
     // Without training, every bot stays at Apprentice rank forever and the auction house only ever
     // sees tier-1 materials. This is what gives the gathering economy any depth.
     RPG_TRAIN = 12,
-    RPG_STATUS_END = 13
+    // Fishing (Phase 10). The fishing machinery already existed in full -- pole, water search, cast,
+    // bobber -- and was only ever switched on by a master standing at a lake. This is the bot
+    // deciding to go on its own; it adds no fishing mechanics, only the intent.
+    RPG_FISH = 13,
+    RPG_STATUS_END = 14
 };
 
 #define MAX_SPECNO 20
@@ -504,6 +508,8 @@ public:
     uint32 inspectorMinSecurity;
     uint32 inspectorMinIntervalMs;
     uint32 gatheringMinFreeBagSlots;
+    uint32 fishingMinFreeBagSlots;
+    bool economySupervisedBotsSell;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;
