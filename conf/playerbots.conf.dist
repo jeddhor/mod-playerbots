@@ -1141,9 +1141,19 @@ AiPlayerbot.ResetBotLevel.ExcludeNames =
 # GEAR
 #
 
-# Randombots automatically receive upgraded equipment on levelup
-# Default: 1 (enabled)
-AiPlayerbot.AutoUpgradeEquip = 1
+# Randombots automatically receive upgraded equipment on levelup.
+#
+# Off by default (R4.2): this called InitEquipment on every level-up, handing bots a fresh set of
+# gear they never earned. It also removes every customer the economy has -- a bot that is re-geared
+# for free has no reason to buy an upgrade off the auction house or to craft one, so leaving this
+# on makes the entire buy side untestable. Bots still equip what they LOOT, which AutoEquipUpgradeLoot
+# governs and which stays on.
+#
+# Turn it back on if you would rather bots stay geared to level without waiting for the economy to
+# dress them; it is a one-line change with no other consequences.
+#
+# Default: 0 (disabled)
+AiPlayerbot.AutoUpgradeEquip = 0
 
 # Enable/disable which (if any) randombots preserve their current equipment and spec during login
 # and periodic randomization (i.e., persistence).
