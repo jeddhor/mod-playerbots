@@ -82,6 +82,10 @@ protected:
     // spends four minutes walking to the hills should still get a useful shift out of the trip.
     const int32 statusGatherDuration = 25 * MINUTE * IN_MILLISECONDS;
     const int32 statusTrainDuration = 5 * MINUTE * IN_MILLISECONDS;
+    // A cast plus its wait is about twenty seconds, so this is roughly thirty casts -- a session
+    // long enough to be worth the walk to the water and short enough that a bot which picked a spot
+    // it cannot actually fish is not stuck there for the rest of the evening.
+    const int32 statusFishDuration = 10 * MINUTE * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
@@ -194,6 +198,29 @@ public:
     bool Execute(Event event) override;
 
     const uint32 trainerStayTime = 5 * 1000;
+};
+
+/**
+ * Fishes, on the bot's own initiative.
+ *
+ * Every mechanical piece of fishing already existed and worked: EquipFishingPoleAction finds or
+ * conjures a pole, MoveNearWaterAction finds a shoreline to stand on, FishingAction turns to face
+ * the water and casts, UseBobberAction loots the catch. All of it was reachable only through
+ * MasterFishingStrategy -- which is switched on when a *human* starts fishing nearby. With no one
+ * to copy, a bot with 400 fishing never once cast a line.
+ *
+ * So this adds no fishing mechanics. It delegates to those same actions, in the order the strategy
+ * would have run them, and its whole contribution is that a bot standing near water sometimes
+ * decides to fish.
+ *
+ * What it catches needs no special handling either: raw fish are cooking reagents, so the P10.3
+ * skill-up pass cooks them, and the surplus is trade goods the economy already knows how to sell.
+ */
+class NewRpgFishAction : public NewRpgBaseAction
+{
+public:
+    NewRpgFishAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg fish") {}
+    bool Execute(Event event) override;
 };
 
 class NewRpgTravelFlightAction : public NewRpgBaseAction

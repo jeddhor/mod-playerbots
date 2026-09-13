@@ -641,6 +641,7 @@ namespace
             case RPG_MAILBOX:       return "At the mailbox";
             case RPG_GATHER:        return "Gathering";
             case RPG_TRAIN:         return "Training";
+            case RPG_FISH:          return "Fishing";
             default:                return "Unknown";
         }
     }
@@ -737,6 +738,12 @@ void BotInspectorMgr::HandleSelfStat(Player* to)
         if (auto const* gather = std::get_if<NewRpgInfo::Gather>(&rpg.data))
             rows.push_back(Acore::StringFormat("route:{}:{}:{}", gather->routeIndex,
                                                gather->nodesVisited, gather->zoneId));
+    }
+
+    if (status == RPG_FISH)
+    {
+        if (auto const* fish = std::get_if<NewRpgInfo::Fish>(&rpg.data))
+            rows.push_back(Acore::StringFormat("fish:{}", fish->casts));
     }
 
     rows.push_back(Acore::StringFormat("zone:{}", to->GetZoneId()));

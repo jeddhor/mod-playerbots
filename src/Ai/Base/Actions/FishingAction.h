@@ -16,6 +16,13 @@ extern const uint32 FISHING_SPELL;
 extern const uint32 FISHING_POLE;
 extern const uint32 FISHING_BOBBER;
 
+// The cast's own range window, and the step the water search walks outward in. Shared so that code
+// deciding *whether* a bot can fish somewhere measures it the same way the fishing actions do -- an
+// availability test that used different distances would offer bots water they then cannot cast at.
+extern float const MIN_DISTANCE_TO_WATER;
+extern float const MAX_DISTANCE_TO_WATER;
+extern float const SEARCH_INCREMENT;
+
 WorldPosition FindWaterRadial(Player* bot, float x, float y, float z, Map* map, uint32 phaseMask, float minDistance,
                               float maxDistance, float increment, bool checkLOS = false, int numDirections = 16);
 

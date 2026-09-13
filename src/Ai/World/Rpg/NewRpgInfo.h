@@ -107,6 +107,11 @@ struct NewRpgInfo
         uint32 lastReach{0};
         uint32 nodesVisited{0};
     };
+    // RPG_FISH
+    struct Fish
+    {
+        uint32 casts{0};
+    };
     struct Idle
     {
     };
@@ -138,7 +143,8 @@ struct NewRpgInfo
         Vendor,
         Mailbox,
         Gather,
-        Train
+        Train,
+        Fish
     >;
     RpgData data;
 
@@ -156,6 +162,7 @@ struct NewRpgInfo
     void ChangeToMailbox();
     void ChangeToGather(uint32 zoneId, uint32 skillId);
     void ChangeToTrain(WorldPosition pos, ObjectGuid trainerGuid);
+    void ChangeToFish();
     void ChangeToRest();
     void ChangeToIdle();
     bool CanChangeTo(NewRpgStatus status);

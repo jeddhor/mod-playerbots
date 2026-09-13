@@ -92,6 +92,12 @@ void NewRpgInfo::ChangeToTrain(WorldPosition pos, ObjectGuid trainerGuid)
     data = train;
 }
 
+void NewRpgInfo::ChangeToFish()
+{
+    startT = getMSTime();
+    data = Fish{};
+}
+
 void NewRpgInfo::ChangeToRest()
 {
     startT = getMSTime();
@@ -139,6 +145,7 @@ NewRpgStatus NewRpgInfo::StatusFromString(std::string const& name)
     if (name == "mailbox")        return RPG_MAILBOX;
     if (name == "gather")         return RPG_GATHER;
     if (name == "train")          return RPG_TRAIN;
+    if (name == "fish")           return RPG_FISH;
     return RPG_STATUS_END;
 }
 
@@ -159,6 +166,7 @@ NewRpgStatus NewRpgInfo::GetStatus()
         if constexpr (std::is_same_v<T, Mailbox>) return RPG_MAILBOX;
         if constexpr (std::is_same_v<T, Gather>) return RPG_GATHER;
         if constexpr (std::is_same_v<T, Train>) return RPG_TRAIN;
+        if constexpr (std::is_same_v<T, Fish>) return RPG_FISH;
         return RPG_IDLE;
     }, data);
 }
@@ -259,6 +267,11 @@ std::string NewRpgInfo::ToString()
             out << "TRAIN";
             out << "\ntrainerGuid: " << arg.trainerGuid.ToString();
             out << "\ntrained: " << arg.trained;
+        }
+        else if constexpr (std::is_same_v<T, Fish>)
+        {
+            out << "FISH";
+            out << "\ncasts: " << arg.casts;
         }
         else
             out << "UNKNOWN";

@@ -6,6 +6,7 @@
 
 #include "NewRpgBaseAction.h"
 #include "GatherRouteMgr.h"
+#include "FishingAction.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
 #include "CellImpl.h"
@@ -2698,8 +2699,28 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             }
             return false;
         }
+        case RPG_FISH:
+        {
+            // No position to pick here. Availability already established that water is within
+            // casting reach, and the activity's own first tick asks MoveNearWaterAction for the
+            // exact shoreline to stand on -- which is the same search, so doing it twice would only
+            // give two answers to disagree about.
+            botAI->rpgInfo.ChangeToFish();
+            return true;
+        }
         default:
         {
+            // Reached legitimately when the weighted roll found nothing available, and chosenStatus
+            // is RPG_STATUS_END. Reached by mistake when a status was chosen that this switch has no
+            // case for -- which is silent, because resting is a plausible thing for a bot to do.
+            //
+            // RPG_FISH was added to the enum, the weight table, the availability check, the action,
+            // the trigger and the strategy, and missed only here; every bot that rolled fishing sat
+            // down instead, and six status samples of `Fish: 0` were the only symptom.
+            if (chosenStatus != RPG_STATUS_END)
+                LOG_WARN("playerbots", "[New RPG] {} chose status {} which has no transition -- resting instead",
+                         bot->GetName(), static_cast<int>(chosenStatus));
+
             botAI->rpgInfo.ChangeToRest();
             bot->SetStandState(UNIT_STAND_STATE_SIT);
             return true;
@@ -2775,6 +2796,34 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
                 return false;
             ObjectGuid guid;
             return SelectNearestTrainerPos(guid) != WorldPosition();
+        }
+        case RPG_FISH:
+        {
+            // Fish where you happen to be, rather than trekking to the nearest lake. That is both
+            // what a person does and what keeps this affordable: the water search below is the
+            // expensive part, so every cheap disqualifier runs ahead of it.
+            if (!bot->GetSkillValue(SKILL_FISHING))
+                return false;
+
+            if (bot->IsInCombat() || bot->isSwimming() || bot->IsMounted())
+                return false;
+
+            if (bot->GetFreeInventorySpace() < sPlayerbotAIConfig.fishingMinFreeBagSlots)
+                return false;
+
+            // Measured exactly the way MoveNearWaterAction measures it, so an availability test
+            // cannot offer a bot water it will then decide it cannot reach.
+            WorldPosition water = FindWaterRadial(bot, bot->GetPositionX(), bot->GetPositionY(),
+                                                  bot->GetPositionZ(), bot->GetMap(), bot->GetPhaseMask(),
+                                                  MIN_DISTANCE_TO_WATER,
+                                                  sPlayerbotAIConfig.fishingDistance + MAX_DISTANCE_TO_WATER,
+                                                  SEARCH_INCREMENT, false);
+            if (!water.IsValid())
+                return false;
+
+            LOG_DEBUG("playerbots", "[Fish] {} available: water within reach in zone {}", bot->GetName(),
+                      bot->GetZoneId());
+            return true;
         }
         case RPG_GATHER:
         {

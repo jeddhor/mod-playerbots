@@ -7,6 +7,7 @@
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "NewRpgAction.h"
+#include "FishingAction.h"
 #include "BotMailMgr.h"
 #include "GatherRouteMgr.h"
 #include "Item.h"
@@ -303,7 +304,8 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
     {
         case RPG_IDLE:
             return RandomChangeStatus({RPG_GO_CAMP, RPG_GO_GRIND, RPG_WANDER_RANDOM, RPG_WANDER_NPC, RPG_DO_QUEST,
-                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER, RPG_TRAIN});
+                                       RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER, RPG_TRAIN,
+                                         RPG_FISH});
 
         case RPG_GO_GRIND:
         {
@@ -448,6 +450,19 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         {
             if (info.HasStatusPersisted(statusGatherDuration))
             {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_FISH:
+        {
+            if (info.HasStatusPersisted(statusFishDuration))
+            {
+                // Leaving with a line still in the water would strand the `use bobber` strategy on
+                // the bot: nothing else removes it, and it would sit there consulting an empty
+                // world for a bobber that will never appear.
+                botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
                 info.ChangeToIdle();
                 return true;
             }
@@ -1101,6 +1116,66 @@ bool NewRpgTrainAction::Execute(Event /*event*/)
 
     if (GetMSTimeDiffToNow(data.lastReach) >= trainerStayTime)
         info.ChangeToIdle();
+
+    return true;
+}
+
+bool NewRpgFishAction::Execute(Event event)
+{
+    NewRpgInfo& info = botAI->rpgInfo;
+    auto* dataPtr = std::get_if<NewRpgInfo::Fish>(&info.data);
+    if (!dataPtr)
+        return false;
+
+    auto& data = *dataPtr;
+
+    // Somewhere to put the catch. Checked every tick rather than only on entry because the bot is
+    // actively filling its bags here -- that is the point of the activity.
+    if (bot->GetFreeInventorySpace() < sPlayerbotAIConfig.fishingMinFreeBagSlots)
+    {
+        LOG_DEBUG("playerbots", "[Fish] {} stopping after {} casts: {} free bag slots", bot->GetName(),
+                  data.casts, bot->GetFreeInventorySpace());
+        botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
+        info.ChangeToIdle();
+        return true;
+    }
+
+    // A bob on the water outranks everything else: the catch is waiting and it expires.
+    UseBobberAction bobber(botAI);
+    if (bobber.isUseful())
+        return bobber.Execute(event);
+
+    // Still walking to the shoreline, or the spot went stale and a new one is needed.
+    MoveNearWaterAction moveNearWater(botAI);
+    if (moveNearWater.isUseful() && moveNearWater.isPossible())
+        return moveNearWater.Execute(event);
+
+    // A line is already in the water -- fishing is a channel, and the wait is the activity. Nothing
+    // in FishingAction checks this, so without the test it would rebuild a Spell object every tick
+    // for every fishing bot purely to have the core reject it with SPELL_FAILED_SPELL_IN_PROGRESS.
+    if (bot->IsNonMeleeSpellCast(false, false, true))
+        return true;
+
+    // In position: face the water, equip a pole if the bot is not holding one, and cast.
+    FishingAction fishing(botAI);
+    if (fishing.isUseful())
+    {
+        if (!fishing.Execute(event))
+            return false;
+
+        data.casts++;
+        return true;
+    }
+
+    // Nothing to loot, nowhere to move to, and not in a position to cast. A bot that has been here
+    // a while without ever casting has picked a spot it cannot actually fish from -- water it can
+    // see across a cliff, most often -- so give the activity up rather than stare at it.
+    if (!data.casts && info.HasStatusPersisted(2 * MINUTE * IN_MILLISECONDS))
+    {
+        LOG_DEBUG("playerbots", "[Fish] {} gave up: two minutes at the water without a cast", bot->GetName());
+        info.ChangeToIdle();
+        return true;
+    }
 
     return true;
 }
