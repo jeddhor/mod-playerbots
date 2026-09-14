@@ -86,6 +86,10 @@ protected:
     // long enough to be worth the walk to the water and short enough that a bot which picked a spot
     // it cannot actually fish is not stuck there for the rest of the evening.
     const int32 statusFishDuration = 10 * MINUTE * IN_MILLISECONDS;
+    // Long, because this is a leg of an errand rather than a pastime: crossing to the zone and
+    // killing enough of something to fill a stack does not fit in ten minutes. The goal's own
+    // two-hour expiry is the real limit; this only caps how long one leg holds the bot's attention.
+    const int32 statusCraftGoalDuration = 20 * MINUTE * IN_MILLISECONDS;
 };
 
 class NewRpgGoGrindAction : public NewRpgBaseAction
@@ -220,6 +224,22 @@ class NewRpgFishAction : public NewRpgBaseAction
 {
 public:
     NewRpgFishAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg fish") {}
+    bool Execute(Event event) override;
+};
+
+/**
+ * P10.5 -- work the current leg of a craft goal.
+ *
+ * The goal itself lives in CraftGoalMgr and outlives this activity; this drives one leg of it.
+ * Everything present means craft it and finish. Something missing means travel to the zone the
+ * reagent index nominated and stay there, where the existing gather, loot and grind strategies do
+ * the actual collecting -- the same division of labour as RPG_GATHER, which supplies the intent to
+ * be somewhere and lets the harvesting code do the rest.
+ */
+class NewRpgCraftGoalAction : public NewRpgBaseAction
+{
+public:
+    NewRpgCraftGoalAction(PlayerbotAI* botAI) : NewRpgBaseAction(botAI, "new rpg craft goal") {}
     bool Execute(Event event) override;
 };
 

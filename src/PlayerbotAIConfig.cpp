@@ -856,6 +856,10 @@ bool PlayerbotAIConfig::Initialize()
     // so this weight competes for far fewer rolls than it looks like it does -- most bots, most of
     // the time, never see it offered at all.
     RpgStatusProbWeight[RPG_FISH] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.Fish", 10);
+    // Like fishing, only offered when it can be worked: the bot knows a recipe worth a skill-up that
+    // is short of something it can farm on this map. Without an entry here the weight reads as 0 and
+    // the selector drops the activity before availability is even asked.
+    RpgStatusProbWeight[RPG_CRAFT_GOAL] = sConfigMgr->GetOption<int32>("AiPlayerbot.RpgStatusProbWeight.CraftGoal", 10);
 
     questMaxDropsPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.MaxDropsPerPass", 1);
     questBlacklistFailThreshold = sConfigMgr->GetOption<uint32>("AiPlayerbot.Quest.BlacklistFailThreshold", 5);
@@ -918,6 +922,11 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
     // The high-water mark a clearing bot works towards, against Agenda.FreeSlotTarget as the low
     // mark that starts it. Must be the larger of the two or a bot stops as soon as it starts.
+    craftGoalEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.CraftGoal.Enabled", true);
+    // Two hours. Long enough for a cross-zone errand with interruptions, short enough that a recipe
+    // which cannot actually be worked is retired rather than held forever.
+    craftGoalDurationSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.CraftGoal.DurationSeconds", 7200);
+
     deliberateDropEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.DeliberateDrop.Enabled", true);
     // Health *remaining after landing*, not damage taken. 0.35 means a bot will step off something
     // that leaves it above a third, and walk away from anything worse.

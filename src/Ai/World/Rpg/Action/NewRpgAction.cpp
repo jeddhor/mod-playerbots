@@ -8,6 +8,9 @@
 #include "GameTime.h"
 #include "NewRpgAction.h"
 #include "FishingAction.h"
+#include "BotCraftMgr.h"
+#include "ReagentSourceMgr.h"
+#include "CraftGoalMgr.h"
 #include "BotMailMgr.h"
 #include "GatherRouteMgr.h"
 #include "Item.h"
@@ -305,7 +308,7 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         case RPG_IDLE:
             return RandomChangeStatus({RPG_GO_CAMP, RPG_GO_GRIND, RPG_WANDER_RANDOM, RPG_WANDER_NPC, RPG_DO_QUEST,
                                        RPG_TRAVEL_FLIGHT, RPG_REST, RPG_OUTDOOR_PVP, RPG_VENDOR, RPG_MAILBOX, RPG_GATHER, RPG_TRAIN,
-                                         RPG_FISH});
+                                         RPG_FISH, RPG_CRAFT_GOAL});
 
         case RPG_GO_GRIND:
         {
@@ -450,6 +453,18 @@ bool NewRpgStatusUpdateAction::Execute(Event /*event*/)
         {
             if (info.HasStatusPersisted(statusGatherDuration))
             {
+                info.ChangeToIdle();
+                return true;
+            }
+            break;
+        }
+        case RPG_CRAFT_GOAL:
+        {
+            if (info.HasStatusPersisted(statusCraftGoalDuration))
+            {
+                // The leg times out, not the goal. The goal keeps its own two-hour clock, so the bot
+                // goes and does something else and can pick this back up later -- which is what makes
+                // it an errand rather than a task it must finish in one sitting.
                 info.ChangeToIdle();
                 return true;
             }
@@ -1118,6 +1133,110 @@ bool NewRpgTrainAction::Execute(Event /*event*/)
         info.ChangeToIdle();
 
     return true;
+}
+
+namespace
+{
+/// Close enough to a spawn to start fighting for the reagent. Wide on purpose: the anchor is one
+/// spawn of a group, and the creatures that carry the drop are spread around it.
+constexpr float CRAFT_GOAL_ARRIVAL_DISTANCE = 40.0f;
+
+/// How far a bot may be drawn from the farm by its fights before it walks back.
+constexpr float CRAFT_GOAL_LEASH_DISTANCE = 150.0f;
+}  // namespace
+
+bool NewRpgCraftGoalAction::Execute(Event /*event*/)
+{
+    NewRpgInfo& info = botAI->rpgInfo;
+    auto* dataPtr = std::get_if<NewRpgInfo::CraftGoal>(&info.data);
+    if (!dataPtr)
+        return false;
+
+    auto& data = *dataPtr;
+
+    std::optional<CraftGoalMgr::Goal> const goal = sCraftGoalMgr.Current(bot);
+    if (!goal)
+    {
+        // Expired or completed elsewhere. Current() has already recorded the failure if it expired.
+        info.ChangeToIdle();
+        return true;
+    }
+
+    CraftGoalMgr::Goal const held = *goal;
+    CraftGoalMgr::Need const need = sCraftGoalMgr.NextNeed(bot, held);
+
+    // Everything present. Make it, and let ItemUsageValue decide afterwards whether the bot wears it
+    // or lists it -- which is the same judgement any other new item gets, and not this action's call.
+    if (!need.itemId)
+    {
+        if (sBotCraftMgr.CraftOne(bot, held.spellId, held.itemId, false))
+            sCraftGoalMgr.Complete(bot, held);
+        else
+            sCraftGoalMgr.Abandon(bot, held, "had the reagents but the craft failed");
+
+        info.ChangeToIdle();
+        return true;
+    }
+
+    // The reagent changed under us -- a stack was consumed by something else, or an earlier leg
+    // finished -- or this leg was entered without a source. Re-aim at whatever is missing now.
+    if (data.reagentId != need.itemId || !data.sourceEntry)
+    {
+        ReagentSourceMgr::Source const* source = sReagentSourceMgr.BestFor(bot, need.itemId);
+        if (!source)
+        {
+            // BestFor only offers what this bot can reach on its own map, and Choose only picks
+            // recipes whose reagents it offers. Losing the source mid-goal means the bot moved
+            // continent or out-levelled nothing -- circumstance, not a verdict on the recipe, so
+            // the leg ends and the goal stays for a later, better-placed attempt.
+            LOG_DEBUG("playerbots", "[CraftGoal] {} has no source for item {} from here", bot->GetName(),
+                      need.itemId);
+            info.ChangeToIdle();
+            return true;
+        }
+
+        data.reagentId = need.itemId;
+        data.zoneId = source->zoneId;
+        data.sourceEntry = source->sourceEntry;
+        data.pos = WorldPosition(source->mapId, source->x, source->y, source->z);
+        data.lastReach = 0;
+    }
+
+    if (data.pos.GetMapId() != bot->GetMapId())
+    {
+        info.ChangeToIdle();
+        return true;
+    }
+
+    // Travel to a real spawn of the creature carrying the reagent. Arrival is by distance, never
+    // by zone: a zone test is what killed every cross-zone gather run on its first tick (P11.2).
+    float const distance = bot->GetExactDist2d(data.pos.GetPositionX(), data.pos.GetPositionY());
+    if (distance > CRAFT_GOAL_ARRIVAL_DISTANCE && !data.lastReach)
+    {
+        if (MoveFarTo(data.pos))
+            return true;
+        return MoveRandomNear(10.0f);
+    }
+
+    if (!data.lastReach)
+    {
+        data.lastReach = getMSTime();
+        sCraftGoalMgr.MarkWorked(bot);
+        LOG_DEBUG("playerbots", "[CraftGoal] {} arrived at creature {} in zone {} to collect {}x item {}",
+                  bot->GetName(), data.sourceEntry, data.zoneId, need.missing, need.itemId);
+    }
+
+    // At the farm. The killing and looting are the grind and loot strategies' job -- GrindTargetValue
+    // prefers data.sourceEntry while this activity runs -- so all this does is keep the bot among
+    // the spawns: drift back if it has chased something off, otherwise mill about looking for more.
+    if (distance > CRAFT_GOAL_LEASH_DISTANCE)
+    {
+        if (MoveFarTo(data.pos))
+            return true;
+        return MoveRandomNear(10.0f);
+    }
+
+    return MoveRandomNear();
 }
 
 bool NewRpgFishAction::Execute(Event event)

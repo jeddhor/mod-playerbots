@@ -86,7 +86,11 @@ enum NewRpgStatus : int
     // bobber -- and was only ever switched on by a master standing at a lake. This is the bot
     // deciding to go on its own; it adds no fishing mechanics, only the intent.
     RPG_FISH = 13,
-    RPG_STATUS_END = 14
+    // Craft goals (P10.5). The bot has picked something it knows how to make, is short of materials,
+    // and is going to fetch them -- a multi-trip errand rather than a single activity, which is why
+    // the goal itself is persisted and this status only drives the current leg of it.
+    RPG_CRAFT_GOAL = 14,
+    RPG_STATUS_END = 15
 };
 
 #define MAX_SPECNO 20
@@ -511,6 +515,8 @@ public:
     uint32 fishingMinFreeBagSlots;
     bool economySupervisedBotsSell;
     uint32 economyClearUntilFreeSlots;
+    bool craftGoalEnabled;
+    uint32 craftGoalDurationSeconds;
     bool deliberateDropEnabled;
     float deliberateDropMinHealthPct;
     float deliberateDropStep;

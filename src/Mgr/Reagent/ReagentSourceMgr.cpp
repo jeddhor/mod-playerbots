@@ -15,6 +15,7 @@
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <array>
 
 namespace
 {
@@ -111,6 +112,31 @@ void ReagentSourceMgr::Load()
         uint32 mapId{0};
         uint32 zoneId{0};
         uint32 count{0};
+        std::vector<std::array<float, 3>> positions;
+
+        /// The spawn nearest the group's centroid -- a place something actually stands.
+        std::array<float, 3> Anchor() const
+        {
+            if (positions.empty())
+                return {0.0f, 0.0f, 0.0f};
+
+            float cx = 0.0f;
+            float cy = 0.0f;
+            for (auto const& p : positions)
+            {
+                cx += p[0];
+                cy += p[1];
+            }
+            cx /= float(positions.size());
+            cy /= float(positions.size());
+
+            auto const nearest = std::min_element(positions.begin(), positions.end(),
+                [cx, cy](auto const& a, auto const& b) {
+                    return (a[0] - cx) * (a[0] - cx) + (a[1] - cy) * (a[1] - cy) <
+                           (b[0] - cx) * (b[0] - cx) + (b[1] - cy) * (b[1] - cy);
+                });
+            return *nearest;
+        }
     };
 
     auto indexCreatures = [&](std::unordered_map<uint32, std::vector<std::pair<uint32, float>>> const& loot,
@@ -147,14 +173,17 @@ void ReagentSourceMgr::Load()
 
             // Zone from map and position, never from creature.zoneId: that column is 0 on 144,944 of
             // this realm's 150,063 spawns, so trusting it would file almost every source under zone 0.
-            uint32 const zoneId = sMapMgr->GetZoneId(PHASEMASK_NORMAL, mapId, fields[5].Get<float>(),
-                                                     fields[6].Get<float>(), fields[7].Get<float>());
+            float const x = fields[5].Get<float>();
+            float const y = fields[6].Get<float>();
+            float const z = fields[7].Get<float>();
+            uint32 const zoneId = sMapMgr->GetZoneId(PHASEMASK_NORMAL, mapId, x, y, z);
 
             uint64 const key = (uint64(entry) << 32) | zoneId;
             SpawnInfo& info = byCreatureZone[key];
             info.mapId = mapId;
             info.zoneId = zoneId;
             ++info.count;
+            info.positions.push_back({x, y, z});
 
             creatureLootAndLevel[entry] = {lootId, {minLevel, maxLevel}};
         } while (result->NextRow());
@@ -173,6 +202,8 @@ void ReagentSourceMgr::Load()
             if (items == loot.end())
                 continue;
 
+            std::array<float, 3> const anchor = spawn.Anchor();
+
             for (auto const& [itemId, chance] : items->second)
             {
                 if (!reagents.count(itemId))
@@ -180,7 +211,7 @@ void ReagentSourceMgr::Load()
 
                 built[itemId].push_back(Source{kind, entry, spawn.mapId, spawn.zoneId,
                                                meta->second.second.first, meta->second.second.second,
-                                               chance, spawn.count});
+                                               chance, spawn.count, anchor[0], anchor[1], anchor[2]});
             }
         }
     };
@@ -207,14 +238,17 @@ void ReagentSourceMgr::Load()
             if (instanceMaps.count(mapId))
                 continue;
 
-            uint32 const zoneId = sMapMgr->GetZoneId(PHASEMASK_NORMAL, mapId, fields[3].Get<float>(),
-                                                     fields[4].Get<float>(), fields[5].Get<float>());
+            float const x = fields[3].Get<float>();
+            float const y = fields[4].Get<float>();
+            float const z = fields[5].Get<float>();
+            uint32 const zoneId = sMapMgr->GetZoneId(PHASEMASK_NORMAL, mapId, x, y, z);
 
             uint64 const key = (uint64(entry) << 32) | zoneId;
             SpawnInfo& info = byObjectZone[key];
             info.mapId = mapId;
             info.zoneId = zoneId;
             ++info.count;
+            info.positions.push_back({x, y, z});
             objectLootId[entry] = fields[1].Get<uint32>();
         } while (result->NextRow());
 
@@ -229,10 +263,12 @@ void ReagentSourceMgr::Load()
             if (items == objectLoot.end())
                 continue;
 
+            std::array<float, 3> const anchor = spawn.Anchor();
+
             for (auto const& [itemId, chance] : items->second)
                 if (reagents.count(itemId))
-                    built[itemId].push_back(
-                        Source{Kind::GameObject, entry, spawn.mapId, spawn.zoneId, 0, 0, chance, spawn.count});
+                    built[itemId].push_back(Source{Kind::GameObject, entry, spawn.mapId, spawn.zoneId, 0, 0, chance,
+                                                   spawn.count, anchor[0], anchor[1], anchor[2]});
         }
     }
 
@@ -300,12 +336,24 @@ ReagentSourceMgr::Source const* ReagentSourceMgr::BestFor(Player* bot, uint32 it
 
     int32 const botLevel = int32(bot->GetLevel());
     uint32 const here = bot->GetZoneId();
+    uint32 const map = bot->GetMapId();
+    bool const canSkin = bot->HasSkill(SKILL_SKINNING);
 
     Source const* best = nullptr;
     float bestScore = 0.0f;
 
     for (Source const& source : itr->second)
     {
+        // See the header: only what killing can collect, and only where walking can reach.
+        if (source.kind == Kind::Fishing || source.kind == Kind::GameObject)
+            continue;
+
+        if (source.kind == Kind::Skinning && !canSkin)
+            continue;
+
+        if (source.mapId != map)
+            continue;
+
         if (source.minLevel && int32(source.minLevel) > botLevel + MAX_LEVEL_MARGIN)
             continue;
 

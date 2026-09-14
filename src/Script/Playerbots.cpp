@@ -19,6 +19,7 @@
 #include "PlayerbotWorldThreadProcessor.h"
 #include "GatherRouteMgr.h"
 #include "ReagentSourceMgr.h"
+#include "CraftGoalMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
 #include "BotInspectorMgr.h"
@@ -734,6 +735,8 @@ public:
         // covers everything else a reagent can come from. Splitting them keeps each answerable on
         // its own terms rather than merging two different questions into one table.
         ReagentSourceMgr::instance().Load();
+        // After the reagent index, which Choose() consults to reject unworkable recipes.
+        CraftGoalMgr::instance().Load();
 
         BotEconomyMgr::instance().Load();
 

@@ -112,6 +112,15 @@ struct NewRpgInfo
     {
         uint32 casts{0};
     };
+    // RPG_CRAFT_GOAL
+    struct CraftGoal
+    {
+        uint32 reagentId{0};   //< what this leg is fetching
+        uint32 zoneId{0};      //< where the index says to fetch it
+        uint32 sourceEntry{0}; //< the creature that carries it; grind targeting prefers it
+        WorldPosition pos{};   //< a real spawn of that creature to travel to
+        uint32 lastReach{0};
+    };
     struct Idle
     {
     };
@@ -144,7 +153,8 @@ struct NewRpgInfo
         Mailbox,
         Gather,
         Train,
-        Fish
+        Fish,
+        CraftGoal
     >;
     RpgData data;
 
@@ -163,6 +173,7 @@ struct NewRpgInfo
     void ChangeToGather(uint32 zoneId, uint32 skillId);
     void ChangeToTrain(WorldPosition pos, ObjectGuid trainerGuid);
     void ChangeToFish();
+    void ChangeToCraftGoal(uint32 reagentId, uint32 zoneId, uint32 sourceEntry, WorldPosition pos);
     void ChangeToRest();
     void ChangeToIdle();
     bool CanChangeTo(NewRpgStatus status);

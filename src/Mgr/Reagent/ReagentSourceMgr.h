@@ -57,6 +57,13 @@ public:
         uint8 maxLevel{0};
         float chance{0.0f};      //< percent; 0 means "came through a reference, rate unknown"
         uint32 spawnCount{0};
+
+        // A real spawn to travel to: the member of this (source, zone) group nearest its centroid.
+        // Not the centroid itself, which for a creature spread along a valley can sit on a cliff
+        // or inside a hill -- the same averaged-coordinate trap gathering waypoints fell into.
+        float x{0.0f};
+        float y{0.0f};
+        float z{0.0f};
     };
 
     static ReagentSourceMgr& instance()
@@ -80,6 +87,11 @@ public:
      * Prefers sources the bot can survive and that are dense enough to be worth the trip, and
      * strongly prefers the bot's current zone: a reagent available here beats a better rate a
      * continent away, because the travel is the expensive part.
+     *
+     * Only sources a bot can work by killing are returned -- creature drops, and skinning when the
+     * bot can skin -- and only on the bot's own map. Chests and fishing are indexed but not offered:
+     * nothing drives a bot to open one or to fish for a specific catch, and a source the bot cannot
+     * work would only turn into an abandoned goal counted against a perfectly good recipe.
      */
     Source const* BestFor(Player* bot, uint32 itemId) const;
 

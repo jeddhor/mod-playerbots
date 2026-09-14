@@ -6,6 +6,8 @@
 
 #include "NewRpgBaseAction.h"
 #include "GatherRouteMgr.h"
+#include "CraftGoalMgr.h"
+#include "ReagentSourceMgr.h"
 #include "FishingAction.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
@@ -2707,6 +2709,28 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
             }
             return false;
         }
+        case RPG_CRAFT_GOAL:
+        {
+            // The roll picked this, so now the goal is stored -- not when availability merely offered it.
+            std::optional<CraftGoalMgr::Goal> const goal = sCraftGoalMgr.Choose(bot, true);
+            if (!goal)
+                return false;
+
+            CraftGoalMgr::Need const need = sCraftGoalMgr.NextNeed(bot, *goal);
+            uint32 zoneId = bot->GetZoneId();
+            uint32 sourceEntry = 0;
+            WorldPosition pos;
+            if (need.itemId)
+                if (ReagentSourceMgr::Source const* source = sReagentSourceMgr.BestFor(bot, need.itemId))
+                {
+                    zoneId = source->zoneId;
+                    sourceEntry = source->sourceEntry;
+                    pos = WorldPosition(source->mapId, source->x, source->y, source->z);
+                }
+
+            botAI->rpgInfo.ChangeToCraftGoal(need.itemId, zoneId, sourceEntry, pos);
+            return true;
+        }
         case RPG_FISH:
         {
             // No position to pick here. Availability already established that water is within
@@ -2876,6 +2900,21 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
                 return false;
             ObjectGuid guid;
             return SelectNearestTrainerPos(guid) != WorldPosition();
+        }
+        case RPG_CRAFT_GOAL:
+        {
+            // Offered only when there is a goal whose next step can actually be worked. Choosing the
+            // goal here rather than in the dispatch keeps the decision in one place: if nothing is
+            // worth farming, the activity is simply never offered.
+            std::optional<CraftGoalMgr::Goal> const goal = sCraftGoalMgr.Choose(bot, false);
+            if (!goal)
+                return false;
+
+            CraftGoalMgr::Need const need = sCraftGoalMgr.NextNeed(bot, *goal);
+            if (!need.itemId)
+                return true;  // everything present; the activity crafts it on its first tick
+
+            return need.farmable;
         }
         case RPG_FISH:
         {

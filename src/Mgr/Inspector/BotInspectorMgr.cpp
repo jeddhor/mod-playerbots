@@ -642,6 +642,7 @@ namespace
             case RPG_GATHER:        return "Gathering";
             case RPG_TRAIN:         return "Training";
             case RPG_FISH:          return "Fishing";
+            case RPG_CRAFT_GOAL:    return "Farming to craft";
             default:                return "Unknown";
         }
     }

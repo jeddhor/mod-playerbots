@@ -98,6 +98,17 @@ void NewRpgInfo::ChangeToFish()
     data = Fish{};
 }
 
+void NewRpgInfo::ChangeToCraftGoal(uint32 reagentId, uint32 zoneId, uint32 sourceEntry, WorldPosition pos)
+{
+    startT = getMSTime();
+    CraftGoal goal;
+    goal.reagentId = reagentId;
+    goal.zoneId = zoneId;
+    goal.sourceEntry = sourceEntry;
+    goal.pos = pos;
+    data = goal;
+}
+
 void NewRpgInfo::ChangeToRest()
 {
     startT = getMSTime();
@@ -146,6 +157,7 @@ NewRpgStatus NewRpgInfo::StatusFromString(std::string const& name)
     if (name == "gather")         return RPG_GATHER;
     if (name == "train")          return RPG_TRAIN;
     if (name == "fish")           return RPG_FISH;
+    if (name == "craft goal")     return RPG_CRAFT_GOAL;
     return RPG_STATUS_END;
 }
 
@@ -167,6 +179,7 @@ NewRpgStatus NewRpgInfo::GetStatus()
         if constexpr (std::is_same_v<T, Gather>) return RPG_GATHER;
         if constexpr (std::is_same_v<T, Train>) return RPG_TRAIN;
         if constexpr (std::is_same_v<T, Fish>) return RPG_FISH;
+        if constexpr (std::is_same_v<T, CraftGoal>) return RPG_CRAFT_GOAL;
         return RPG_IDLE;
     }, data);
 }
@@ -272,6 +285,11 @@ std::string NewRpgInfo::ToString()
         {
             out << "FISH";
             out << "\ncasts: " << arg.casts;
+        }
+        else if constexpr (std::is_same_v<T, CraftGoal>)
+        {
+            out << "CRAFT_GOAL";
+            out << "\nreagent: " << arg.reagentId << "  zone: " << arg.zoneId << "  source: " << arg.sourceEntry;
         }
         else
             out << "UNKNOWN";

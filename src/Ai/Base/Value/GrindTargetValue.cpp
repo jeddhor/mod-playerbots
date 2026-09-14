@@ -76,6 +76,14 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
     Map const* map = bot->FindMap();
     bool const inInstance = map && map->IsDungeon();
 
+    // A bot farming for a craft goal (P10.5) wants one creature in particular, and usually a grey
+    // one: skill-up recipes run on low-level materials. Those creatures would fail both the
+    // experience filter and the errand filter below, leaving the bot standing among exactly the
+    // mobs it travelled to kill.
+    uint32 farmEntry = 0;
+    if (auto const* craftGoal = std::get_if<NewRpgInfo::CraftGoal>(&botAI->rpgInfo.data))
+        farmEntry = craftGoal->sourceEntry;
+
     for (ObjectGuid const guid : targets)
     {
         Unit* unit = botAI->GetUnit(guid);
@@ -85,14 +93,17 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
         if (!unit->IsInWorld() || unit->IsDuringRemoveFromWorld())
             continue;
 
-        if (unit->ToCreature() && !unit->ToCreature()->GetCreatureTemplate()->lootid &&
+        bool const farmTarget = farmEntry && unit->ToCreature() && unit->GetEntry() == farmEntry;
+
+        // A skinning source may carry no loot of its own; the corpse is still what the bot came for.
+        if (!farmTarget && unit->ToCreature() && !unit->ToCreature()->GetCreatureTemplate()->lootid &&
             bot->GetReactionTo(unit) >= REP_NEUTRAL)
             continue;
 
         if (!bot->IsHostileTo(unit) && unit->GetNpcFlags() != UNIT_NPC_FLAG_NONE)
             continue;
 
-        if (!bot->isHonorOrXPTarget(unit))
+        if (!farmTarget && !bot->isHonorOrXPTarget(unit))
             continue;
 
         // The vertical band exists so a bot does not fixate on something on a cliff above it that
@@ -173,7 +184,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
         // So for a neutral creature the quest filter always applies: no quest needs it, no fight.
         bool const wouldAttackFirst = unit->IsHostileTo(bot);
 
-        if (inactiveGrindStatus && (outOfAggro || !wouldAttackFirst))
+        if (!farmTarget && inactiveGrindStatus && (outOfAggro || !wouldAttackFirst))
         {
             if (needForQuestMap.find(unit->GetEntry()) == needForQuestMap.end())
                 needForQuestMap[unit->GetEntry()] = needForQuest(unit);
@@ -187,7 +198,8 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
         if (needForQuestMap.find(unit->GetEntry()) == needForQuestMap.end())
             needForQuestMap[unit->GetEntry()] = needForQuest(unit);
 
-        bool const wanted = needForQuestMap[unit->GetEntry()];
+        // The farm target ranks with quest mobs: preferred over whatever merely happens to be nearer.
+        bool const wanted = farmTarget || needForQuestMap[unit->GetEntry()];
 
         float candidateDistance = 0.0f;
         bool measured = false;

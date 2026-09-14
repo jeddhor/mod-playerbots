@@ -60,6 +60,16 @@ public:
     /// Turn raw materials into the refined form the bot can actually use or sell. Returns crafts made.
     uint32 RefineMaterials(Player* bot);
 
+    /**
+     * Craft one unit of the item this spell makes, consuming its reagents. False if short.
+     *
+     * Public because the craft-goal activity is a second legitimate caller: a bot that has spent
+     * twenty minutes farming the reagents needs to make the thing, and routing that through this
+     * manager keeps one implementation of "consume reagents, grant the skill, announce the item"
+     * rather than two that drift.
+     */
+    bool CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket);
+
     std::string DescribeStats() const;
 
 private:
@@ -75,8 +85,7 @@ private:
     /// Buy a missing reagent off the auction house. False if none listed or unaffordable.
     bool BuyReagent(Player* bot, uint32 itemId, uint32 needed);
 
-    /// Craft one unit of the item this spell makes, consuming its reagents. False if short.
-    bool CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket);
+
 
     /**
      * Craft one recipe that would still raise a profession skill, from reagents already in the bag.

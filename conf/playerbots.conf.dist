@@ -1441,6 +1441,9 @@ AiPlayerbot.RpgStatusProbWeight.Train = 8
 #    Fish is only ever offered to a bot already standing within casting reach of water, so it
 #    competes for far fewer rolls than the number suggests -- most bots never see it at all.
 AiPlayerbot.RpgStatusProbWeight.Fish = 10
+#    CraftGoal is only offered when the bot knows a recipe still worth a skill-up that is short of
+#    something it can farm on its own map, so like Fish it competes for fewer rolls than it looks.
+AiPlayerbot.RpgStatusProbWeight.CraftGoal = 10
 
 AiPlayerbot.Gathering.MinFreeBagSlots = 4
 
@@ -2953,6 +2956,26 @@ AiPlayerbot.Economy.ClearUntilFreeSlots = 24
 AiPlayerbot.DeliberateDrop.Enabled = 1
 AiPlayerbot.DeliberateDrop.MinHealthPct = 0.35
 AiPlayerbot.DeliberateDrop.StepYards = 4.0
+
+#
+#    AiPlayerbot.CraftGoal.Enabled / .DurationSeconds
+#        Description: May a bot pick something it knows how to make, notice it is short of
+#                     materials, and go and farm them?
+#
+#                     Effectively a bot-only repeatable quest, and what turns a profession from a
+#                     number on a character sheet into somewhere the bot goes. The goal is persisted
+#                     across relogs because it is a multi-trip errand, not an activity.
+#
+#                     DurationSeconds is how long a goal lives before it is abandoned and the recipe
+#                     counted as having failed. Recipes that fail repeatedly stop being chosen -- the
+#                     same lesson as the quest blacklist. Reagents that only drop inside instances
+#                     are never chosen at all; that falls out of the source index rather than a list.
+#        Default:     1, 7200 (two hours)
+#
+
+AiPlayerbot.CraftGoal.Enabled = 1
+AiPlayerbot.CraftGoal.DurationSeconds = 7200
+
 
 
 #

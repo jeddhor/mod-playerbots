@@ -35,14 +35,14 @@ namespace
         // Every row must have RPG_STATUS_END entries. A short row still compiles -- the trailing
         // values zero-fill -- and a zero here is not "no opinion", it is "never", so adding an
         // activity without adding its column silently switches the activity off for every goal.
-        // IDLE GRIND CAMP WANDR NPC  QUEST FLIGHT REST PVP  VENDOR MAIL GATHER TRAIN FISH
-        /* LevelUp            */ {1.0f, 2.0f, 1.0f, 0.8f, 1.0f, 2.5f, 1.2f, 0.6f, 0.8f, 1.0f, 1.0f, 0.8f, 1.0f, 0.6f},
-        /* EarnGold           */ {1.0f, 1.5f, 1.0f, 0.8f, 1.0f, 1.2f, 1.0f, 0.6f, 0.6f, 1.3f, 1.4f, 2.5f, 1.0f, 1.4f},
-        /* AcquireGear        */ {1.0f, 1.4f, 1.0f, 0.9f, 1.0f, 1.6f, 1.0f, 0.7f, 0.9f, 1.3f, 1.4f, 1.0f, 1.0f, 0.7f},
-        /* TrainProfession    */ {1.0f, 0.9f, 1.0f, 0.9f, 1.0f, 0.9f, 1.0f, 0.7f, 0.6f, 1.1f, 1.0f, 3.0f, 2.5f, 2.2f},
-        /* RestockConsumables */ {1.0f, 1.0f, 1.0f, 0.9f, 1.0f, 1.0f, 1.0f, 0.9f, 0.8f, 2.2f, 1.2f, 1.0f, 1.0f, 2.0f},
-        /* ClearInventory     */ {1.0f, 0.5f, 0.8f, 0.7f, 0.9f, 0.7f, 0.9f, 0.8f, 0.5f, 3.0f, 2.0f, 0.3f, 1.0f, 0.3f},
-        /* Socialise          */ {1.0f, 0.8f, 1.6f, 1.2f, 2.0f, 1.0f, 1.2f, 1.5f, 1.0f, 1.0f, 1.0f, 0.8f, 1.0f, 1.0f},
+        // IDLE GRIND CAMP WANDR NPC  QUEST FLIGHT REST PVP  VENDOR MAIL GATHER TRAIN FISH CRAFT
+        /* LevelUp            */ {1.0f, 2.0f, 1.0f, 0.8f, 1.0f, 2.5f, 1.2f, 0.6f, 0.8f, 1.0f, 1.0f, 0.8f, 1.0f, 0.6f, 0.7f},
+        /* EarnGold           */ {1.0f, 1.5f, 1.0f, 0.8f, 1.0f, 1.2f, 1.0f, 0.6f, 0.6f, 1.3f, 1.4f, 2.5f, 1.0f, 1.4f, 1.6f},
+        /* AcquireGear        */ {1.0f, 1.4f, 1.0f, 0.9f, 1.0f, 1.6f, 1.0f, 0.7f, 0.9f, 1.3f, 1.4f, 1.0f, 1.0f, 0.7f, 1.3f},
+        /* TrainProfession    */ {1.0f, 0.9f, 1.0f, 0.9f, 1.0f, 0.9f, 1.0f, 0.7f, 0.6f, 1.1f, 1.0f, 3.0f, 2.5f, 2.2f, 2.4f},
+        /* RestockConsumables */ {1.0f, 1.0f, 1.0f, 0.9f, 1.0f, 1.0f, 1.0f, 0.9f, 0.8f, 2.2f, 1.2f, 1.0f, 1.0f, 2.0f, 1.2f},
+        /* ClearInventory     */ {1.0f, 0.5f, 0.8f, 0.7f, 0.9f, 0.7f, 0.9f, 0.8f, 0.5f, 3.0f, 2.0f, 0.3f, 1.0f, 0.3f, 0.4f},
+        /* Socialise          */ {1.0f, 0.8f, 1.6f, 1.2f, 2.0f, 1.0f, 1.2f, 1.5f, 1.0f, 1.0f, 1.0f, 0.8f, 1.0f, 1.0f, 0.8f},
     };
 
     constexpr uint8 ARCHETYPE_COUNT = static_cast<uint8>(BotArchetype::Max);
@@ -54,13 +54,13 @@ namespace
      * a city and a Gatherer working the hills are running the same code with different numbers here.
      */
     float const ARCHETYPE_BASE[ARCHETYPE_COUNT][RPG_STATUS_END] = {
-        // IDLE GRIND CAMP WANDR NPC  QUEST FLIGHT REST PVP  VENDOR MAIL GATHER TRAIN FISH
-        /* Questor   */ {1.0f, 1.0f, 0.8f, 0.9f, 1.1f, 2.2f, 1.4f, 0.9f, 0.7f, 1.0f, 1.0f, 0.7f, 1.0f, 0.7f},
-        /* Gatherer  */ {1.0f, 0.8f, 0.8f, 1.0f, 0.8f, 0.7f, 1.1f, 0.9f, 0.5f, 1.3f, 1.2f, 2.6f, 1.3f, 2.0f},
-        /* Grinder   */ {1.0f, 2.4f, 0.7f, 1.4f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f, 1.0f, 0.9f, 0.8f, 0.9f, 0.6f},
-        /* Trader    */ {1.0f, 0.6f, 1.4f, 0.8f, 1.2f, 0.7f, 1.2f, 1.0f, 0.5f, 1.8f, 2.0f, 1.1f, 1.2f, 1.3f},
-        /* Socialite */ {1.0f, 0.5f, 2.2f, 1.3f, 2.4f, 0.8f, 1.1f, 1.6f, 0.6f, 1.1f, 1.0f, 0.6f, 0.9f, 1.1f},
-        /* PvPer     */ {1.0f, 1.3f, 0.9f, 1.1f, 0.8f, 0.8f, 1.2f, 0.9f, 3.0f, 1.0f, 0.9f, 0.6f, 0.9f, 0.5f},
+        // IDLE GRIND CAMP WANDR NPC  QUEST FLIGHT REST PVP  VENDOR MAIL GATHER TRAIN FISH CRAFT
+        /* Questor   */ {1.0f, 1.0f, 0.8f, 0.9f, 1.1f, 2.2f, 1.4f, 0.9f, 0.7f, 1.0f, 1.0f, 0.7f, 1.0f, 0.7f, 0.8f},
+        /* Gatherer  */ {1.0f, 0.8f, 0.8f, 1.0f, 0.8f, 0.7f, 1.1f, 0.9f, 0.5f, 1.3f, 1.2f, 2.6f, 1.3f, 2.0f, 2.2f},
+        /* Grinder   */ {1.0f, 2.4f, 0.7f, 1.4f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f, 1.0f, 0.9f, 0.8f, 0.9f, 0.6f, 1.0f},
+        /* Trader    */ {1.0f, 0.6f, 1.4f, 0.8f, 1.2f, 0.7f, 1.2f, 1.0f, 0.5f, 1.8f, 2.0f, 1.1f, 1.2f, 1.3f, 1.5f},
+        /* Socialite */ {1.0f, 0.5f, 2.2f, 1.3f, 2.4f, 0.8f, 1.1f, 1.6f, 0.6f, 1.1f, 1.0f, 0.6f, 0.9f, 1.1f, 0.7f},
+        /* PvPer     */ {1.0f, 1.3f, 0.9f, 1.1f, 0.8f, 0.8f, 1.2f, 0.9f, 3.0f, 1.0f, 0.9f, 0.6f, 0.9f, 0.5f, 0.6f},
     };
 
     char const* ArchetypeName(BotArchetype type)

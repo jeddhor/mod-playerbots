@@ -244,6 +244,7 @@ public:
         creators["gather status"] = &TriggerContext::gather_status;
         creators["train status"] = &TriggerContext::train_status;
         creators["fish status"] = &TriggerContext::fish_status;
+        creators["craft goal status"] = &TriggerContext::craft_goal_status;
         creators["wander random status"] = &TriggerContext::wander_random_status;
         creators["wander npc status"] = &TriggerContext::wander_npc_status;
         creators["do quest status"] = &TriggerContext::do_quest_status;
@@ -469,6 +470,7 @@ private:
     static Trigger* gather_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_GATHER); }
     static Trigger* train_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_TRAIN); }
     static Trigger* fish_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_FISH); }
+    static Trigger* craft_goal_status(PlayerbotAI* botAI) { return new NewRpgStatusTrigger(botAI, RPG_CRAFT_GOAL); }
     static Trigger* can_self_resurrect(PlayerbotAI* ai) { return new SelfResurrectTrigger(ai); }
     static Trigger* can_fish(PlayerbotAI* ai) { return new CanFishTrigger(ai); }
     static Trigger* can_use_fishing_bobber(PlayerbotAI* ai) { return new CanUseFishingBobberTrigger(ai); }
