@@ -1514,6 +1514,19 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
             }
         }
     }
+    else if (int8 const assigned = AiFactory::GetSpecTabForAssignedRole(bot); assigned >= 0)
+    {
+        // A bot that has been told to tank or heal gets the tree for that job, not a dice roll.
+        //
+        // This branch runs when there are no talents to follow, which is exactly when the roll used
+        // to decide the bot's whole identity. It specced an operator's dungeon healer into Shadow,
+        // and because GetPlayerSpecTab reads the tree as soon as any point is spent, every
+        // ResetStrategies() afterwards relabelled her DPS and she stopped healing.
+        //
+        // Damage is deliberately not mapped: it is the default for every class, so "assigned DPS"
+        // does not say which damage tree to take and rolling for it remains right.
+        specTab = uint32(assigned);
+    }
     else
     {
         uint32 pointSum = 0;
@@ -2681,6 +2694,28 @@ void PlayerbotFactory::EquipCarriedBags(Player* bot)
         bot->RemoveItem(INVENTORY_SLOT_BAG_0, best->GetSlot(), true);
         bot->EquipItem(dest, best, true);
     }
+}
+
+void PlayerbotFactory::RespecToAssignedRole(Player* bot)
+{
+    if (!bot)
+        return;
+
+    int8 const assigned = AiFactory::GetSpecTabForAssignedRole(bot);
+    if (assigned < 0)
+        return;
+
+    // Already in the right tree. Re-specing anyway would throw away a working build every time any
+    // combat strategy was touched.
+    if (AiFactory::GetPlayerSpecTab(bot) == uint8(assigned))
+        return;
+
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.InitTalentsTree(false, true, true);
+    factory.InitPetTalents();
+
+    LOG_INFO("playerbots", "[Talents] {} respecced to tab {} to match the role it was given",
+             bot->GetName(), uint32(assigned));
 }
 
 void PlayerbotFactory::SpendFreeTalentPoints(Player* bot)

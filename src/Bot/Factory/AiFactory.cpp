@@ -94,6 +94,52 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* b
     return new AiObjectContext(botAI);
 }
 
+/**
+ * The talent tab matching the role this bot has been *told* to play, or -1 if it has not been told.
+ *
+ * Roles and talents were allowed to disagree, and that is worse than either being wrong. An operator
+ * set a priest to heal; the talent roll independently picked Shadow; and because GetPlayerSpecTab
+ * reads the tree once any points are spent, every ResetStrategies() -- which a group invite and an
+ * LFG join both trigger -- relabelled her DPS and she stopped healing mid-dungeon.
+ *
+ * Only tank and heal are mapped. Damage is the default for every class, so "assigned DPS" carries no
+ * information about which of the two or three damage trees to take, and rolling for it is right.
+ */
+int8 AiFactory::GetSpecTabForAssignedRole(Player* bot)
+{
+    PlayerbotAI* const botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return -1;
+
+    // Deliberately ContainsStrategy rather than IsTank/IsHeal: those consult GetPlayerSpecTab, which
+    // consults this, and the pair recurse until the stack runs out. That crash is on record.
+    if (botAI->ContainsStrategy(STRATEGY_TYPE_TANK))
+    {
+        switch (bot->getClass())
+        {
+            case CLASS_WARRIOR:      return WARRIOR_TAB_PROTECTION;
+            case CLASS_PALADIN:      return PALADIN_TAB_PROTECTION;
+            case CLASS_DEATH_KNIGHT: return DEATH_KNIGHT_TAB_BLOOD;
+            case CLASS_DRUID:        return DRUID_TAB_FERAL;
+            default:                 break;
+        }
+    }
+
+    if (botAI->ContainsStrategy(STRATEGY_TYPE_HEAL))
+    {
+        switch (bot->getClass())
+        {
+            case CLASS_PRIEST:  return PRIEST_TAB_HOLY;
+            case CLASS_PALADIN: return PALADIN_TAB_HOLY;
+            case CLASS_SHAMAN:  return SHAMAN_TAB_RESTORATION;
+            case CLASS_DRUID:   return DRUID_TAB_RESTORATION;
+            default:            break;
+        }
+    }
+
+    return -1;
+}
+
 uint8 AiFactory::GetPlayerSpecTab(Player* bot)
 {
     std::map<uint8, uint32> tabs = GetPlayerSpecTabs(bot);

@@ -29,6 +29,8 @@ public:
     static void AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* engine);
 
     static uint8 GetPlayerSpecTab(Player* player);
+    /// Talent tab implied by an explicitly assigned tank/heal role, or -1 if none is assigned.
+    static int8 GetSpecTabForAssignedRole(Player* player);
     static std::map<uint8, uint32> GetPlayerSpecTabs(Player* player);
     static BotRoles GetPlayerRoles(Player* player);
     static std::string GetPlayerSpecName(Player* player);

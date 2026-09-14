@@ -7,6 +7,8 @@
 #include "ChangeStrategyAction.h"
 #include "Event.h"
 #include "PlayerbotRepository.h"
+#include "AiFactory.h"
+#include "PlayerbotFactory.h"
 #include "Playerbots.h"
 
 // Helper function for prefixes used by combat and non-combat strategy commands.
@@ -36,9 +38,27 @@ static void HandleStrategyCommon(PlayerbotAI* botAI, std::string const& text, Bo
 bool ChangeCombatStrategyAction::Execute(Event event)
 {
     std::string const text = event.getParam();
+
+    int8 const roleBefore = AiFactory::GetSpecTabForAssignedRole(bot);
+
     botAI->ChangeStrategy(text.empty() ? getName() : text, BOT_STATE_COMBAT);
     if (event.GetSource() == "co")
         HandleStrategyCommon(botAI, text, BOT_STATE_COMBAT);
+
+    // Giving a bot a role re-specs it into that role's tree.
+    //
+    // Without this the two can disagree, and the tree wins: GetPlayerSpecTab reads the talents as
+    // soon as any point is spent, so a priest told to heal but specced Shadow is relabelled DPS by
+    // the next ResetStrategies() -- which a group invite and an LFG join both trigger -- and stops
+    // healing partway through a dungeon.
+    //
+    // Only fires when the *role* changed, not on any combat strategy edit, so tuning a bot's
+    // rotation never costs it its build.
+    if (int8 const roleAfter = AiFactory::GetSpecTabForAssignedRole(bot);
+        roleAfter >= 0 && roleAfter != roleBefore)
+    {
+        PlayerbotFactory::RespecToAssignedRole(bot);
+    }
 
     return true;
 }

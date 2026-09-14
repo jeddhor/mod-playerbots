@@ -55,6 +55,15 @@ public:
     /// belongs to a person keeps the tree it is already in and only has its unspent points filled.
     static void SpendFreeTalentPoints(Player* bot);
 
+    /**
+     * Re-spec a bot into the tree its assigned role implies, if it is not already there.
+     *
+     * Operator request, and the other half of the healer bug: a role and a talent tree that
+     * disagree is worse than either being wrong on its own, because the tree is what every later
+     * role check actually reads.
+     */
+    static void RespecToAssignedRole(Player* bot);
+
     /// P13.1 -- bags for every bot, seed money for random ones. Safe to call on any bot.
     static void EnsureStartingKit(Player* bot);
 
