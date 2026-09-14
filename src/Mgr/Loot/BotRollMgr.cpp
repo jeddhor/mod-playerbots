@@ -73,7 +73,10 @@ void BotRollMgr::Update(Player* bot, uint32 diff)
         if (!group)
             continue;
 
-        group->CountRollVote(bot->GetGUID(), roll.lootGuid, roll.choice);
+        // dismissVoterFrame: this vote came from the bot, not from anyone clicking, so the
+        // character's own need/greed frame has to be closed explicitly. On a self bot that frame is
+        // on the operator's screen.
+        group->CountRollVote(bot->GetGUID(), roll.lootGuid, roll.choice, true);
 
         LOG_DEBUG("playerbots", "[Roll] {} answered a loot roll with choice {}", bot->GetName(), roll.choice);
     }
