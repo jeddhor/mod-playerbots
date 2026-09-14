@@ -263,6 +263,33 @@ ItemUsage ItemUsageValue::Calculate()
         if (ammoUsage != ITEM_USAGE_NONE)
             return ammoUsage;
     }
+    // P12.5 -- prestige items reach the price path with nothing to say for themselves.
+    //
+    // A mount is a Miscellaneous item: no stats, and a sell price that says nothing about what it
+    // is worth. Deathcharger's Reins and a Rough Sharpening Stone are indistinguishable to a rule
+    // that weighs stats and price, so a bot would list or vendor a mount it could have ridden.
+    //
+    // Narrow by design, and the numbers say so: 295 of 320 mounts and 74 of 87 tabards bind on
+    // pickup and were never at risk. This covers the 146 that are not -- 25 mounts, 108 companions,
+    // 13 tabards. The catastrophic case was already handled by the bind-on-pickup rule; this is the
+    // tidy-up around it.
+    if (proto->Class == ITEM_CLASS_MISC &&
+        (proto->SubClass == ITEM_SUBCLASS_JUNK_MOUNT || proto->SubClass == ITEM_SUBCLASS_JUNK_PET))
+    {
+        // Only when it teaches something the bot does not already know. A second copy of a mount it
+        // has already learned is ordinary surplus and should be sold like anything else -- keeping
+        // it would just be hoarding.
+        if (uint32 const taught = TaughtSpell(proto))
+            if (!bot->HasSpell(taught))
+                return ITEM_USAGE_USE;
+    }
+
+    // A tabard has no stats and a real sell price, which is the worst combination for a rule that
+    // judges by both. Bots have a free tabard slot and nothing else to put in it.
+    if (proto->InventoryType == INVTYPE_TABARD &&
+        !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_TABARD))
+        return ITEM_USAGE_EQUIP;
+
     // Need to add something like free bagspace or item value.
     if (proto->SellPrice > 0)
     {
@@ -1019,6 +1046,21 @@ bool ItemUsageValue::SpellGivesSkillUp(uint32 spellId, Player* bot)
     }
 
     return false;
+}
+
+uint32 ItemUsageValue::TaughtSpell(ItemTemplate const* proto)
+{
+    if (!proto)
+        return 0;
+
+    // Spells[0] on a mount or companion is 55884, a generic wrapper shared by every one of them;
+    // the spell that actually matters sits in a later slot behind trigger 6. Reading slot 0 would
+    // make every mount look identical.
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID && proto->Spells[i].SpellId > 0)
+            return uint32(proto->Spells[i].SpellId);
+
+    return 0;
 }
 
 bool ItemUsageValue::GrantsWellFed(ItemTemplate const* proto)

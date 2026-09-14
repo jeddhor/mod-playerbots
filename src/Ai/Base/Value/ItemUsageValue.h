@@ -81,6 +81,8 @@ public:
      * eat buff food *when they have it*, which is a property of the item, not of a curated set.
      */
     static bool GrantsWellFed(ItemTemplate const* proto);
+    /// The spell a mount, companion or toy teaches, or 0. Reads the trigger-6 slot, not slot 0.
+    static uint32 TaughtSpell(ItemTemplate const* proto);
 };
 
 class ItemUpgradeValue : public ItemUsageValue

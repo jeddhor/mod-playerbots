@@ -488,6 +488,11 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     // waited for level 52 to get any of them -- and a level 80 would have waited forever.
     PlayerbotFactory::SpendFreeTalentPoints(bot);
 
+    // P12.7 -- a title nobody displays is an achievement that may as well not have fired. Checked at
+    // login rather than on earning one, because the bot has to be in world to show it off anyway and
+    // this costs one lookup against a map built once for the realm.
+    PlayerbotFactory::ShowOffBestTitle(bot);
+
     Player* master = botAI->GetMaster();
 
     Group* group = bot->GetGroup();

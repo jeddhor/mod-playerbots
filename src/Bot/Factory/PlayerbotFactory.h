@@ -64,6 +64,16 @@ public:
      */
     static void RespecToAssignedRole(Player* bot);
 
+    /**
+     * Display the rarest title this bot has earned, if it is not already showing one.
+     *
+     * P12.7. 135 characters on this realm have earned a title and not one of them was displaying
+     * it, which is the whole of the gap: the achievement fires, the bit is set, and nobody ever
+     * looks. Rarity is counted across the realm because CharTitles.dbc has no rarity field, and
+     * because "unusual" is a fact about the population rather than about the title.
+     */
+    static void ShowOffBestTitle(Player* bot);
+
     /// P13.1 -- bags for every bot, seed money for random ones. Safe to call on any bot.
     static void EnsureStartingKit(Player* bot);
 

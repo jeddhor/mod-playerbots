@@ -63,6 +63,22 @@ private:
     bool TryPreferredMount(Player* master) const;
     uint32 GetMountType(Player* master) const;
     bool TryRandomMountFiltered(const std::map<int32, std::vector<uint32>>& spells, int32 masterSpeed) const;
+
+    /**
+     * P12.6 -- how much of a boast a mount is, 1 (best) to 3, by how it was obtained.
+     *
+     * Quality is useless for this: 235 of 297 mounts are epic, so it cannot tell Ashes of Al'ar
+     * from a Blue Mechanostrider. What separates them is where they come from, which is what the
+     * requirement actually says -- drops and achievements ahead of reputation, reputation ahead of
+     * anything a vendor will simply sell you.
+     *
+     * Built once from item_template and npc_vendor: 120 drop/achievement, 40 reputation, 137 vendor.
+     */
+    static uint8 MountPrestige(uint32 mountSpellId);
+    static void EnsureMountPrestigeLoaded();
+
+    static std::unordered_map<uint32, uint8> mountPrestige;
+    static bool mountPrestigeLoaded;
 };
 
 #endif

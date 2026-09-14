@@ -26,6 +26,8 @@ static constexpr float PARACHUTE_LAND_THRESHOLD = 15.0f;
 
 // Define the static map / init bool for caching bot preferred mount data globally
 std::unordered_map<uint32, PreferredMountCache> CheckMountStateAction::mountCache;
+std::unordered_map<uint32, uint8> CheckMountStateAction::mountPrestige;
+bool CheckMountStateAction::mountPrestigeLoaded = false;
 bool CheckMountStateAction::preferredMountTableChecked = false;
 
 namespace
@@ -417,9 +419,15 @@ bool CheckMountStateAction::TryPreferredMount(Player* master) const
     // Build cache (only once)
     if (!preferredMountTableChecked)
     {
-        // Verify preferred mounts table existance in the database
+        // Verify preferred mounts table existance in the database.
+        //
+        // DATABASE(), not a hardcoded schema name. This read 'acore_playerbots', which is correct
+        // only on a realm using the default name -- anywhere else the probe returns 0, the cache is
+        // never built, and the whole preferred-mounts feature quietly does nothing. It fails closed
+        // and silently, which is why nobody noticed: this realm runs 'acdev_playerbots' and has
+        // never once consulted the table.
         QueryResult checkTable = PlayerbotsDatabase.Query(
-            "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_schema = 'acore_playerbots' AND table_name = 'playerbots_preferred_mounts')");
+            "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'playerbots_preferred_mounts')");
 
         if (checkTable && checkTable->Fetch()[0].Get<uint32>() == 1)
         {
@@ -501,6 +509,55 @@ bool CheckMountStateAction::TryPreferredMount(Player* master) const
     return false;
 }
 
+void CheckMountStateAction::EnsureMountPrestigeLoaded()
+{
+    if (mountPrestigeLoaded)
+        return;
+
+    mountPrestigeLoaded = true;
+
+    // One query, joined in SQL rather than pulled into memory: the mount set is ~300 rows and this
+    // runs once for the life of the process.
+    //
+    // spelltrigger_2 = 6 is ITEM_SPELLTRIGGER_LEARN_SPELL_ID. Slot 0 on every mount is 55884, a
+    // shared wrapper, so reading it would make all of them look like the same mount.
+    QueryResult result = WorldDatabase.Query(
+        "SELECT it.spellid_2, "
+        "       CASE WHEN v.item IS NULL THEN 1 "
+        "            WHEN it.RequiredReputationFaction > 0 THEN 2 "
+        "            ELSE 3 END "
+        "FROM item_template it "
+        "LEFT JOIN (SELECT DISTINCT item FROM npc_vendor) v ON v.item = it.entry "
+        "WHERE it.class = 15 AND it.subclass = 5 AND it.spelltrigger_2 = 6 AND it.spellid_2 > 0");
+
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 const spellId = fields[0].Get<uint32>();
+        uint8 const tier = fields[1].Get<uint8>();
+
+        // A mount taught by more than one item takes the most impressive route to it.
+        auto const existing = mountPrestige.find(spellId);
+        if (existing == mountPrestige.end() || tier < existing->second)
+            mountPrestige[spellId] = tier;
+    } while (result->NextRow());
+
+    LOG_INFO("playerbots", "[Mounts] prestige loaded for {} mounts", uint32(mountPrestige.size()));
+}
+
+uint8 CheckMountStateAction::MountPrestige(uint32 mountSpellId)
+{
+    EnsureMountPrestigeLoaded();
+
+    auto const itr = mountPrestige.find(mountSpellId);
+    // Unknown means no teaching item -- class mounts, and anything granted directly. Middle tier:
+    // a paladin charger is not a boast, but it is not a bought mount either.
+    return itr != mountPrestige.end() ? itr->second : 2;
+}
+
 bool CheckMountStateAction::TryRandomMountFiltered(const std::map<int32, std::vector<uint32>>& spells, int32 masterSpeed) const
 {
     for (auto it = spells.rbegin(); it != spells.rend(); ++it)
@@ -518,7 +575,37 @@ bool CheckMountStateAction::TryRandomMountFiltered(const std::map<int32, std::ve
             if (bot->isMoving())
                 bot->StopMoving();
 
-            uint32 index = urand(0, ids.size() - 1);
+            // P12.6 -- weight the draw by how the mount was earned, rather than picking flat.
+            //
+            // Weights, not a hard sort: a bot that owns something rare should mostly be seen on it,
+            // and a realm where every bot always rides its single best mount looks as artificial as
+            // one where the choice is uniform. Six-to-three-to-one puts a drop in front roughly
+            // two-thirds of the time while leaving the rest of the stable in use.
+            static constexpr uint32 PRESTIGE_WEIGHT[4] = {0, 6, 3, 1};
+
+            uint32 total = 0;
+            for (uint32 id : ids)
+                total += PRESTIGE_WEIGHT[MountPrestige(id)];
+
+            uint32 index = 0;
+            if (total)
+            {
+                uint32 roll = urand(1, total);
+                for (uint32 i = 0; i < ids.size(); ++i)
+                {
+                    uint32 const weight = PRESTIGE_WEIGHT[MountPrestige(ids[i])];
+                    if (roll <= weight)
+                    {
+                        index = i;
+                        break;
+                    }
+                    roll -= weight;
+                }
+            }
+            else
+            {
+                index = urand(0, ids.size() - 1);
+            }
 
             if (botAI->CanCastSpell(ids[index], bot))
             {

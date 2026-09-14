@@ -4,6 +4,8 @@
  */
 
 #include "PlayerbotFactory.h"
+#include <limits>
+#include <sstream>
 
 #include "BotTrainingMgr.h"
 #include "AccountMgr.h"
@@ -2694,6 +2696,86 @@ void PlayerbotFactory::EquipCarriedBags(Player* bot)
         bot->RemoveItem(INVENTORY_SLOT_BAG_0, best->GetSlot(), true);
         bot->EquipItem(dest, best, true);
     }
+}
+
+namespace
+{
+/// How many characters on this realm know each title, by bit index. Built once; see ShowOffBestTitle.
+std::unordered_map<uint32, uint32> g_titleHolders;
+bool g_titleHoldersLoaded = false;
+
+void EnsureTitleRarityLoaded()
+{
+    if (g_titleHoldersLoaded)
+        return;
+
+    g_titleHoldersLoaded = true;
+
+    // knownTitles is a space-separated list of 32-bit words, so bit N of word W is title
+    // W * 32 + N. Counted across the realm rather than read from a DBC, because the DBC has no
+    // rarity field at all -- and "unusual" is a fact about this realm's population anyway, which is
+    // exactly what the requirement is reaching for.
+    QueryResult result = CharacterDatabase.Query("SELECT knownTitles FROM characters WHERE knownTitles <> ''");
+    if (!result)
+        return;
+
+    do
+    {
+        std::string const blob = result->Fetch()[0].Get<std::string>();
+        std::istringstream stream(blob);
+        uint32 word = 0;
+        uint32 index = 0;
+
+        while (stream >> word)
+        {
+            for (uint32 bit = 0; bit < 32; ++bit)
+                if (word & (1u << bit))
+                    ++g_titleHolders[index * 32 + bit];
+            ++index;
+        }
+    } while (result->NextRow());
+
+    LOG_INFO("playerbots", "[Titles] realm rarity loaded for {} distinct titles", uint32(g_titleHolders.size()));
+}
+}  // namespace
+
+void PlayerbotFactory::ShowOffBestTitle(Player* bot)
+{
+    if (!bot)
+        return;
+
+    // Already showing something. Bots keep what they picked -- a character whose title changes every
+    // time it logs in reads as a bot, and the point of a title is that it is *yours*.
+    if (bot->GetUInt32Value(PLAYER_CHOSEN_TITLE))
+        return;
+
+    EnsureTitleRarityLoaded();
+
+    CharTitlesEntry const* rarest = nullptr;
+    uint32 fewestHolders = std::numeric_limits<uint32>::max();
+
+    for (uint32 i = 0; i < sCharTitlesStore.GetNumRows(); ++i)
+    {
+        CharTitlesEntry const* title = sCharTitlesStore.LookupEntry(i);
+        if (!title || !bot->HasTitle(title))
+            continue;
+
+        auto const holders = g_titleHolders.find(title->bit_index);
+        uint32 const count = holders != g_titleHolders.end() ? holders->second : 1;
+
+        if (count < fewestHolders)
+        {
+            fewestHolders = count;
+            rarest = title;
+        }
+    }
+
+    if (!rarest)
+        return;
+
+    bot->SetCurrentTitle(rarest);
+    LOG_DEBUG("playerbots", "[Titles] {} is now displaying title bit {} ({} other holders on the realm)",
+              bot->GetName(), rarest->bit_index, fewestHolders ? fewestHolders - 1 : 0);
 }
 
 void PlayerbotFactory::RespecToAssignedRole(Player* bot)
