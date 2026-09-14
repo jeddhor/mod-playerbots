@@ -18,6 +18,7 @@
 #include "PlayerbotSpellRepository.h"
 #include "PlayerbotWorldThreadProcessor.h"
 #include "GatherRouteMgr.h"
+#include "ReagentSourceMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
 #include "BotInspectorMgr.h"
@@ -729,6 +730,10 @@ public:
         QuestBlacklistMgr::instance().Load();
 
         GatherRouteMgr::instance().Load();
+        // After the gather routes, deliberately: that index covers herb and ore nodes, and this one
+        // covers everything else a reagent can come from. Splitting them keeps each answerable on
+        // its own terms rather than merging two different questions into one table.
+        ReagentSourceMgr::instance().Load();
 
         BotEconomyMgr::instance().Load();
 

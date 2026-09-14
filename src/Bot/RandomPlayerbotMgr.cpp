@@ -12,6 +12,7 @@
 #include "BotLfgMgr.h"
 #include "RandomBotLevelMgr.h"
 #include "BotCraftMgr.h"
+#include "ReagentSourceMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
 #include "AiFactory.h"
@@ -2528,6 +2529,36 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "craft")
     {
         LOG_INFO("playerbots", "{}", sBotCraftMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd.rfind("reagents", 0) == 0)
+    {
+        // "reagents" for the totals, "reagents <itemId>" to ask where one specific thing is farmed --
+        // which is the only way to confirm by hand that a raid reagent really did fall out.
+        std::string const arg = cmd.size() > 8 ? cmd.substr(9) : "";
+        if (arg.empty())
+        {
+            LOG_INFO("playerbots", "{}", sReagentSourceMgr.DescribeStats());
+            return true;
+        }
+
+        uint32 const itemId = uint32(atoi(arg.c_str()));
+        if (std::vector<ReagentSourceMgr::Source> const* sources = sReagentSourceMgr.SourcesFor(itemId))
+        {
+            LOG_INFO("playerbots", "[Reagents] item {} has {} source(s); best few:", itemId, sources->size());
+            for (size_t i = 0; i < std::min<size_t>(5, sources->size()); ++i)
+            {
+                ReagentSourceMgr::Source const& src = (*sources)[i];
+                LOG_INFO("playerbots", "    kind {} entry {} zone {} lvl {}-{} chance {:.1f}% spawns {}",
+                         uint32(src.kind), src.sourceEntry, src.zoneId, src.minLevel, src.maxLevel,
+                         src.chance, src.spawnCount);
+            }
+        }
+        else
+        {
+            LOG_INFO("playerbots", "[Reagents] item {} is NOT farmable -- it may only be bought", itemId);
+        }
         return true;
     }
 

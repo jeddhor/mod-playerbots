@@ -207,7 +207,19 @@ std::vector<PlayerbotFactory::WeightedProfessionPair> PlayerbotFactory::GetClass
         case CLASS_MAGE:
         case CLASS_WARLOCK:
         default:
-            return {{SKILL_TAILORING, SKILL_ENCHANTING, 100}};
+            // Two pairs at even odds, unlike every other class here, and deliberately so.
+            //
+            // Cloth wearers taking tailoring and enchanting to a bot is the obvious reading of the
+            // armour rule, and it left the realm with no scribes at all: Inscription appears only in
+            // the random table, which a ClassMatchingProfessionChance of 100 never reaches. No
+            // glyphs were made by anyone, and Enchanting had no source of vellum, which is what
+            // blocks enchanters from selling scrolls rather than gear.
+            //
+            // Herbalism rather than a second crafting skill, because Inscription runs on pigments
+            // milled from herbs -- a scribe who cannot gather is a scribe waiting on an auction
+            // house that has nothing on it yet.
+            return {{SKILL_TAILORING, SKILL_ENCHANTING, 50},
+                    {SKILL_HERBALISM, SKILL_INSCRIPTION, 50}};
     }
 }
 
