@@ -28,6 +28,8 @@ void ChatCommandHandlerStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
 
     // Keep single action triggers on one line, and multi-action triggers on multiple lines.
     triggers.push_back(new TriggerNode("rep", { NextAction("reputation", relevance) }));
+    // R28 -- "portal" lists what the mage knows, "portal ironforge" opens one.
+    triggers.push_back(new TriggerNode("portals", { NextAction("portal", relevance) }));
     triggers.push_back(new TriggerNode("pvp stats", { NextAction("tell pvp stats", relevance) }));
     triggers.push_back(new TriggerNode("q",
         { NextAction("query quest", relevance),

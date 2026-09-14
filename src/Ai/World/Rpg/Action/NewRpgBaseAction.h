@@ -55,6 +55,24 @@ protected:
     /// case the destination is not somewhere a bot can stand and should not be walked to.
     static bool ResolveTeleportGround(Player* bot, WorldPosition& dest);
 
+    /**
+     * P11.8 -- step off a ledge on purpose, when that is the only way down.
+     *
+     * A bot on a raised platform has no representation of "fall" as a way to travel: the navmesh has
+     * no edge from the platform to the ground, correctly, because there is no walkable surface
+     * between them. So pathing reports no route and the bot runs the platform until its activity
+     * window expires. It is not judging the drop unsafe; it cannot see the drop at all.
+     *
+     * This is therefore a missing move rather than a cost function to tune. Damage is estimated with
+     * the core's own fall equation, because a threshold that disagrees with what actually happens
+     * would either strand bots or kill them.
+     *
+     * Distinct from the stuck teleport below it and from P7.24's out-of-world recovery. Three
+     * different things end with a bot somewhere new; a log that cannot tell them apart hides
+     * whichever one starts misbehaving.
+     */
+    bool TryDeliberateDrop(WorldPosition const& dest);
+
     /* QUEST RELATED CHECK */
     /// Safe replacement for `bot->getQuestStatusMap().at(questId)`, which throws std::out_of_range
     /// for a quest that is not in the bot's log. Returns nullptr instead so callers can bail out.

@@ -511,6 +511,9 @@ public:
     uint32 fishingMinFreeBagSlots;
     bool economySupervisedBotsSell;
     uint32 economyClearUntilFreeSlots;
+    bool deliberateDropEnabled;
+    float deliberateDropMinHealthPct;
+    float deliberateDropStep;
     bool syncLevelWithPlayers;
     bool autoLearnQuestSpells;
     bool autoTeleportForLevel;

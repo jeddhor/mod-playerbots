@@ -67,6 +67,7 @@
 #include "UseItemAction.h"
 #include "VehicleActions.h"
 #include "BuyAuctionAction.h"
+#include "PortalAction.h"
 #include "PostAuctionAction.h"
 #include "RemoteTrainAction.h"
 #include "VendorJunkAction.h"
@@ -259,6 +260,7 @@ public:
         creators["rpg sell"] = &ActionContext::rpg_sell;
         creators["vendor junk"] = &ActionContext::vendor_junk;
         creators["post auctions"] = &ActionContext::post_auctions;
+        creators["portal"] = &ActionContext::portal;
         creators["remote train"] = &ActionContext::remote_train;
         creators["buy auctions"] = &ActionContext::buy_auctions;
         creators["new rpg vendor"] = &ActionContext::new_rpg_vendor;
@@ -475,6 +477,7 @@ private:
     static Action* rpg_sell(PlayerbotAI* botAI) { return new RpgSellAction(botAI); }
     static Action* vendor_junk(PlayerbotAI* botAI) { return new VendorJunkAction(botAI); }
     static Action* post_auctions(PlayerbotAI* botAI) { return new PostAuctionAction(botAI); }
+    static Action* portal(PlayerbotAI* botAI) { return new PortalAction(botAI); }
     static Action* remote_train(PlayerbotAI* botAI) { return new RemoteTrainAction(botAI); }
     static Action* buy_auctions(PlayerbotAI* botAI) { return new BuyAuctionAction(botAI); }
     static Action* new_rpg_vendor(PlayerbotAI* botAI) { return new NewRpgVendorAction(botAI); }

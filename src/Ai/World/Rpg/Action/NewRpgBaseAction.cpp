@@ -239,6 +239,14 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
         // its RPG objective instead of oscillating indefinitely.
         botAI->rpgInfo.stuckTs = getMSTime();
         botAI->rpgInfo.stuckAttempts = 0;
+
+        // P11.8 -- before teleporting, consider simply stepping off. A bot stuck on a platform is
+        // the common case here, and a survivable drop solves it using the world rather than around
+        // it. Only ahead of the teleport, never ahead of ordinary pathing: this is the last resort
+        // before the more dangerous one.
+        if (TryDeliberateDrop(dest))
+            return true;
+
         const AreaTableEntry* entry = sAreaTableStore.LookupEntry(bot->GetZoneId());
         std::string zone_name = PlayerbotAI::GetLocalizedAreaName(entry);
         LOG_DEBUG(
@@ -2727,6 +2735,78 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
         }
     }
     return false;
+}
+
+bool NewRpgBaseAction::TryDeliberateDrop(WorldPosition const& dest)
+{
+    if (!sPlayerbotAIConfig.deliberateDropEnabled)
+        return false;
+
+    // Mirrors Player.cpp's fall equation. Those constants are file-local `static constexpr` there,
+    // so they cannot be included -- and a copy is a drift risk worth naming rather than hiding: if
+    // the core's numbers ever change, this is the other place to change. Keeping them is still
+    // better than inventing a threshold, because a guess that disagrees with the real damage either
+    // strands bots on ledges or kills them stepping off one.
+    constexpr float FALL_DMG_SLOPE = 0.018f;
+    constexpr float FALL_DMG_INTERCEPT = -0.2426f;
+    constexpr float MIN_FALL_DMG_DIST = 13.48f;
+
+    // Below this there is nothing to solve: a drop the bot can simply walk down is one the navmesh
+    // already has an edge for.
+    constexpr float MIN_USEFUL_DROP = 5.0f;
+
+    if (bot->IsFlying() || bot->IsMounted() || bot->isSwimming() || bot->IsInCombat())
+        return false;
+
+    Map* map = bot->GetMap();
+    if (!map)
+        return false;
+
+    // Step off toward the destination rather than straight down: the edge is almost always in the
+    // direction the bot has been failing to walk, and landing a few yards along the way is free.
+    float const angle = bot->GetAngle(dest.GetPositionX(), dest.GetPositionY());
+    float const stepX = bot->GetPositionX() + std::cos(angle) * sPlayerbotAIConfig.deliberateDropStep;
+    float const stepY = bot->GetPositionY() + std::sin(angle) * sPlayerbotAIConfig.deliberateDropStep;
+
+    float const groundZ = map->GetHeight(bot->GetPhaseMask(), stepX, stepY, bot->GetPositionZ(), true, 200.0f);
+    if (groundZ <= INVALID_HEIGHT)
+        return false;
+
+    float const drop = bot->GetPositionZ() - groundZ;
+    if (drop < MIN_USEFUL_DROP)
+        return false;
+
+    // Do not jump *down* into something further from the goal than where we stand.
+    if (dest.GetPositionZ() > groundZ + MIN_USEFUL_DROP)
+        return false;
+
+    float survivingPct = 1.0f;
+    if (drop >= MIN_FALL_DMG_DIST)
+    {
+        int32 const safeFall = bot->GetTotalAuraModifier(SPELL_AURA_SAFE_FALL);
+        float const damagePct =
+            std::max(0.0f, FALL_DMG_SLOPE * (drop - float(safeFall)) + FALL_DMG_INTERCEPT) *
+            sWorld->getRate(RATE_DAMAGE_FALL);
+
+        float const healthPct = bot->GetMaxHealth() ? float(bot->GetHealth()) / float(bot->GetMaxHealth()) : 0.0f;
+        survivingPct = healthPct - damagePct;
+    }
+
+    if (survivingPct < sPlayerbotAIConfig.deliberateDropMinHealthPct)
+    {
+        LOG_DEBUG("playerbots", "[Drop] {} refused a {:.0f} yard drop: would land at {:.0f}% health",
+                  bot->GetName(), drop, survivingPct * 100.0f);
+        return false;
+    }
+
+    // MoveJump, not a teleport. The point of the requirement is that the bot uses the world rather
+    // than stepping around it, and a jump is a real movement the client sees and the fall damage
+    // actually applies to.
+    bot->GetMotionMaster()->MoveJump(stepX, stepY, groundZ, sPlayerbotAIConfig.deliberateDropStep, 0.0f);
+
+    LOG_INFO("playerbots", "[Drop] {} stepped off a {:.0f} yard ledge toward its destination, landing at ~{:.0f}% health",
+             bot->GetName(), drop, survivingPct * 100.0f);
+    return true;
 }
 
 bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)

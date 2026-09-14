@@ -918,6 +918,13 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
     // The high-water mark a clearing bot works towards, against Agenda.FreeSlotTarget as the low
     // mark that starts it. Must be the larger of the two or a bot stops as soon as it starts.
+    deliberateDropEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.DeliberateDrop.Enabled", true);
+    // Health *remaining after landing*, not damage taken. 0.35 means a bot will step off something
+    // that leaves it above a third, and walk away from anything worse.
+    deliberateDropMinHealthPct =
+        sConfigMgr->GetOption<float>("AiPlayerbot.DeliberateDrop.MinHealthPct", 0.35f);
+    deliberateDropStep = sConfigMgr->GetOption<float>("AiPlayerbot.DeliberateDrop.StepYards", 4.0f);
+
     economyClearUntilFreeSlots = std::max<uint32>(
         sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.ClearUntilFreeSlots", 24),
         agendaFreeSlotTarget + 1);

@@ -2936,6 +2936,26 @@ AiPlayerbot.Economy.SupervisedBotsSell = 1
 AiPlayerbot.Economy.ClearUntilFreeSlots = 24
 
 #
+#    AiPlayerbot.DeliberateDrop.Enabled / .MinHealthPct / .StepYards
+#        Description: May a bot step off a ledge when that is the only way down?
+#
+#                     A bot on a raised platform has no route to the ground -- correctly, since
+#                     there is no walkable surface between them -- so it runs the platform until its
+#                     activity window expires and then teleports. It is not judging the fall unsafe;
+#                     it has no notion of falling as a way to travel.
+#
+#                     MinHealthPct is the health remaining AFTER landing, estimated with the core's
+#                     own fall equation, not the damage taken. StepYards is how far toward the
+#                     destination it steps before dropping.
+#        Default:     1, 0.35, 4.0
+#
+
+AiPlayerbot.DeliberateDrop.Enabled = 1
+AiPlayerbot.DeliberateDrop.MinHealthPct = 0.35
+AiPlayerbot.DeliberateDrop.StepYards = 4.0
+
+
+#
 #    AiPlayerbot.Agenda.Enabled
 #        Bots pursue goals -- level up, earn gold, train a profession, clear their bags -- and those
 #        goals bias which activity they choose next. With this off every bot draws from the same
