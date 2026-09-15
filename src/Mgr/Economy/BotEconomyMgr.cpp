@@ -102,7 +102,6 @@ void BotEconomyMgr::LoadInputCostSeeds()
                 auto [itr, inserted] = seeds.emplace(made, cost);
                 if (!inserted)
                     itr->second = std::min(itr->second, cost);
-
             }
         }
 

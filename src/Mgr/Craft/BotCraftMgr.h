@@ -137,6 +137,18 @@ private:
      */
     bool SupplyScroll(Player* bot);
 
+    /**
+     * Break down gear the item classifier has already judged disenchant fodder.
+     *
+     * The action that did this hung off a random trigger in the loot strategy and, measured across
+     * every log on the realm, fired twice. Nothing disenchanted, so no dust reached the house and no
+     * enchanter could write a scroll. Same fix as training and mail: a timer, not a behaviour roll.
+     */
+    uint32 DisenchantHeld(Player* bot);
+
+    /// Buy one piece of gear off the house to disenchant, when its dust is worth the price.
+    bool BuyToDisenchant(Player* bot);
+
     /// Buy one scroll for an unenchanted piece of gear the bot wears (P10.7).
     bool BuyScroll(Player* bot);
 
@@ -205,6 +217,8 @@ private:
     uint32 _scrollsWritten{0};
     uint32 _scrollsBought{0};
     uint32 _scrollsApplied{0};
+    uint32 _disenchanted{0};
+    uint32 _boughtToDisenchant{0};
 };
 
 #define sBotCraftMgr BotCraftMgr::instance()

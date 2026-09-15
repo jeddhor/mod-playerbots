@@ -6,12 +6,14 @@
 
 #include "BotCraftMgr.h"
 
+#include "Bag.h"
 #include "BotEconomyMgr.h"
 #include "BudgetValues.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "Item.h"
 #include "ItemTemplate.h"
+#include "ItemUsageValue.h"
 #include "Log.h"
 #include "LootMgr.h"
 #include "ObjectMgr.h"
@@ -694,6 +696,159 @@ bool BotCraftMgr::SupplyScroll(Player* bot)
     return true;
 }
 
+uint32 BotCraftMgr::DisenchantHeld(Player* bot)
+{
+    constexpr uint32 DISENCHANTS_PER_PASS = 5;
+    constexpr uint32 SPELL_DISENCHANT = 13262;
+
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI || !botAI->GetAiObjectContext() || !bot->HasSkill(SKILL_ENCHANTING) || bot->IsInCombat())
+        return 0;
+
+    uint16 const skill = bot->GetSkillValue(SKILL_ENCHANTING);
+
+    // Collected first and destroyed afterwards: destroying while walking the bags moves what is left.
+    std::vector<std::pair<uint8, uint8>> fodder;
+    auto consider = [&](Item* item, uint8 bag, uint8 slot)
+    {
+        if (!item || fodder.size() >= DISENCHANTS_PER_PASS)
+            return;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto->DisenchantID || proto->RequiredDisenchantSkill > skill || item->IsRefundable() ||
+            item->IsWrapped() || (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON))
+            return;
+
+        // The classifier owns the judgement -- upgrade, a groupmate's upgrade, keep for a set, list it --
+        // and this only acts on its verdict, so the two cannot disagree about what counts as fodder.
+        ItemUsage const usage = botAI->GetAiObjectContext()
+                                    ->GetValue<ItemUsage>("item usage", std::to_string(proto->ItemId))
+                                    ->Get();
+        if (usage == ITEM_USAGE_DISENCHANT)
+            fodder.emplace_back(bag, slot);
+    };
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
+
+    for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+        if (Bag* bag = bot->GetBagByPos(bagSlot))
+            for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+                consider(bag->GetItemByPos(uint8(slot)), bagSlot, uint8(slot));
+
+    uint32 done = 0;
+    for (auto const& [bag, slot] : fodder)
+    {
+        Item* item = bot->GetItemByPos(bag, slot);
+        if (!item)
+            continue;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        uint32 const entry = proto->ItemId;
+
+        Loot loot;
+        loot.FillLoot(proto->DisenchantID, LootTemplates_Disenchant, bot, true, true);
+        if (loot.items.empty())
+            continue;
+
+        // Room for every reagent before the gear is gone, or a full bag destroys it for nothing.
+        bool fits = true;
+        for (LootItem const& drop : loot.items)
+        {
+            ItemPosCountVec dest;
+            if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, drop.itemid, drop.count) != EQUIP_ERR_OK)
+            {
+                fits = false;
+                break;
+            }
+        }
+
+        if (!fits)
+            break;
+
+        bot->DestroyItem(bag, slot, true);
+
+        for (LootItem const& drop : loot.items)
+        {
+            ItemPosCountVec dest;
+            if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, drop.itemid, drop.count) != EQUIP_ERR_OK)
+                continue;
+
+            if (Item* reagent = bot->StoreNewItem(dest, drop.itemid, true, drop.randomPropertyId))
+                bot->SendNewItem(reagent, drop.count, true, false);
+        }
+
+        // Spell::EffectDisEnchant grants skill, and it matters: disenchanting is how a new enchanter
+        // climbs its first sixty points.
+        bot->UpdateCraftSkill(SPELL_DISENCHANT);
+
+        ++done;
+        LOG_DEBUG("playerbots", "[Disenchant] {} disenchanted {} into {} reagent stack(s)", bot->GetName(), entry,
+                  loot.items.size());
+    }
+
+    if (done)
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        _disenchanted += done;
+    }
+
+    return done;
+}
+
+bool BotCraftMgr::BuyToDisenchant(Player* bot)
+{
+    // Disenchanting teaches until this skill, so below it gear is worth a little more than its dust.
+    constexpr uint16 DISENCHANT_TEACHES_UNTIL = 60;
+    constexpr float LEARNING_PREMIUM = 1.5f;
+
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI || !botAI->GetAiObjectContext() || !bot->HasSkill(SKILL_ENCHANTING))
+        return false;
+
+    uint16 const skill = bot->GetSkillValue(SKILL_ENCHANTING);
+    uint32 const budget = std::min(bot->GetMoney(),
+                                   botAI->GetAiObjectContext()
+                                       ->GetValue<uint32>("free money for",
+                                                          std::to_string(uint32(NeedMoneyFor::tradeskill)))
+                                       ->Get());
+    if (!budget)
+        return false;
+
+    float const ceilingPct = float(sPlayerbotAIConfig.economyDisenchantMaxPricePct) / 100.0f *
+                             (skill < DISENCHANT_TEACHES_UNTIL ? LEARNING_PREMIUM : 1.0f);
+
+    for (BotEconomyMgr::Bargain const& bargain : sBotEconomyMgr.SampleBargains(bot->GetTeamId(), 60))
+    {
+        if (bargain.owner == bot->GetGUID() || !bargain.buyout || bargain.buyout > budget)
+            continue;
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(bargain.itemId);
+        if (!proto || !proto->DisenchantID || proto->RequiredDisenchantSkill > skill ||
+            proto->Quality < ITEM_QUALITY_UNCOMMON || proto->Quality > sPlayerbotAIConfig.economyDisenchantMaxQuality ||
+            (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON))
+            continue;
+
+        uint32 const dustValue = sBotEconomyMgr.GetDisenchantValue(proto->DisenchantID) * bargain.count;
+        if (bargain.buyout > uint32(float(dustValue) * ceilingPct))
+            continue;
+
+        if (!sBotEconomyMgr.BuyoutAuction(bot, bargain.auctionId, bargain.houseId))
+            continue;
+
+        {
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            ++_boughtToDisenchant;
+        }
+
+        LOG_DEBUG("playerbots", "[Disenchant] {} bought {} for {}c to disenchant (dust worth {}c)", bot->GetName(),
+                  bargain.itemId, bargain.buyout, dustValue);
+        return true;
+    }
+
+    return false;
+}
+
 bool BotCraftMgr::BuyScroll(Player* bot)
 {
     if (!sPlayerbotAIConfig.scrollTradeEnabled || sPlayerbotAIConfig.scrollBuyWillingness <= 0.0f)
@@ -1057,8 +1212,10 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
     RefineMaterials(bot);
     MillHerbs(bot);
 
-    // Anything bought last pass has arrived by mail since; use it before deciding to buy more.
+    // Anything bought last pass has arrived by mail since; use it before deciding to buy more. That
+    // goes for gear bought to break down as much as for scrolls.
     ApplyScrolls(bot);
+    DisenchantHeld(bot);
 
     for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
     {
@@ -1114,7 +1271,7 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
 
     // Scrolls next: written only when the house is short and the margin is real, bought only for an
     // empty enchant slot. Both are rare, and either one is this bot's action for the pass.
-    if (SupplyScroll(bot) || BuyScroll(bot))
+    if (SupplyScroll(bot) || BuyScroll(bot) || BuyToDisenchant(bot))
         return;
 
     // The market comes first only because it almost never fires -- it is gated on the auction house
@@ -1133,7 +1290,9 @@ std::string BotCraftMgr::DescribeStats() const
 {
     std::shared_lock<std::shared_mutex> guard(_mutex);
     return Acore::StringFormat("craft: {} made ({} for skill, {} upgrades), {} listed, {} passes short of reagents, "
-                               "{} vendor buys, {} mills; scrolls: {} written, {} bought, {} applied",
+                               "{} vendor buys, {} mills; scrolls: {} written, {} bought, {} applied; "
+                               "disenchant: {} done, {} bought for it",
                                _crafted, _skillCrafts, _upgradeCrafts, _listed, _shortReagents, _vendorBought,
-                               _milled, _scrollsWritten, _scrollsBought, _scrollsApplied);
+                               _milled, _scrollsWritten, _scrollsBought, _scrollsApplied, _disenchanted,
+                               _boughtToDisenchant);
 }
