@@ -198,6 +198,9 @@ private:
     /// Expected reagent yield per disenchant id, from `disenchant_loot_template`. Built once.
     void LoadDisenchantYields();
 
+    /// Starting prices for crafted goods that have no vendor price, from the cost of their inputs.
+    static void LoadInputCostSeeds();
+
     struct Yield
     {
         uint32 itemId;

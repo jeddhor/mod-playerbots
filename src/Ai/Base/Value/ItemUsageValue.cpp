@@ -6,6 +6,7 @@
 
 #include "ItemUsageValue.h"
 #include "AiFactory.h"
+#include "BotCraftMgr.h"
 #include "ChatHelper.h"
 #include "Group.h"
 #include "GuildTaskMgr.h"
@@ -141,6 +142,14 @@ ItemUsage ItemUsageValue::Calculate()
 
     if (proto->Class == ITEM_CLASS_KEY)
         return ITEM_USAGE_USE;
+
+    // R16. A scroll that fits an empty enchant slot on something the bot wears is about to be used,
+    // and vellum in an enchanter's bags is what its next scroll is written on. Without these a bot
+    // lists the scroll it just bought, and the enchanter lists the vellum it just paid for.
+    if (sBotCraftMgr.IsScrollUsefulTo(bot, itemId))
+        return ITEM_USAGE_USE;
+    if (sBotCraftMgr.IsVellumFor(bot, itemId) || sBotCraftMgr.IsHerbToMill(bot, itemId))
+        return ITEM_USAGE_KEEP;
 
     const uint32_t maxCount = proto->MaxCount;
 

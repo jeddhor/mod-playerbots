@@ -15,8 +15,12 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
+class Item;
 class Player;
+class SpellInfo;
 
 /**
  * Bots craft the things other bots' professions depend on, and sell them.
@@ -70,6 +74,17 @@ public:
      */
     bool CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket);
 
+    /// True if `itemId` is an enchant scroll this bot could put on a piece of gear it is wearing now.
+    /// The item classifier asks, so a bot keeps a scroll it bought instead of listing it again.
+    bool IsScrollUsefulTo(Player* bot, uint32 itemId);
+
+    /// True if `itemId` is a herb this scribe can mill. Milling is not a recipe reagent, so nothing
+    /// else reserves herbs for a scribe -- the economy sold every one it gathered.
+    bool IsHerbToMill(Player* bot, uint32 itemId);
+
+    /// True if `itemId` is vellum and the bot is an enchanter who writes scrolls onto it.
+    bool IsVellumFor(Player* bot, uint32 itemId);
+
     std::string DescribeStats() const;
 
 private:
@@ -82,10 +97,51 @@ private:
     /// Walk every spell once to find which items are tools, and what those tools are made from.
     void EnsureLoaded();
 
-    /// Buy a missing reagent off the auction house. False if none listed or unaffordable.
+    /// Buy a missing reagent off the auction house, or from a vendor if one stocks it for gold.
+    /// False if neither has it or it is unaffordable.
     bool BuyReagent(Player* bot, uint32 itemId, uint32 needed);
 
+    /// Make a reagent from what is already in the bag, if the bot knows a recipe for it. With `dryRun`
+    /// only reports whether it could.
+    bool CraftReagent(Player* bot, uint32 itemId, bool dryRun = false);
 
+    /// Held already, or to be had: a vendor stocks it, the house lists it, or the bag can make it.
+    bool IsObtainable(Player* bot, uint32 itemId, uint32 needed);
+
+    /// Every reagent of this recipe is obtainable -- the test before spending anything on one of them.
+    bool AllReagentsObtainable(Player* bot, SpellInfo const* info);
+
+    /// Buy from a vendor without travelling, the same abstraction training and vendoring use: the
+    /// errand is skipped, the price is not. Only trade goods a vendor stocks for gold.
+    bool BuyFromVendor(Player* bot, uint32 itemId, uint32 needed, uint32 budget);
+
+    /**
+     * Mill herb stacks into pigments -- the first link of Inscription, and the one nothing did.
+     *
+     * Pigments feed inks, inks feed vellum, vellum feeds scrolls. Without this a scribe holding a bag
+     * of herbs could make none of it, and the scroll trade had no bottom rung.
+     */
+    uint32 MillHerbs(Player* bot);
+
+    /// The cheapest vellum this enchant can be written onto that the bot can get hold of, or 0.
+    uint32 VellumFor(Player* bot, SpellInfo const* enchant);
+
+    /// The equipped item a scroll's enchant would go on, or nullptr.
+    Item* ScrollTarget(Player* bot, SpellInfo const* enchant) const;
+
+    /**
+     * Write one scroll for the market, buying its vellum or a missing reagent first if need be.
+     *
+     * Demand-led like the tool blanks, and gated on price: a scroll is written only when what it
+     * sells for covers the vellum and dust that go into it.
+     */
+    bool SupplyScroll(Player* bot);
+
+    /// Buy one scroll for an unenchanted piece of gear the bot wears (P10.7).
+    bool BuyScroll(Player* bot);
+
+    /// Put any scroll the bot holds onto the gear it fits. Returns scrolls used.
+    uint32 ApplyScrolls(Player* bot);
 
     /**
      * Craft one recipe that would still raise a profession skill, from reagents already in the bag.
@@ -116,8 +172,24 @@ private:
 
     std::once_flag _loadOnce;
 
-    /// Items that are reagents of a tool recipe -- rod blanks and their equivalents.
+    /// Items that are reagents of a tool recipe -- rod blanks and their equivalents -- plus vellum,
+    /// which is the same shape of dependency: enchanting consumes it, only inscription makes it.
     std::unordered_set<uint32> _toolBlanks;
+
+    /// Scroll item -> the enchant spell that writes it, and the reverse.
+    std::unordered_map<uint32, uint32> _scrollSpell;
+    std::unordered_map<uint32, uint32> _spellScroll;
+
+    /// (item level, entry) of each vellum, by kind, cheapest tier first.
+    std::vector<std::pair<uint32, uint32>> _armorVellums;
+    std::vector<std::pair<uint32, uint32>> _weaponVellums;
+
+    /// Herbs that can be milled, and the spells that mill.
+    std::unordered_set<uint32> _millable;
+    std::unordered_set<uint32> _millingSpells;
+
+    /// Trade goods some vendor sells for plain gold (no extended cost).
+    std::unordered_set<uint32> _vendorGoods;
 
     mutable std::shared_mutex _mutex;
     std::unordered_map<ObjectGuid, uint32> _timers;
@@ -128,6 +200,11 @@ private:
     uint32 _listed{0};
     uint32 _shortReagents{0};
     uint32 _reagentsBought{0};
+    uint32 _vendorBought{0};
+    uint32 _milled{0};
+    uint32 _scrollsWritten{0};
+    uint32 _scrollsBought{0};
+    uint32 _scrollsApplied{0};
 };
 
 #define sBotCraftMgr BotCraftMgr::instance()

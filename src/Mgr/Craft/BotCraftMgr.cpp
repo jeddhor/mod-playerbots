@@ -8,9 +8,12 @@
 
 #include "BotEconomyMgr.h"
 #include "BudgetValues.h"
+#include "DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
+#include "LootMgr.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -21,6 +24,7 @@
 #include "SpellMgr.h"
 #include "StatsWeightCalculator.h"
 #include "StringFormat.h"
+#include "World.h"
 
 #include <algorithm>
 #include <utility>
@@ -93,6 +97,19 @@ void BotCraftMgr::EnsureLoaded()
 
             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
+                if (info->Effects[i].Effect == SPELL_EFFECT_MILLING)
+                    _millingSpells.insert(spellId);
+
+                // An enchant that names an item writes a scroll of itself when cast on vellum.
+                ItemTemplate const* written = info->Effects[i].Effect == SPELL_EFFECT_ENCHANT_ITEM
+                                                  ? sObjectMgr->GetItemTemplate(info->Effects[i].ItemType)
+                                                  : nullptr;
+                if (written && written->Class == ITEM_CLASS_CONSUMABLE)
+                {
+                    _scrollSpell.emplace(info->Effects[i].ItemType, spellId);
+                    _spellScroll.emplace(spellId, info->Effects[i].ItemType);
+                }
+
                 uint32 const made = info->Effects[i].ItemType;
                 if (info->Effects[i].Effect != SPELL_EFFECT_CREATE_ITEM || !made)
                     continue;
@@ -102,8 +119,38 @@ void BotCraftMgr::EnsureLoaded()
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(made);
                 if (proto && proto->TotemCategory)
                     toolRecipes.emplace_back(spellId, made);
+
+                // Vellum: consumed by enchanting, made only by inscription. The same cross-profession
+                // dependency a rod is, which is why it goes in the same supply set.
+                if (proto && (proto->IsArmorVellum() || proto->IsWeaponVellum()))
+                    _toolBlanks.insert(made);
             }
         }
+
+        for (auto const& [entry, proto] : *sObjectMgr->GetItemTemplateStore())
+        {
+            if (proto.IsArmorVellum())
+                _armorVellums.emplace_back(proto.ItemLevel, entry);
+            else if (proto.IsWeaponVellum())
+                _weaponVellums.emplace_back(proto.ItemLevel, entry);
+
+            if (proto.HasFlag(ITEM_FLAG_IS_MILLABLE) && LootTemplates_Milling.HaveLootFor(entry))
+                _millable.insert(entry);
+        }
+
+        std::sort(_armorVellums.begin(), _armorVellums.end());
+        std::sort(_weaponVellums.begin(), _weaponVellums.end());
+
+        // Parchment is the case: every vellum needs it and only a vendor has it. Extended-cost rows are
+        // excluded, since those trade in tokens -- the Dalaran ink trader's inks among them -- not gold.
+        if (QueryResult result = WorldDatabase.Query("SELECT DISTINCT item FROM npc_vendor WHERE ExtendedCost = 0"))
+            do
+            {
+                uint32 const entry = result->Fetch()[0].Get<uint32>();
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+                if (proto && proto->BuyPrice && proto->Class == ITEM_CLASS_TRADE_GOODS)
+                    _vendorGoods.insert(entry);
+            } while (result->NextRow());
 
         // Second pass: a blank is a tool recipe's reagent that some *other* crafting profession
         // makes.
@@ -138,8 +185,12 @@ void BotCraftMgr::EnsureLoaded()
             }
         }
 
-        LOG_INFO("server.loading", ">> Indexed {} cross-profession tool blanks (rods and the like)",
+        LOG_INFO("server.loading", ">> Indexed {} cross-profession supply items (rods, vellum and the like)",
                  _toolBlanks.size());
+        LOG_INFO("server.loading",
+                 ">> Indexed {} enchant scrolls, {} armor and {} weapon vellums, {} millable herbs, {} vendor goods",
+                 _scrollSpell.size(), _armorVellums.size(), _weaponVellums.size(), _millable.size(),
+                 _vendorGoods.size());
     });
 }
 
@@ -253,7 +304,496 @@ bool BotCraftMgr::BuyReagent(Player* bot, uint32 itemId, uint32 needed)
         }
     }
 
+    // Nothing on the house. A vendor good is still a vendor good: parchment is never going to be
+    // listed by a bot, and a scribe must not wait on an auction house for something any supplier has.
+    return BuyFromVendor(bot, itemId, needed, budget);
+}
+
+bool BotCraftMgr::BuyFromVendor(Player* bot, uint32 itemId, uint32 needed, uint32 budget)
+{
+    if (!_vendorGoods.count(itemId))
+        return false;
+
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+    if (!proto || !proto->BuyPrice)
+        return false;
+
+    uint32 const perPurchase = std::max<uint32>(1, proto->BuyCount);
+    uint32 const held = bot->GetItemCount(itemId, false);
+    uint32 const missing = needed > held ? needed - held : 0;
+    if (!missing)
+        return false;
+
+    uint32 const purchases = (missing + perPurchase - 1) / perPurchase;
+    uint32 const count = purchases * perPurchase;
+    uint32 const price = purchases * proto->BuyPrice;
+    if (price > budget || price > bot->GetMoney())
+        return false;
+
+    ItemPosCountVec dest;
+    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count) != EQUIP_ERR_OK)
+        return false;
+
+    Item* bought = bot->StoreNewItem(dest, itemId, true);
+    if (!bought)
+        return false;
+
+    bot->ModifyMoney(-int32(price));
+    bot->SendNewItem(bought, count, true, false);
+
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        ++_vendorBought;
+    }
+
+    LOG_DEBUG("playerbots", "[Craft] {} bought {} x{} from a vendor for {}c", bot->GetName(), itemId, count, price);
+    return true;
+}
+
+bool BotCraftMgr::CraftReagent(Player* bot, uint32 itemId, bool dryRun)
+{
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info || CreatedItemOf(info) != itemId || !HasAllReagents(bot, info))
+            continue;
+
+        if (dryRun || CraftOne(bot, spellId, itemId, false))
+            return true;
+    }
+
     return false;
+}
+
+bool BotCraftMgr::IsObtainable(Player* bot, uint32 itemId, uint32 needed)
+{
+    return bot->GetItemCount(itemId, false) >= needed || _vendorGoods.count(itemId) ||
+           sBotEconomyMgr.GetListingDepth(itemId) > 0 || CraftReagent(bot, itemId, true);
+}
+
+bool BotCraftMgr::AllReagentsObtainable(Player* bot, SpellInfo const* info)
+{
+    for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+        if (info->Reagent[r] > 0 && info->ReagentCount[r] &&
+            !IsObtainable(bot, uint32(info->Reagent[r]), info->ReagentCount[r]))
+            return false;
+
+    return true;
+}
+
+uint32 BotCraftMgr::MillHerbs(Player* bot)
+{
+    constexpr uint32 HERBS_PER_MILL = 5;
+    constexpr uint32 MILLS_PER_PASS = 4;
+
+    if (_millingSpells.empty() || !bot->HasSkill(SKILL_INSCRIPTION))
+        return 0;
+
+    // Milling is a skill-line reward, re-granted from the Inscription skill on every load rather
+    // than stored, so asking the spell map is the only honest test of whether this scribe has it.
+    bool knowsMilling = false;
+    for (uint32 spellId : _millingSpells)
+        if (bot->HasSpell(spellId))
+        {
+            knowsMilling = true;
+            break;
+        }
+
+    if (!knowsMilling)
+        return 0;
+
+    uint16 const skill = bot->GetSkillValue(SKILL_INSCRIPTION);
+    uint32 milled = 0;
+
+    for (uint32 herb : _millable)
+    {
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(herb);
+        if (!proto || proto->RequiredSkillRank > skill)
+            continue;
+
+        while (milled < MILLS_PER_PASS && bot->GetItemCount(herb, false) >= HERBS_PER_MILL)
+        {
+            Loot loot;
+            loot.FillLoot(herb, LootTemplates_Milling, bot, true, true);
+
+            // Room for everything before anything is destroyed, or a full bag eats the herbs.
+            bool fits = !loot.items.empty();
+            for (LootItem const& drop : loot.items)
+            {
+                ItemPosCountVec dest;
+                if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, drop.itemid, drop.count) != EQUIP_ERR_OK)
+                {
+                    fits = false;
+                    break;
+                }
+            }
+
+            if (!fits)
+                return milled;
+
+            bot->DestroyItemCount(herb, HERBS_PER_MILL, true);
+
+            for (LootItem const& drop : loot.items)
+            {
+                ItemPosCountVec dest;
+                if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, drop.itemid, drop.count) != EQUIP_ERR_OK)
+                    continue;
+
+                if (Item* pigment = bot->StoreNewItem(dest, drop.itemid, true, drop.randomPropertyId))
+                    bot->SendNewItem(pigment, drop.count, true, false);
+            }
+
+            // The skill-up a real mill grants, subject to the same realm switch the core honours.
+            if (sWorld->getBoolConfig(CONFIG_SKILL_MILLING))
+                bot->UpdateGatherSkill(SKILL_INSCRIPTION, bot->GetPureSkillValue(SKILL_INSCRIPTION),
+                                       proto->RequiredSkillRank);
+
+            ++milled;
+        }
+
+        if (milled >= MILLS_PER_PASS)
+            break;
+    }
+
+    if (milled)
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        _milled += milled;
+        LOG_DEBUG("playerbots", "[Craft] {} milled {} batches of herbs", bot->GetName(), milled);
+    }
+
+    return milled;
+}
+
+uint32 BotCraftMgr::VellumFor(Player* bot, SpellInfo const* enchant)
+{
+    if (!enchant)
+        return 0;
+
+    // Spell::CheckCast: the target's required level, or its item level when it has none, must reach
+    // the enchant's base level. Vellum has no required level, so its item level decides the tier.
+    //
+    // The cheapest acceptable tier the bot can actually get. Any higher tier also takes the enchant,
+    // so a house holding only Vellum III still serves a low enchant -- whether that is worth doing is
+    // the margin test's call, not this one's.
+    auto const& tiers = enchant->EquippedItemClass == ITEM_CLASS_WEAPON ? _weaponVellums : _armorVellums;
+    for (auto const& [itemLevel, entry] : tiers)
+        if (itemLevel >= enchant->BaseLevel && IsObtainable(bot, entry, 1))
+            return entry;
+
+    return 0;
+}
+
+Item* BotCraftMgr::ScrollTarget(Player* bot, SpellInfo const* enchant) const
+{
+    if (!enchant)
+        return nullptr;
+
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!item || !item->IsFitToSpellRequirements(enchant))
+            continue;
+
+        // Empty slots only. Bots are the sink for modest enchants; overwriting one a player chose, or a
+        // better one the bot already has, is not what a bought scroll is for.
+        if (item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT))
+            continue;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!enchant->HasAttribute(SPELL_ATTR2_ALLOW_LOW_LEVEL_BUFF))
+        {
+            uint32 const requiredLevel = proto->RequiredLevel ? proto->RequiredLevel : proto->ItemLevel;
+            if (requiredLevel < enchant->BaseLevel)
+                continue;
+        }
+
+        if (enchant->MaxLevel > 0 && proto->ItemLevel > enchant->MaxLevel)
+            continue;
+
+        return item;
+    }
+
+    return nullptr;
+}
+
+bool BotCraftMgr::IsScrollUsefulTo(Player* bot, uint32 itemId)
+{
+    if (!bot || !sPlayerbotAIConfig.scrollTradeEnabled)
+        return false;
+
+    EnsureLoaded();
+
+    auto const itr = _scrollSpell.find(itemId);
+    return itr != _scrollSpell.end() && ScrollTarget(bot, sSpellMgr->GetSpellInfo(itr->second));
+}
+
+bool BotCraftMgr::IsHerbToMill(Player* bot, uint32 itemId)
+{
+    if (!bot || !sPlayerbotAIConfig.scrollTradeEnabled || !bot->HasSkill(SKILL_INSCRIPTION))
+        return false;
+
+    EnsureLoaded();
+
+    if (!_millable.count(itemId))
+        return false;
+
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+    return proto && proto->RequiredSkillRank <= bot->GetSkillValue(SKILL_INSCRIPTION);
+}
+
+bool BotCraftMgr::IsVellumFor(Player* bot, uint32 itemId)
+{
+    if (!bot || !sPlayerbotAIConfig.scrollTradeEnabled || !bot->HasSkill(SKILL_ENCHANTING))
+        return false;
+
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+    return proto && (proto->IsArmorVellum() || proto->IsWeaponVellum());
+}
+
+bool BotCraftMgr::SupplyScroll(Player* bot)
+{
+    if (!sPlayerbotAIConfig.scrollTradeEnabled || !bot->HasSkill(SKILL_ENCHANTING))
+        return false;
+
+    uint16 const skill = bot->GetSkillValue(SKILL_ENCHANTING);
+
+    uint32 bestSpell = 0;
+    uint32 bestScroll = 0;
+    uint32 bestVellum = 0;
+    int64 bestMargin = 0;
+
+    uint32 considered = 0;
+    uint32 noVellum = 0;
+    uint32 noReagents = 0;
+    uint32 noMargin = 0;
+
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED || !playerSpell->Active)
+            continue;
+
+        auto const scrollItr = _spellScroll.find(spellId);
+        if (scrollItr == _spellScroll.end())
+            continue;
+
+        uint32 const scroll = scrollItr->second;
+
+        // Demand-led, like the rods: a house already holding a few of this scroll needs no more.
+        if (sBotEconomyMgr.GetListingDepth(scroll) >= TARGET_LISTING_DEPTH)
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info)
+            continue;
+
+        bool skilled = false;
+        SkillLineAbilityMapBounds bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+            if (itr->second && itr->second->SkillLine == SKILL_ENCHANTING && skill >= itr->second->MinSkillLineRank)
+                skilled = true;
+
+        if (!skilled)
+            continue;
+
+        ++considered;
+
+        uint32 const vellum = VellumFor(bot, info);
+        if (!vellum)
+        {
+            ++noVellum;
+            continue;
+        }
+
+        // Same rule as the supply loop: do not start buying for a scroll that cannot be finished.
+        if (!AllReagentsObtainable(bot, info))
+        {
+            ++noReagents;
+            continue;
+        }
+
+        // Only when the scroll pays for what goes into it. Burning dust to make something worth less
+        // than the dust is how an enchanter goes broke supplying a market.
+        int64 cost = sBotEconomyMgr.GetMarketPrice(vellum);
+        for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+            if (info->Reagent[r] > 0 && info->ReagentCount[r])
+                cost += int64(sBotEconomyMgr.GetMarketPrice(uint32(info->Reagent[r]))) * info->ReagentCount[r];
+
+        int64 const margin = int64(sBotEconomyMgr.GetMarketPrice(scroll)) - cost;
+        if (margin <= 0)
+            ++noMargin;
+        if (margin <= bestMargin)
+            continue;
+
+        bestMargin = margin;
+        bestSpell = spellId;
+        bestScroll = scroll;
+        bestVellum = vellum;
+    }
+
+    // A scroll trade that stays quiet must say why. The first version of this ran for twenty minutes
+    // beside four listed vellums and wrote nothing, and nothing in the log could tell a pricing fault
+    // from an enchanter with no dust.
+    if (!bestSpell)
+    {
+        if (considered)
+            LOG_DEBUG("playerbots", "[ScrollSkip] {} considered {} scrolls: {} no vellum, {} reagents, {} no margin",
+                      bot->GetName(), considered, noVellum, noReagents, noMargin);
+        return false;
+    }
+
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(bestSpell);
+
+    // One purchase per pass, same as the upgrade path: the vellum first, since without it the dust
+    // is not worth buying.
+    if (!bot->GetItemCount(bestVellum, false))
+        return BuyReagent(bot, bestVellum, 1);
+
+    for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+    {
+        if (info->Reagent[r] <= 0 || !info->ReagentCount[r])
+            continue;
+
+        if (bot->GetItemCount(uint32(info->Reagent[r]), false) < info->ReagentCount[r])
+            return BuyReagent(bot, uint32(info->Reagent[r]), info->ReagentCount[r]);
+    }
+
+    ItemPosCountVec dest;
+    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, bestScroll, 1) != EQUIP_ERR_OK)
+        return false;
+
+    for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+        if (info->Reagent[r] > 0 && info->ReagentCount[r])
+            bot->DestroyItemCount(uint32(info->Reagent[r]), info->ReagentCount[r], true);
+    bot->DestroyItemCount(bestVellum, 1, true);
+
+    Item* made = bot->StoreNewItem(dest, bestScroll, true);
+    if (!made)
+        return false;
+
+    bot->SendNewItem(made, 1, false, true);
+
+    // SpellEffects grants skill for a vellum only when the realm says so; a direct craft must agree.
+    if (sWorld->getBoolConfig(CONFIG_ENCHANT_VELLUM_SKILL_GAIN))
+        bot->UpdateCraftSkill(bestSpell);
+
+    bool const listed = sBotEconomyMgr.PostAuction(bot, made);
+
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        ++_scrollsWritten;
+        if (listed)
+            ++_listed;
+    }
+
+    LOG_DEBUG("playerbots", "[Scroll] {} wrote scroll {} (margin {}c){}", bot->GetName(), bestScroll, bestMargin,
+              listed ? " and listed it" : "");
+    return true;
+}
+
+bool BotCraftMgr::BuyScroll(Player* bot)
+{
+    if (!sPlayerbotAIConfig.scrollTradeEnabled || sPlayerbotAIConfig.scrollBuyWillingness <= 0.0f)
+        return false;
+
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI || !botAI->GetAiObjectContext())
+        return false;
+
+    uint32 const budget = std::min(bot->GetMoney(),
+                                   botAI->GetAiObjectContext()
+                                       ->GetValue<uint32>("free money for", std::to_string(uint32(NeedMoneyFor::gear)))
+                                       ->Get());
+    if (!budget)
+        return false;
+
+    for (BotEconomyMgr::Bargain const& bargain : sBotEconomyMgr.SampleBargains(bot->GetTeamId(), 60))
+    {
+        if (bargain.owner == bot->GetGUID() || !bargain.buyout || bargain.buyout > budget)
+            continue;
+
+        auto const itr = _scrollSpell.find(bargain.itemId);
+        if (itr == _scrollSpell.end())
+            continue;
+
+        uint32 const ceiling = uint32(float(sBotEconomyMgr.GetMarketPrice(bargain.itemId)) * bargain.count *
+                                      sPlayerbotAIConfig.scrollBuyWillingness);
+        if (bargain.buyout > ceiling)
+            continue;
+
+        if (!ScrollTarget(bot, sSpellMgr->GetSpellInfo(itr->second)))
+            continue;
+
+        // Held scrolls are applied before anything is bought, so one still in the bag or the mail is
+        // for some other slot -- but a second copy of the same scroll never is.
+        if (bot->GetItemCount(bargain.itemId, true))
+            continue;
+
+        if (!sBotEconomyMgr.BuyoutAuction(bot, bargain.auctionId, bargain.houseId))
+            continue;
+
+        {
+            std::unique_lock<std::shared_mutex> guard(_mutex);
+            ++_scrollsBought;
+        }
+
+        LOG_DEBUG("playerbots", "[Scroll] {} bought scroll {} for {}c", bot->GetName(), bargain.itemId,
+                  bargain.buyout);
+        return true;
+    }
+
+    return false;
+}
+
+uint32 BotCraftMgr::ApplyScrolls(Player* bot)
+{
+    if (!sPlayerbotAIConfig.scrollTradeEnabled)
+        return 0;
+
+    uint32 applied = 0;
+
+    for (auto const& [scroll, spellId] : _scrollSpell)
+    {
+        if (!bot->GetItemCount(scroll, false))
+            continue;
+
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        Item* target = ScrollTarget(bot, info);
+        if (!target)
+            continue;
+
+        uint32 enchantId = 0;
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            if (info->Effects[i].Effect == SPELL_EFFECT_ENCHANT_ITEM)
+                enchantId = info->Effects[i].MiscValue;
+
+        if (!enchantId || !sSpellItemEnchantmentStore.LookupEntry(enchantId))
+            continue;
+
+        // What Spell::EffectEnchantItemPerm does for a scroll used on gear, without casting: the cast
+        // would need the client-side targeting a bot does not have.
+        bot->ApplyEnchantment(target, PERM_ENCHANTMENT_SLOT, false);
+        target->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, bot->GetGUID());
+        bot->ApplyEnchantment(target, PERM_ENCHANTMENT_SLOT, true);
+        target->ClearSoulboundTradeable(bot);
+
+        bot->DestroyItemCount(scroll, 1, true);
+        ++applied;
+
+        LOG_DEBUG("playerbots", "[Scroll] {} applied scroll {} to {}", bot->GetName(), scroll,
+                  target->GetTemplate()->ItemId);
+    }
+
+    if (applied)
+    {
+        std::unique_lock<std::shared_mutex> guard(_mutex);
+        _scrollsApplied += applied;
+    }
+
+    return applied;
 }
 
 bool BotCraftMgr::CraftOne(Player* bot, uint32 spellId, uint32 itemId, bool forMarket)
@@ -455,6 +995,12 @@ bool BotCraftMgr::CraftUpgrade(Player* bot)
     if (!info)
         return false;
 
+    // Spend nothing on an upgrade that cannot be finished. With vendor goods now buyable this is real
+    // gold: a leatherworker was buying 15g of Heavy Knothide Leather a pass for a recipe whose other
+    // reagent nobody sells or lists.
+    if (!AllReagentsObtainable(bot, info))
+        return false;
+
     // Buy one missing reagent per pass rather than the whole shopping list at once. A bot that
     // empties its purse in a single tick cannot react to what that purchase did to the price, and
     // the five-minute interval makes the trickle invisible in play.
@@ -506,8 +1052,13 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
     EnsureLoaded();
 
     // Refine before supplying: the bars a smelter just made may be exactly what its rod recipe
-    // wanted, and there is no sense buying what is already in the bag as ore.
+    // wanted, and there is no sense buying what is already in the bag as ore. Milling is the same
+    // step for a scribe -- pigments first, so the skill-up pass below can turn them into ink.
     RefineMaterials(bot);
+    MillHerbs(bot);
+
+    // Anything bought last pass has arrived by mail since; use it before deciding to buy more.
+    ApplyScrolls(bot);
 
     for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
     {
@@ -535,6 +1086,12 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
             if (CraftOne(bot, spellId, itemId, true))
                 return;  // one per pass, so a single bot does not corner the whole tool market
 
+            // Nothing is bought unless every missing reagent can be had. Otherwise a scribe with no ink
+            // buys this tier's parchment, stalls, moves to the next tier next pass and buys that
+            // parchment too -- a bag of every parchment in the game and not one vellum.
+            if (!AllReagentsObtainable(bot, info))
+                continue;
+
             // Short a reagent. Buying it is the point of having an auction house: a blacksmith who
             // cannot mine can still make rods if some miner listed the bars.
             for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
@@ -546,11 +1103,19 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
                 if (bot->GetItemCount(reagent, false) >= info->ReagentCount[r])
                     continue;
 
-                if (BuyReagent(bot, reagent, info->ReagentCount[r]))
+                // Make it before buying it. A scribe past the point where ink still teaches anything
+                // never inks for skill, and nobody lists ink -- so its pigments would sit in the bag
+                // while the vellum that needs the ink never gets made.
+                if (CraftReagent(bot, reagent) || BuyReagent(bot, reagent, info->ReagentCount[r]))
                     return;
             }
         }
     }
+
+    // Scrolls next: written only when the house is short and the margin is real, bought only for an
+    // empty enchant slot. Both are rare, and either one is this bot's action for the pass.
+    if (SupplyScroll(bot) || BuyScroll(bot))
+        return;
 
     // The market comes first only because it almost never fires -- it is gated on the auction house
     // actually being short of a blank.
@@ -567,6 +1132,8 @@ void BotCraftMgr::Update(Player* bot, uint32 diff)
 std::string BotCraftMgr::DescribeStats() const
 {
     std::shared_lock<std::shared_mutex> guard(_mutex);
-    return Acore::StringFormat("craft: {} made ({} for skill, {} upgrades), {} listed, {} passes short of reagents",
-                               _crafted, _skillCrafts, _upgradeCrafts, _listed, _shortReagents);
+    return Acore::StringFormat("craft: {} made ({} for skill, {} upgrades), {} listed, {} passes short of reagents, "
+                               "{} vendor buys, {} mills; scrolls: {} written, {} bought, {} applied",
+                               _crafted, _skillCrafts, _upgradeCrafts, _listed, _shortReagents, _vendorBought,
+                               _milled, _scrollsWritten, _scrollsBought, _scrollsApplied);
 }

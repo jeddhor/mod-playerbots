@@ -517,6 +517,8 @@ public:
     uint32 economyClearUntilFreeSlots;
     bool craftGoalEnabled;
     uint32 craftGoalDurationSeconds;
+    bool scrollTradeEnabled;
+    float scrollBuyWillingness;
     bool deliberateDropEnabled;
     float deliberateDropMinHealthPct;
     float deliberateDropStep;

@@ -920,12 +920,17 @@ bool PlayerbotAIConfig::Initialize()
     fishingMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Fishing.MinFreeBagSlots", 4);
     economySupervisedBotsSell =
         sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
-    // The high-water mark a clearing bot works towards, against Agenda.FreeSlotTarget as the low
-    // mark that starts it. Must be the larger of the two or a bot stops as soon as it starts.
     craftGoalEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.CraftGoal.Enabled", true);
     // Two hours. Long enough for a cross-zone errand with interruptions, short enough that a recipe
     // which cannot actually be worked is retired rather than held forever.
     craftGoalDurationSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.CraftGoal.DurationSeconds", 7200);
+
+    // R16. Scribes mill herbs and supply vellum; enchanters write scrolls onto it and list them.
+    scrollTradeEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Enchanting.ScrollTrade", true);
+    // How far above the index price a bot will pay for a scroll it can put on its own gear. Above 1 on
+    // purpose: bots are meant to be the sink for mediocre enchants nobody else wants. 0 stops buying.
+    scrollBuyWillingness =
+        std::max(0.0f, sConfigMgr->GetOption<float>("AiPlayerbot.Enchanting.ScrollBuyWillingness", 1.5f));
 
     deliberateDropEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.DeliberateDrop.Enabled", true);
     // Health *remaining after landing*, not damage taken. 0.35 means a bot will step off something
@@ -934,6 +939,8 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<float>("AiPlayerbot.DeliberateDrop.MinHealthPct", 0.35f);
     deliberateDropStep = sConfigMgr->GetOption<float>("AiPlayerbot.DeliberateDrop.StepYards", 4.0f);
 
+    // The high-water mark a clearing bot works towards, against Agenda.FreeSlotTarget as the low
+    // mark that starts it. Must be the larger of the two or a bot stops as soon as it starts.
     economyClearUntilFreeSlots = std::max<uint32>(
         sConfigMgr->GetOption<uint32>("AiPlayerbot.Economy.ClearUntilFreeSlots", 24),
         agendaFreeSlotTarget + 1);

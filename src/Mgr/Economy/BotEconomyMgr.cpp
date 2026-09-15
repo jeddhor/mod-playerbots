@@ -24,7 +24,11 @@
 #include "ScriptMgr.h"
 #include "World.h"
 
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -39,6 +43,112 @@ namespace
     // The core refuses more than this many auctions per owner; exceeding it desyncs the owner's
     // client-side auction list.
     constexpr uint32 CORE_MAX_AUCTION_ITEMS = 160;
+
+    // A crafted good is worth what went into it plus something for the crafter's trouble.
+    constexpr float INPUT_COST_MARKUP = 1.3f;
+
+    // Starting prices for crafted goods that carry no vendor price at all -- vellum and enchant
+    // scrolls, chiefly. Built once at load and read-only afterwards.
+    //
+    // Without it the generic seed prices them from item level alone: a scroll came out at a few
+    // silver while the vellum and dust it consumed cost more than that, so no enchanter could ever
+    // list one at a profit and the whole scroll trade stayed shut.
+    std::unordered_map<uint32, uint32> g_inputCostSeeds;
+    std::once_flag g_inputCostSeedsOnce;
+
+    uint32 ReagentCost(SpellInfo const* info)
+    {
+        uint32 cost = 0;
+        for (uint8 r = 0; r < MAX_SPELL_REAGENTS; ++r)
+            if (info->Reagent[r] > 0 && info->ReagentCount[r])
+                cost += BotEconomyMgr::instance().GetMarketPrice(uint32(info->Reagent[r])) * info->ReagentCount[r];
+        return cost;
+    }
+
+    bool HasNoVendorPrice(uint32 itemId)
+    {
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+        return proto && !proto->SellPrice && !proto->BuyPrice;
+    }
+}
+
+void BotEconomyMgr::LoadInputCostSeeds()
+{
+    std::call_once(g_inputCostSeedsOnce, []()
+    {
+        std::unordered_map<uint32, uint32> seeds;
+
+        // (item level, seed) per vellum, so each scroll is costed on the tier it must be written on.
+        // Costing every scroll on the cheapest tier priced the high-level ones below their own vellum:
+        // a Vellum III runs to a hundred silver against twenty for a Vellum I, and no enchanter would
+        // write a scroll that sold for less than the paper.
+        std::vector<std::pair<uint32, uint32>> armorVellums;
+        std::vector<std::pair<uint32, uint32>> weaponVellums;
+
+        // Made goods first, so a vellum has its price before any scroll is costed against it.
+        for (uint32 spellId = 1; spellId < sSpellMgr->GetSpellInfoStoreSize(); ++spellId)
+        {
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            if (!info)
+                continue;
+
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                uint32 const made = info->Effects[i].ItemType;
+                if (info->Effects[i].Effect != SPELL_EFFECT_CREATE_ITEM || !made || !HasNoVendorPrice(made))
+                    continue;
+
+                uint32 const cost = std::max<uint32>(1, uint32(ReagentCost(info) * INPUT_COST_MARKUP));
+                auto [itr, inserted] = seeds.emplace(made, cost);
+                if (!inserted)
+                    itr->second = std::min(itr->second, cost);
+
+            }
+        }
+
+        for (auto const& [made, seed] : seeds)
+        {
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(made);
+            if (proto->IsArmorVellum())
+                armorVellums.emplace_back(proto->ItemLevel, seed);
+            else if (proto->IsWeaponVellum())
+                weaponVellums.emplace_back(proto->ItemLevel, seed);
+        }
+
+        std::sort(armorVellums.begin(), armorVellums.end());
+        std::sort(weaponVellums.begin(), weaponVellums.end());
+
+        // Then scrolls: the enchant's own reagents, plus the vellum it is written on.
+        for (uint32 spellId = 1; spellId < sSpellMgr->GetSpellInfoStoreSize(); ++spellId)
+        {
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            if (!info)
+                continue;
+
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                uint32 const scroll = info->Effects[i].ItemType;
+                if (info->Effects[i].Effect != SPELL_EFFECT_ENCHANT_ITEM || !scroll || !HasNoVendorPrice(scroll))
+                    continue;
+
+                // The lowest tier the core accepts: vellum item level at least the enchant's base level.
+                auto const& tiers = info->EquippedItemClass == ITEM_CLASS_WEAPON ? weaponVellums : armorVellums;
+                uint32 vellum = 0;
+                for (auto const& [itemLevel, seed] : tiers)
+                    if (itemLevel >= info->BaseLevel)
+                    {
+                        vellum = seed;
+                        break;
+                    }
+
+                seeds[scroll] = std::max<uint32>(1, uint32((ReagentCost(info) + vellum) * INPUT_COST_MARKUP));
+            }
+        }
+
+        g_inputCostSeeds = std::move(seeds);
+        LOG_INFO("server.loading", ">> Seeded input-cost prices for {} crafted goods with no vendor price",
+                 g_inputCostSeeds.size());
+    });
 }
 
 void BotEconomyMgr::Load()
@@ -80,6 +190,7 @@ void BotEconomyMgr::Load()
     }
 
     LoadDisenchantYields();
+    LoadInputCostSeeds();
 
     LOG_INFO("server.loading", ">> Loaded {} playerbot market prices in {} ms",
              _published.load(std::memory_order_acquire)->size(), GetMSTimeDiffToNow(oldMSTime));
@@ -177,6 +288,15 @@ uint32 BotEconomyMgr::SeedPrice(ItemTemplate const* proto)
     uint32 base = proto->SellPrice;
     if (!base && proto->BuyPrice)
         base = proto->BuyPrice / 4;
+
+    // No vendor price, but made from things that have one: priced from its inputs, already marked up.
+    if (!base)
+    {
+        auto const seeded = g_inputCostSeeds.find(proto->ItemId);
+        if (seeded != g_inputCostSeeds.end())
+            return seeded->second;
+    }
+
     if (!base)
         base = 1 + (proto->ItemLevel * proto->ItemLevel) / 8;
 

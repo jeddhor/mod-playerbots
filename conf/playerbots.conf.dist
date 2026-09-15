@@ -2976,6 +2976,25 @@ AiPlayerbot.DeliberateDrop.StepYards = 4.0
 AiPlayerbot.CraftGoal.Enabled = 1
 AiPlayerbot.CraftGoal.DurationSeconds = 7200
 
+#
+#    AiPlayerbot.Enchanting.ScrollTrade
+#        Description: R16 -- the inscription and enchanting trade. Scribes mill herbs into pigments
+#                     and supply vellum to the auction house when it runs short, buying parchment
+#                     from a vendor without travelling. Enchanters buy that vellum, write scrolls
+#                     onto it, and list them only when the scroll's price covers what went into it.
+#                     Any bot buys and applies a scroll for an unenchanted piece of gear it wears.
+#        Default:     1 - enabled
+#
+#    AiPlayerbot.Enchanting.ScrollBuyWillingness
+#        Description: How far above the index price a bot will pay for a scroll it can use. Above 1
+#                     on purpose: bots are the sink for mediocre enchants nobody else would buy.
+#                     Lower it if scroll prices run away; 0 stops bots buying scrolls altogether.
+#        Default:     1.5
+#
+
+AiPlayerbot.Enchanting.ScrollTrade = 1
+AiPlayerbot.Enchanting.ScrollBuyWillingness = 1.5
+
 
 
 #
