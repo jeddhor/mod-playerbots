@@ -541,14 +541,20 @@ public:
             return true;
 
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
-        // While a person is steering they may be casting too, and their own mistakes are theirs to
-        // hear about.
-        if (!botAI || botAI->HumanIsDriving())
+        if (!botAI)
             return true;
 
-        // Swing errors carry no body to inspect; the opcode is the whole message.
+        // Swing errors are muted whether or not a person is steering. Auto-attack belongs to the AI
+        // either way, and a person pressing stop on a character that is still swinging at something
+        // out of reach heard "out of range" with the error sound on every swing -- turning the filter
+        // off while they steered is exactly when it mattered most.
         if (isSwingNoise)
             return false;
+
+        // Cast failures are different: while a person is steering they may be casting too, and their
+        // own mistakes are theirs to hear about.
+        if (botAI->HumanIsDriving())
+            return true;
 
         // uint8 castCount, uint32 spellId, uint8 result -- read from a copy, because the packet is
         // on its way to the client and moving its read position would corrupt what it sends.

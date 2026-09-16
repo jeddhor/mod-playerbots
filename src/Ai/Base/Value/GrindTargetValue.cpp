@@ -43,7 +43,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
     for (ObjectGuid const guid : attackers)
     {
         Unit* unit = botAI->GetUnit(guid);
-        if (!unit || !unit->IsAlive())
+        if (!unit || !unit->IsAlive() || botAI->IsUnreachableTarget(guid))
             continue;
 
         return unit;
@@ -91,6 +91,11 @@ Unit* GrindTargetValue::FindTargetForGrinding(uint32 assistCount)
             continue;
 
         if (!unit->IsInWorld() || unit->IsDuringRemoveFromWorld())
+            continue;
+
+        // Given up on as unreachable a moment ago: picking it again is how a bot ends up auto-attacking
+        // a mob on a ledge for the whole fight.
+        if (botAI->IsUnreachableTarget(guid))
             continue;
 
         bool const farmTarget = farmEntry && unit->ToCreature() && unit->GetEntry() == farmEntry;

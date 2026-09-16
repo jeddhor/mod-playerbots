@@ -976,7 +976,19 @@ bool MovementAction::ReachCombatTo(Unit* target, float distance)
     PathType type = path.GetPathType();
     int typeOk = PATHFIND_NORMAL | PATHFIND_INCOMPLETE | PATHFIND_SHORTCUT;
     if (!(type & typeOk))
+    {
+        // No path at all -- not "already in reach", not "a person is steering", which also return
+        // false above. Enough of these in a row and the target is given up rather than auto-attacked
+        // from where the bot stands for the rest of the fight.
+        if (botAI->NoteUnreachableTarget(target->GetGUID()))
+        {
+            LOG_DEBUG("playerbots", "[Combat] {} gives up on {}: no path after repeated tries",
+                      bot->GetName(), target->GetName());
+            bot->AttackStop();
+            context->GetValue<Unit*>("current target")->Set(nullptr);
+        }
         return false;
+    }
     float shortenTo = distance;
 
     // Avoid walking too far when moving towards each other

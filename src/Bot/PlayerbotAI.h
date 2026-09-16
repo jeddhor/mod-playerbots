@@ -555,6 +555,13 @@ public:
      */
     void NoteHumanMovementInput(bool holding);
 
+    /// A path to this combat target could not be found. Enough of these in a row and the target is
+    /// given up: returns true when that just happened.
+    bool NoteUnreachableTarget(ObjectGuid target);
+
+    /// Recently given up as unreachable -- target selection should look elsewhere.
+    bool IsUnreachableTarget(ObjectGuid target) const;
+
     /// The last action an engine actually ran. Read-only view for diagnostics; nothing acts on it.
     std::string GetLastAction(BotState state);
 
@@ -689,6 +696,17 @@ protected:
 
     /// Interventions in one run before the AI stops arguing and hands movement over.
     static constexpr uint32 HUMAN_INTERVENTIONS_TO_ASSERT = 2;
+
+    // Combat targets that could not be pathed to. A mob on a ledge or across water in a dungeon was
+    // otherwise attacked for as long as the fight lasted: the bot stood still auto-attacking, every
+    // swing sending "out of range", which is what an operator leading Wailing Caverns heard over and
+    // over. Strikes count consecutive failures; the abandoned set is how long the bot leaves it be.
+    std::unordered_map<ObjectGuid, std::pair<uint32, uint32>> _unreachableStrikes;  // count, first ms
+    std::unordered_map<ObjectGuid, uint32> _unreachableUntil;
+
+    static constexpr uint32 UNREACHABLE_STRIKES = 5;
+    static constexpr uint32 UNREACHABLE_STRIKE_WINDOW_MS = 20000;
+    static constexpr uint32 UNREACHABLE_FORGET_MS = 60000;
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

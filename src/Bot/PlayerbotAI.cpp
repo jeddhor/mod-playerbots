@@ -6120,6 +6120,31 @@ void PlayerbotAI::NoteHumanMovementInput(bool holding)
     }
 }
 
+bool PlayerbotAI::NoteUnreachableTarget(ObjectGuid target)
+{
+    uint32 const now = getMSTime();
+    auto& [count, firstMs] = _unreachableStrikes[target];
+
+    if (!firstMs || GetMSTimeDiffToNow(firstMs) > UNREACHABLE_STRIKE_WINDOW_MS)
+    {
+        count = 0;
+        firstMs = now;
+    }
+
+    if (++count < UNREACHABLE_STRIKES)
+        return false;
+
+    _unreachableStrikes.erase(target);
+    _unreachableUntil[target] = now + UNREACHABLE_FORGET_MS;
+    return true;
+}
+
+bool PlayerbotAI::IsUnreachableTarget(ObjectGuid target) const
+{
+    auto const itr = _unreachableUntil.find(target);
+    return itr != _unreachableUntil.end() && getMSTime() < itr->second;
+}
+
 void PlayerbotAI::RefreshHumanMovementInput()
 {
     // Only while the character is actually going somewhere.
