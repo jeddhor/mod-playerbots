@@ -54,6 +54,10 @@ public:
     /// The cheapest vendor-sold item satisfying a category, or 0 if no vendor stocks one.
     uint32 VendorToolFor(uint32 totemCategory);
 
+    /// Whether the bot has a fishing pole equipped or anywhere in its bags. Fishing needs one, and
+    /// unlike a mining pick it is not a totem category, so the category test above never sees it.
+    static bool HasFishingPole(Player* bot);
+
     std::string DescribeStats() const;
 
 private:

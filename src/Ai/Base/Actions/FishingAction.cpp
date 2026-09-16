@@ -436,6 +436,12 @@ bool FishingAction::Execute(Event event)
     if (equipAction.isUseful())
         return equipAction.Execute(event);
 
+    // No pole in hand and none to equip. The cast below does not enforce the equipped-weapon
+    // requirement a player's client would, so without this a bot with nothing to fish with
+    // complained about it and then fished regardless.
+    if (!IsFishingPole(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND)))
+        return false;
+
     botAI->CastSpell(FISHING_SPELL, bot);
     botAI->ChangeStrategy("+use bobber", BOT_STATE_NON_COMBAT);
 

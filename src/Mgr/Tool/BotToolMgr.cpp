@@ -9,6 +9,7 @@
 #include "BudgetValues.h"
 #include "DatabaseEnv.h"
 #include "Field.h"
+#include "Bag.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
@@ -23,11 +24,45 @@
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace
 {
 constexpr uint32 TOOL_INTERVAL_MS = 60 * 1000;
+
+/// The plain Fishing Pole every supplies vendor stocks.
+constexpr uint32 FISHING_POLE = 6256;
+
+bool IsFishingPole(Item const* item)
+{
+    if (!item)
+        return false;
+
+    ItemTemplate const* proto = item->GetTemplate();
+    return proto && proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE;
+}
 }  // namespace
+
+bool BotToolMgr::HasFishingPole(Player* bot)
+{
+    if (!bot)
+        return false;
+
+    if (IsFishingPole(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND)))
+        return true;
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (IsFishingPole(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot)))
+            return true;
+
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* pBag = bot->GetBagByPos(bag))
+            for (uint32 j = 0; j < pBag->GetBagSize(); ++j)
+                if (IsFishingPole(pBag->GetItemByPos(j)))
+                    return true;
+
+    return false;
+}
 
 void BotToolMgr::EnsureLoaded()
 {
@@ -143,7 +178,13 @@ void BotToolMgr::Update(Player* bot, uint32 diff)
     }
 
     std::unordered_set<uint32> const missing = MissingToolCategories(bot);
-    if (missing.empty())
+
+    // A fisherman without a pole. Fishing checks the equipped weapon rather than a totem category,
+    // so the loop below never saw it: bots with the skill went fishing empty-handed, whispered "I
+    // don't have a Fishing Pole" at their owner every cast, and fished anyway.
+    bool const wantsPole = bot->GetSkillValue(SKILL_FISHING) && !HasFishingPole(bot);
+
+    if (missing.empty() && !wantsPole)
         return;
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
@@ -155,9 +196,14 @@ void BotToolMgr::Update(Player* bot, uint32 diff)
                                  ->GetValue<uint32>("free money for", std::to_string(uint32(NeedMoneyFor::tradeskill)))
                                  ->Get());
 
-    for (uint32 category : missing)
+    // Zero stands for the pole, which has no category of its own.
+    std::vector<uint32> wanted(missing.begin(), missing.end());
+    if (wantsPole)
+        wanted.push_back(0);
+
+    for (uint32 category : wanted)
     {
-        uint32 const entry = VendorToolFor(category);
+        uint32 const entry = category ? VendorToolFor(category) : FISHING_POLE;
         if (!entry)
         {
             // A rod, or anything else only players make. Not this manager's problem.

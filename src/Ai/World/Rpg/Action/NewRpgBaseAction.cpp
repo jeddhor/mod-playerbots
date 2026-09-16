@@ -8,6 +8,7 @@
 #include "GatherRouteMgr.h"
 #include "CraftGoalMgr.h"
 #include "ReagentSourceMgr.h"
+#include "BotToolMgr.h"
 #include "FishingAction.h"
 #include "BroadcastHelper.h"
 #include "ChatHelper.h"
@@ -3050,6 +3051,11 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             // what a person does and what keeps this affordable: the water search below is the
             // expensive part, so every cheap disqualifier runs ahead of it.
             if (!bot->GetSkillValue(SKILL_FISHING))
+                return false;
+
+            // A random bot is handed a pole on the spot; anyone else has to own one. The tool
+            // manager buys it, so this only defers fishing until the next shopping pass.
+            if (!sRandomPlayerbotMgr.IsRandomBot(bot) && !BotToolMgr::HasFishingPole(bot))
                 return false;
 
             if (bot->IsInCombat() || bot->isSwimming() || bot->IsMounted())
