@@ -289,6 +289,9 @@ bool PlayerbotAIConfig::Initialize()
     // permanently behind and permanently empty.
     dungeonReadyHealerManaPct = sConfigMgr->GetOption<float>("AiPlayerbot.Dungeon.ReadyHealerManaPct", 90.0f);
     dungeonReadyHealthPct = sConfigMgr->GetOption<float>("AiPlayerbot.Dungeon.ReadyHealthPct", 70.0f);
+    // How long a dead bot in a group holds its release for a nearby out-of-combat groupmate who knows a
+    // resurrection to begin casting it. A cast already under way is always waited for.
+    resurrectWaitSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.ResurrectWaitSeconds", 20);
 
     // Let alt bots use the dungeon finder alongside random bots. They only exist while their owner
     // is logged in, so this cannot run without a person present. Off means alt bots follow their

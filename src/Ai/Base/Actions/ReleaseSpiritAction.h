@@ -38,8 +38,12 @@ private:
     bool HandleBattlegroundSpiritHealer();
     bool ShouldAutoRelease() const;
     bool ShouldDelayBattlegroundRelease() const;
+    bool WaitingForResurrection();
 
     time_t m_bgGossipTime = 0;
+
+    // When this bot was first seen dead, for the resurrection grace period. Zero while alive.
+    uint32 _deathSeenMs = 0;
 };
 
 class RepopAction : public SpiritHealerAction

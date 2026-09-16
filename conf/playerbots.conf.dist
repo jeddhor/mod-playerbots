@@ -3477,6 +3477,17 @@ AiPlayerbot.Dungeon.StallMinutes = 10
 AiPlayerbot.Dungeon.ReadyHealerManaPct = 90
 AiPlayerbot.Dungeon.ReadyHealthPct = 70
 
+#
+#    AiPlayerbot.ResurrectWaitSeconds
+#        Description: A bot that dies in a group waits this long before releasing its spirit while an
+#                     alive, out-of-combat group member within 40 yards knows a resurrection spell.
+#                     A resurrection already being cast at the bot, or already offered, is always
+#                     waited for regardless of this value.
+#        Default:     20
+#
+
+AiPlayerbot.ResurrectWaitSeconds = 20
+
 # Let alt bots queue for dungeons alongside random bots. They only exist while their owner is
 # logged in. Set to 0 to keep them following you instead of queueing.
 AiPlayerbot.AltBotsJoinLfg = 1

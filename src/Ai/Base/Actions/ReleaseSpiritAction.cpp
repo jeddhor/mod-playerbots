@@ -4,6 +4,9 @@
  */
 
 #include "ReleaseSpiritAction.h"
+
+#include <unordered_set>
+
 #include "Corpse.h"
 #include "Event.h"
 #include "GameGraveyard.h"
@@ -14,6 +17,11 @@
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "PlayerbotAIConfig.h"
+#include "Group.h"
+#include "SpellMgr.h"
+#include "SpellInfo.h"
+#include "Spell.h"
 
 // ReleaseSpiritAction implementation
 bool ReleaseSpiritAction::Execute(Event event)
@@ -117,7 +125,13 @@ bool AutoReleaseSpiritAction::isUseful()
     if (botAI->HumanIsDriving())
         return false;
 
-    if (!bot->isDead() || bot->InArena())
+    if (!bot->isDead())
+    {
+        _deathSeenMs = 0;
+        return false;
+    }
+
+    if (bot->InArena())
         return false;
 
     if (bot->InBattleground())
@@ -126,7 +140,88 @@ bool AutoReleaseSpiritAction::isUseful()
     if (bot->HasPlayerFlag(PLAYER_FLAGS_GHOST))
         return false;
 
+    if (WaitingForResurrection())
+        return false;
+
     return ShouldAutoRelease();
+}
+
+namespace
+{
+/// Every spell that brings a dead player back, computed once from the spell store.
+std::unordered_set<uint32> const& ResurrectionSpells()
+{
+    static std::unordered_set<uint32> const spells = []()
+    {
+        std::unordered_set<uint32> found;
+        for (uint32 id = 0; id < sSpellMgr->GetSpellInfoStoreSize(); ++id)
+            if (SpellInfo const* info = sSpellMgr->GetSpellInfo(id))
+                if (info->HasEffect(SPELL_EFFECT_RESURRECT))
+                    found.insert(id);
+        return found;
+    }();
+    return spells;
+}
+
+bool KnowsResurrection(Player* player)
+{
+    std::unordered_set<uint32> const& spells = ResurrectionSpells();
+    for (auto const& [spellId, playerSpell] : player->GetSpellMap())
+        if (playerSpell && playerSpell->State != PLAYERSPELL_REMOVED && playerSpell->Active && spells.count(spellId))
+            return true;
+    return false;
+}
+}  // namespace
+
+/**
+ * A groupmate can bring this bot back, so do not run to the graveyard yet.
+ *
+ * Released at once, a bot threw away a resurrection that was already on its way: Lucillai died,
+ * Alee began casting Resurrection two seconds later, and four seconds after the death -- mid-cast --
+ * Lucillai released and set off on a corpse run. Waits while a resurrection is being cast at the bot
+ * or has been offered, and for a short grace period while an out-of-combat groupmate nearby knows
+ * one and may be about to start.
+ */
+bool AutoReleaseSpiritAction::WaitingForResurrection()
+{
+    // Already offered. Accepting it is the dead strategy's job; releasing now would refuse it.
+    if (bot->isResurrectRequested())
+        return true;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    uint32 const now = getMSTime();
+    if (!_deathSeenMs)
+        _deathSeenMs = now;
+
+    bool const inGrace =
+        getMSTimeDiff(_deathSeenMs, now) < sPlayerbotAIConfig.resurrectWaitSeconds * IN_MILLISECONDS;
+
+    // Resurrection range plus room for the caster to walk into it.
+    constexpr float NEARBY = 40.0f;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId() ||
+            member->GetExactDist(bot) > NEARBY)
+            continue;
+
+        // A cast in progress at this bot is always worth waiting for, grace period or not.
+        if (Spell const* spell = member->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            if (spell->GetSpellInfo()->HasEffect(SPELL_EFFECT_RESURRECT) &&
+                (spell->m_targets.GetUnitTargetGUID() == bot->GetGUID() ||
+                 spell->m_targets.GetCorpseTargetGUID() == bot->GetGUID() ||
+                 (bot->GetCorpse() && spell->m_targets.GetCorpseTargetGUID() == bot->GetCorpse()->GetGUID())))
+                return true;
+
+        if (inGrace && !member->IsInCombat() && KnowsResurrection(member))
+            return true;
+    }
+
+    return false;
 }
 
 bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()

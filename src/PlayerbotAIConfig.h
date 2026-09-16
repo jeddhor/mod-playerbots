@@ -199,6 +199,7 @@ public:
     uint32 dungeonStallMinutes;
     float dungeonReadyHealerManaPct;
     float dungeonReadyHealthPct;
+    uint32 resurrectWaitSeconds;
     bool altBotsJoinLfg;
 
     // Professions
