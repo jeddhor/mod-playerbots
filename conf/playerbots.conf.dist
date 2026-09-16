@@ -307,6 +307,12 @@ AiPlayerbot.FreeMethodLoot = 0
 # Default: 1 (greed)
 AiPlayerbot.LootNeedRollLevel = 1
 
+# Levels ahead a bot looks when rolling on gear it cannot wear yet. An item within this many levels of
+# the bot, usable by its class, that outscores what it wears now is rolled Need rather than Greed --
+# as the game itself allows a player to. 0 disables it.
+# Default: 3
+AiPlayerbot.LootNeedLevelLookahead = 3
+
 # Enable bots to roll GREED on items (global toggle)
 # If disabled, bots will PASS instead of GREED on all items
 # Default: 0 (disabled - bots only NEED or PASS)

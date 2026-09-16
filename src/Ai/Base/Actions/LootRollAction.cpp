@@ -12,6 +12,8 @@
 #include "LootAction.h"
 #include "ObjectMgr.h"
 #include "PlayerbotAIConfig.h"
+#include "RandomItemMgr.h"
+#include "StatsWeightCalculator.h"
 #include "Playerbots.h"
 
 bool LootRollAction::Execute(Event /*event*/)
@@ -67,6 +69,8 @@ bool LootRollAction::Execute(Event /*event*/)
                 case ITEM_CLASS_ARMOR:
                     if (usage == ITEM_USAGE_EQUIP || usage == ITEM_USAGE_REPLACE || usage == ITEM_USAGE_BAD_EQUIP)
                         vote = NEED;
+                    else if (IsUpgradeSoon(proto, randomProperty))
+                        vote = NEED;
                     else if (usage != ITEM_USAGE_NONE)
                         vote = GREED;
                     break;
@@ -94,6 +98,28 @@ bool LootRollAction::Execute(Event /*event*/)
         else if (vote == GREED && !sPlayerbotAIConfig.lootGreedRollLevel)
             vote = PASS;
 
+        // Gear rolls are traced with the evidence behind them. A self bot greeded a one-hander that
+        // outscored the one she was holding on every stat, and nothing recorded whether the item was
+        // judged unusable, not an upgrade, or an upgrade that a later rule downgraded.
+        if (proto->Class == ITEM_CLASS_WEAPON || proto->Class == ITEM_CLASS_ARMOR)
+        {
+            StatsWeightCalculator calculator(bot);
+            calculator.SetItemSetBonus(false);
+            calculator.SetOverflowPenalty(false);
+
+            uint8 const slot = botAI->FindEquipSlot(proto, NULL_SLOT, true);
+            Item* const current = slot != NULL_SLOT ? bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) : nullptr;
+
+            LOG_DEBUG("playerbots",
+                      "[Roll] {} weighs {} ({}): usable={} slot={} score={:.1f} vs {} ({}) score={:.1f}, "
+                      "usage={} -> vote {}",
+                      bot->GetName(), proto->Name1, itemId, uint32(bot->BotCanUseItem(proto)), uint32(slot),
+                      calculator.CalculateItem(itemId, randomProperty), current ? current->GetTemplate()->Name1 : "nothing",
+                      current ? current->GetEntry() : 0,
+                      current ? calculator.CalculateItem(current->GetEntry(), current->GetItemRandomPropertyId()) : 0.0f,
+                      uint32(usage), uint32(vote));
+        }
+
         switch (group->GetLootMethod())
         {
             case MASTER_LOOT:
@@ -108,6 +134,56 @@ bool LootRollAction::Execute(Event /*event*/)
     }
 
     return voted;
+}
+
+/**
+ * Gear this bot cannot wear yet but will within a few levels, and that beats what it wears now.
+ *
+ * Item usage only counts what can be equipped this instant, so anything with a higher required level
+ * is scored as vendor or auction value and greeded. A level 19 priest greeded Odo's Ley Staff -- a
+ * level 21 blue with twelve spirit over her level 13 green -- and watched it go to someone else. The
+ * game lets a character need on gear its class can use regardless of level; this lets a bot do what
+ * a player would.
+ */
+bool LootRollAction::IsUpgradeSoon(ItemTemplate const* proto, int32 randomProperty)
+{
+    uint32 const level = bot->GetLevel();
+    if (!sPlayerbotAIConfig.lootNeedLevelLookahead || proto->RequiredLevel <= level ||
+        proto->RequiredLevel > level + sPlayerbotAIConfig.lootNeedLevelLookahead)
+        return false;
+
+    // Everything CanUseItem checks except the level: class, race, faction, proficiency.
+    if ((proto->AllowableClass & bot->getClassMask()) == 0 || (proto->AllowableRace & bot->getRaceMask()) == 0)
+        return false;
+    if (proto->RequiredSkill && bot->GetSkillValue(proto->RequiredSkill) < proto->RequiredSkillRank)
+        return false;
+    if (proto->RequiredSpell && !bot->HasSpell(proto->RequiredSpell))
+        return false;
+    if (proto->GetSkill() && !bot->GetSkillValue(proto->GetSkill()))
+        return false;
+    if (proto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.CanEquipWeapon(proto, bot->getClass()))
+        return false;
+    if (proto->Class == ITEM_CLASS_ARMOR && !sRandomItemMgr.CanEquipArmor(proto, bot->getClass(), proto->RequiredLevel, false))
+        return false;
+
+    uint8 const slot = botAI->FindEquipSlot(proto, NULL_SLOT, true);
+    if (slot == NULL_SLOT)
+        return false;
+
+    StatsWeightCalculator calculator(bot);
+    calculator.SetItemSetBonus(false);
+    calculator.SetOverflowPenalty(false);
+
+    float const candidate = calculator.CalculateItem(proto->ItemId, randomProperty);
+    if (candidate <= 0.0f)
+        return false;
+
+    Item* const current = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    if (!current)
+        return true;
+
+    return candidate > calculator.CalculateItem(current->GetEntry(), current->GetItemRandomPropertyId()) *
+                           sPlayerbotAIConfig.equipUpgradeThreshold;
 }
 
 RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, ItemUsage usage)

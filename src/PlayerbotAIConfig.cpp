@@ -817,6 +817,8 @@ bool PlayerbotAIConfig::Initialize()
     // SPP automation
     freeMethodLoot = sConfigMgr->GetOption<bool>("AiPlayerbot.FreeMethodLoot", false);
     lootNeedRollLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.LootNeedRollLevel", 1);
+    // Need on gear a bot will be able to wear within this many levels, when it beats what it wears now.
+    lootNeedLevelLookahead = sConfigMgr->GetOption<uint32>("AiPlayerbot.LootNeedLevelLookahead", 3);
     lootRollRecipe = sConfigMgr->GetOption<bool>("AiPlayerbot.LootRollRecipe", false);
     lootRollDisenchant = sConfigMgr->GetOption<bool>("AiPlayerbot.LootRollDisenchant", false);
     lootGreedRollLevel = sConfigMgr->GetOption<bool>("AiPlayerbot.LootGreedRollLevel", false);

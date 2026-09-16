@@ -24,6 +24,7 @@ public:
 
 protected:
     RollVote CalculateRollVote(ItemTemplate const* proto, ItemUsage usage = ITEM_USAGE_NONE);
+    bool IsUpgradeSoon(ItemTemplate const* proto, int32 randomProperty);
 };
 
 bool CanBotUseToken(ItemTemplate const* proto, Player* bot);

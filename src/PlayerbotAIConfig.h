@@ -442,6 +442,7 @@ public:
 
     bool freeMethodLoot;
     int32 lootNeedRollLevel;
+    uint32 lootNeedLevelLookahead;
     bool lootGreedRollLevel;
     bool lootRollRecipe;
     bool lootRollDisenchant;
