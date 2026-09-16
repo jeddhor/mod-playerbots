@@ -197,6 +197,12 @@ bool FindCorpseAction::Execute(Event /*event*/)
 
 bool FindCorpseAction::isUseful()
 {
+    // A person steering their own ghost outranks the corpse run. This action teleports and walks
+    // without going through the movement layer, so the CanMove() gate never saw it -- which is how a
+    // character kept setting off for its corpse while its owner pressed stop over and over.
+    if (botAI->HumanIsDriving())
+        return false;
+
     if (bot->InBattleground())
         return false;
 
@@ -360,4 +366,10 @@ bool SpiritHealerAction::Execute(Event /*event*/)
     return false;
 }
 
-bool SpiritHealerAction::isUseful() { return bot->HasPlayerFlag(PLAYER_FLAGS_GHOST); }
+bool SpiritHealerAction::isUseful()
+{
+    if (botAI->HumanIsDriving())
+        return false;
+
+    return bot->HasPlayerFlag(PLAYER_FLAGS_GHOST);
+}

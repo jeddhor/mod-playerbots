@@ -673,6 +673,22 @@ protected:
     // Longest a key-down is believed without further confirmation. The release packet is not
     // guaranteed to arrive, so this is what stops a missed one disabling the AI forever.
     static constexpr uint32 HUMAN_HOLD_EXPIRY_MS = 3000;
+
+    // How often the person has taken movement away from the AI lately, and when that run started.
+    //
+    // One intervention is ambiguous -- a person may be nudging their character while happy for the
+    // AI to carry on -- so it buys the short grace period. Several in a row are not ambiguous at
+    // all: it is somebody fighting their own character for control, and the honest reading is that
+    // they want it. An operator pressed stop 133 times during a corpse run, six seconds apart
+    // against a five-second grace, and described being "completely powerless".
+    uint32 _humanInterventions{0};
+    uint32 _humanInterventionRunMs{0};
+
+    /// Interventions this close together count as the same run of them.
+    static constexpr uint32 HUMAN_INTERVENTION_WINDOW_MS = 30000;
+
+    /// Interventions in one run before the AI stops arguing and hands movement over.
+    static constexpr uint32 HUMAN_INTERVENTIONS_TO_ASSERT = 2;
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

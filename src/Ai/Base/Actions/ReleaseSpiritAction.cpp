@@ -111,6 +111,12 @@ bool AutoReleaseSpiritAction::Execute(Event /*event*/)
 
 bool AutoReleaseSpiritAction::isUseful()
 {
+    // A person steering their own ghost outranks the corpse run. This action teleports and walks
+    // without going through the movement layer, so the CanMove() gate never saw it -- which is how a
+    // character kept setting off for its corpse while its owner pressed stop over and over.
+    if (botAI->HumanIsDriving())
+        return false;
+
     if (!bot->isDead() || bot->InArena())
         return false;
 

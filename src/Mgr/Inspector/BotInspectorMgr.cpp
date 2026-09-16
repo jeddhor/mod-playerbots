@@ -21,6 +21,7 @@
 #include "SpellMgr.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotFactory.h"
 #include "Playerbots.h"
 #include "CharacterCache.h"
 #include "DatabaseEnv.h"
@@ -913,6 +914,15 @@ void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, Ob
 
         ai->ChangeStrategy(wanted.combat, BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy(wanted.nonCombat, BotState::BOT_STATE_NON_COMBAT);
+
+        // And the talents follow the role, which is the whole point of the button.
+        //
+        // The respec was wired into the chat-command path only, so a healer set to Heal from this
+        // panel kept whatever tree it had: an operator watched a priest given the heal strategy
+        // carry on with Shadow talents and stop healing. A bot that belongs to a person gets the
+        // swap for free -- no dual spec, no trainer, no cost -- because the alternative is asking
+        // somebody to walk their alt to a trainer before it can do the job they just assigned it.
+        PlayerbotFactory::RespecToAssignedRole(online);
 
         LOG_DEBUG("playerbots", "[Inspector] {} set {} to {}", to->GetName(), online->GetName(),
                   DescribeRole(ai));

@@ -3279,6 +3279,19 @@ AiPlayerbot.UnfinishedLootRetrySeconds = 300
 AiPlayerbot.HumanControlGraceMs = 5000
 
 #
+#    AiPlayerbot.HumanControlAssertedMs
+#        Description: How long the AI keeps out of the way after a person has taken movement away
+#                     from it twice within thirty seconds. One interruption is ambiguous and buys
+#                     only HumanControlGraceMs; a run of them is somebody fighting their own
+#                     character for control, and losing that argument is what "I am completely
+#                     powerless to stop her" feels like -- every press stops the character, every
+#                     gap starts it again. Lapses on its own once they stop steering.
+#        Default:     60000 (one minute)
+#
+
+AiPlayerbot.HumanControlAssertedMs = 60000
+
+#
 #    AiPlayerbot.HumanControlEnabled
 #        Description: Let a person's movement keys override the AI on a self bot. Set to 0 if a
 #                     self bot ever fights and loots but refuses to walk anywhere -- that is what

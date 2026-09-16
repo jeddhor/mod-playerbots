@@ -329,6 +329,7 @@ public:
 
     bool humanControlEnabled;
     uint32 humanControlGraceMs;
+    uint32 humanControlAssertedMs;
 
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.
     uint32 eraCappedBotPctAt60, eraCappedBotPctAt70;

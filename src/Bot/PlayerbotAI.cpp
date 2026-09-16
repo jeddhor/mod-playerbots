@@ -6104,7 +6104,20 @@ void PlayerbotAI::NoteHumanMovementInput(bool holding)
         bot && bot->GetMotionMaster() ? bot->GetMotionMaster()->GetCurrentMovementGeneratorType()
                                       : IDLE_MOTION_TYPE;
     if (driver != IDLE_MOTION_TYPE)
+    {
+        // Taking movement away from the AI, as opposed to moving while it was not driving anyway.
+        // Only these count towards asserting control, which is what makes the count mean something:
+        // a person walking around with the AI idle never accumulates one.
+        uint32 const now = getMSTime();
+        if (!_humanInterventionRunMs || GetMSTimeDiffToNow(_humanInterventionRunMs) > HUMAN_INTERVENTION_WINDOW_MS)
+        {
+            _humanInterventionRunMs = now;
+            _humanInterventions = 0;
+        }
+
+        ++_humanInterventions;
         ReleaseMovementToHuman();
+    }
 }
 
 void PlayerbotAI::RefreshHumanMovementInput()
@@ -6162,6 +6175,16 @@ bool PlayerbotAI::HumanIsDriving() const
     // Heartbeats refresh it while the key really is down, so holding W keeps the AI out of the way
     // for as long as it is held; letting go stops the heartbeats and this lapses on its own.
     if (_humanHoldingKey && since < HUMAN_HOLD_EXPIRY_MS)
+        return true;
+
+    // Somebody who has taken movement away twice in half a minute is not nudging their character,
+    // they are trying to drive it, and a five-second grace loses that argument: the AI resumes a
+    // second before they can press anything again, so every press stops the character and every
+    // gap starts it moving. From the chair that is a character that cannot be controlled at all.
+    //
+    // So a run of interventions buys a real hold rather than another grace period. It lapses on its
+    // own once they stop, and the count resets with it, so the AI is never disabled for good.
+    if (_humanInterventions >= HUMAN_INTERVENTIONS_TO_ASSERT && since < sPlayerbotAIConfig.humanControlAssertedMs)
         return true;
 
     return since < sPlayerbotAIConfig.humanControlGraceMs;

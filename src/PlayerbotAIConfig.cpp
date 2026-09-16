@@ -493,6 +493,10 @@ bool PlayerbotAIConfig::Initialize()
     // AI starts walking again, and a second and a half is shorter than the gap between two
     // deliberate key presses, so a person repositioning fought the bot for every step.
     humanControlGraceMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlGraceMs", 5000);
+    // Once a person has taken movement away twice inside half a minute, the argument is over: the AI
+    // keeps its hands off for this long after their last input rather than resuming a second before
+    // they can press anything again.
+    humanControlAssertedMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.HumanControlAssertedMs", 60000);
 
     // P13.2 -- the old-content population. Percentages of the random bot roster, not of the bots
     // currently below each ceiling, so the two numbers mean what an operator expects them to.
