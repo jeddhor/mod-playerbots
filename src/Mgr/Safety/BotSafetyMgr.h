@@ -95,6 +95,9 @@ private:
     /// Below the surface with nothing underneath -- "under the map" as an operator sees it.
     static bool IsUnderTerrain(Player* bot);
 
+    /// Far below its last safe ground with nothing beneath -- a fall through a dungeon's floor.
+    bool IsFallingIntoVoid(Player* bot);
+
     /// True if the bot is standing on something solid, and so worth remembering.
     static bool IsOnSafeGround(Player* bot);
 

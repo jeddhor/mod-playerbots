@@ -105,6 +105,44 @@ bool BotSafetyMgr::IsUnderTerrain(Player* bot)
     return below <= INVALID_HEIGHT;
 }
 
+/**
+ * Dropping through a floor, well below where the bot last stood, with nothing underneath.
+ *
+ * Neither test above sees this inside an instance built entirely from world models. IsOutOfWorld
+ * waits for the map's floor, hundreds of yards down, and IsUnderTerrain needs a terrain surface
+ * above the bot to be under -- a cave dungeon has none. A self bot stopped mid-walk in Wailing
+ * Caverns was left fractionally below the floor, fell straight down four hundred yards at one spot,
+ * and died with both tests silent the whole way.
+ *
+ * Measured against the bot's own last safe ground rather than the map, so a long legitimate drop
+ * onto something is still a drop onto something: the search beneath finds it and nothing happens.
+ */
+bool BotSafetyMgr::IsFallingIntoVoid(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || bot->IsInFlight() || bot->IsBeingTeleported() || bot->IsInWater())
+        return false;
+
+    Map* map = bot->FindMap();
+    if (!map)
+        return false;
+
+    // Further below its last footing than any staircase or ledge in a dungeon, so a bot is not
+    // yanked back for hopping down a level.
+    constexpr float VOID_FALL_DEPTH = 30.0f;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        auto const itr = _anchors.find(bot->GetGUID());
+        if (itr == _anchors.end() || !itr->second.valid || itr->second.mapId != bot->GetMapId() ||
+            itr->second.pos.GetPositionZ() - bot->GetPositionZ() < VOID_FALL_DEPTH)
+            return false;
+    }
+
+    float const below = map->GetHeight(bot->GetPhaseMask(), bot->GetPositionX(), bot->GetPositionY(),
+                                       bot->GetPositionZ() + 2.0f, true);
+    return below <= INVALID_HEIGHT;
+}
+
 bool BotSafetyMgr::IsOnSafeGround(Player* bot)
 {
     if (!bot || !bot->IsInWorld() || !bot->FindMap())
@@ -206,7 +244,11 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
     if (IsSelfBot(bot))
         ReportImpossibleMovement(bot);
 
-    if (IsOutOfWorld(bot) || IsUnderTerrain(bot))
+    bool const outOfWorld = IsOutOfWorld(bot);
+    bool const underTerrain = !outOfWorld && IsUnderTerrain(bot);
+    bool const intoVoid = !outOfWorld && !underTerrain && IsFallingIntoVoid(bot);
+
+    if (outOfWorld || underTerrain || intoVoid)
     {
         Anchor anchor;
         bool trustAnchor = false;
@@ -271,7 +313,8 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
             LOG_INFO("playerbots",
                      "[Safety] {} {} at ({:.0f},{:.0f},{:.1f}) map {} zone {} "
                      "[{}selfbot, activity {}], restoring to its last safe ground",
-                     bot->GetName(), IsOutOfWorld(bot) ? "fell out of the world" : "went under the terrain",
+                     bot->GetName(),
+                     outOfWorld ? "fell out of the world" : underTerrain ? "went under the terrain" : "fell into the void",
                      bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(),
                      bot->GetZoneId(), IsSelfBot(bot) ? "" : "not a ",
                      GET_PLAYERBOT_AI(bot) ? int(GET_PLAYERBOT_AI(bot)->rpgInfo.GetStatus()) : -1);
