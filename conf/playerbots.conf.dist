@@ -3451,6 +3451,21 @@ AiPlayerbot.BotInitiatedDungeonCap = 5
 # P13.4 -- how far a dungeon leader looks for its next pull.
 AiPlayerbot.DungeonPullSearchRange = 120
 
+#
+#    AiPlayerbot.Dungeon.MaxMinutes / AiPlayerbot.Dungeon.StallMinutes
+#        Description: An all-random-bot dungeon run gives up and leaves the instance when it has been
+#                     inside longer than MaxMinutes, or when nobody in the group has been in combat
+#                     for StallMinutes. Groups containing a real player, their alts or their self bot
+#                     are never affected -- they play at their own pace.
+#
+#                     Nothing measured a run before this: a group of six stood motionless in Scarlet
+#                     Monastery for over forty-five minutes after its last pull.
+#        Default:     60, 10
+#
+
+AiPlayerbot.Dungeon.MaxMinutes = 60
+AiPlayerbot.Dungeon.StallMinutes = 10
+
 # Let alt bots queue for dungeons alongside random bots. They only exist while their owner is
 # logged in. Set to 0 to keep them following you instead of queueing.
 AiPlayerbot.AltBotsJoinLfg = 1

@@ -195,6 +195,8 @@ public:
     bool randomBotJoinLfg;
     uint32 botInitiatedDungeonCap;
     float dungeonPullSearchRange;
+    uint32 dungeonMaxMinutes;
+    uint32 dungeonStallMinutes;
     bool altBotsJoinLfg;
 
     // Professions

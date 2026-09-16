@@ -280,6 +280,10 @@ bool PlayerbotAIConfig::Initialize()
     // P13.4 -- how far a dungeon leader looks for its next pull. Generous, because instance rooms
     // are large and a leader that only sees 30 yards stops at the first empty corridor.
     dungeonPullSearchRange = sConfigMgr->GetOption<float>("AiPlayerbot.DungeonPullSearchRange", 120.0f);
+    // An all-bot dungeon run gives up past either limit: too long inside, or too long without a fight.
+    // Nothing measured a run before, and a stalled group would stand in its instance until restart.
+    dungeonMaxMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Dungeon.MaxMinutes", 60);
+    dungeonStallMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Dungeon.StallMinutes", 10);
 
     // Let alt bots use the dungeon finder alongside random bots. They only exist while their owner
     // is logged in, so this cannot run without a person present. Off means alt bots follow their

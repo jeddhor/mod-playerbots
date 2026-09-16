@@ -2338,6 +2338,69 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
     return WorldPosition();
 }
 
+WorldPosition NewRpgBaseAction::SelectDungeonAdvancePos()
+{
+    Map* map = bot->FindMap();
+    if (!map || !map->Instanceable())
+        return WorldPosition();
+
+    // The whole instance, not the 120 yards around the leader.
+    //
+    // The pull search looks only as far as the leader can reasonably see, which is right for choosing
+    // the next pack and wrong for deciding the run is over. After most kills in Wailing Caverns the
+    // next pack is further along a tunnel than that, so the search came back empty and the leader sat
+    // down to rest for thirty seconds -- after almost every kill, with the next pack a short walk away.
+    // Toggling self bot mode off and on made her move again only because it reset the rest.
+    //
+    // A dungeon holds a few hundred creatures at most and this only runs for a group's leader after
+    // the local search has already come up empty, so walking the instance's own creature store is
+    // cheap enough; only the nearest few are asked for a route.
+    constexpr size_t MAX_ADVANCE_PATH_TESTS = 12;
+    constexpr float ADVANCE_SEARCH_RANGE = 2000.0f;
+
+    std::vector<std::pair<float, Creature*>> candidates;
+    for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+    {
+        if (!creature || !creature->IsInWorld() || !creature->IsAlive() || creature->IsInCombat())
+            continue;
+
+        if (creature->IsCritter() || creature->IsTotem() || !bot->IsHostileTo(creature))
+            continue;
+
+        if (botAI->IsUnreachableTarget(creature->GetGUID()))
+            continue;
+
+        if (!AttackersValue::IsPossibleTarget(creature, bot, ADVANCE_SEARCH_RANGE))
+            continue;
+
+        candidates.emplace_back(bot->GetDistance(creature), creature);
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](auto const& a, auto const& b) { return a.first < b.first; });
+
+    size_t tested = 0;
+    for (auto const& [dist, creature] : candidates)
+    {
+        if (tested++ >= MAX_ADVANCE_PATH_TESTS)
+            break;
+
+        PathGenerator path(bot);
+        path.CalculatePath(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
+
+        // No detour cap here, unlike the pull search: this is the route to the next part of the
+        // dungeon, and in a cave the next part of the dungeon is very often the long way round.
+        PathType const type = path.GetPathType();
+        if (!(type & PATHFIND_NORMAL) || (type & PATHFIND_NOPATH))
+            continue;
+
+        return WorldPosition(map->GetId(), creature->GetPositionX(), creature->GetPositionY(),
+                             creature->GetPositionZ());
+    }
+
+    return WorldPosition();
+}
+
 /**
  * Is this activity allowed for this bot at all?
  *
@@ -2459,8 +2522,20 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
                 return true;
             }
 
-            LOG_DEBUG("playerbots", "[Dungeon] {} leads on map {} but found nothing to pull within {:.0f} yards",
-                      bot->GetName(), map->GetId(), sPlayerbotAIConfig.dungeonPullSearchRange);
+            // Nothing close enough to pull is not the same as nothing left. Walk on to the nearest pack
+            // the instance still holds, rather than sitting down for thirty seconds after every kill.
+            WorldPosition advance = SelectDungeonAdvancePos();
+            if (advance != WorldPosition())
+            {
+                LOG_DEBUG("playerbots", "[Dungeon] {} advances on map {} towards the next pack, {:.0f} yards off",
+                          bot->GetName(), map->GetId(), bot->GetExactDist(advance));
+
+                botAI->rpgInfo.ChangeToGoGrind(advance);
+                return true;
+            }
+
+            LOG_DEBUG("playerbots", "[Dungeon] {} finds nothing left to fight on map {} -- the run looks clear",
+                      bot->GetName(), map->GetId());
 
             // Nothing to fight is not the same as nothing to do. Try the NPC before giving up.
             if (TryDungeonGossip())

@@ -64,7 +64,28 @@ private:
     BotDungeonMgr(BotDungeonMgr const&) = delete;
     BotDungeonMgr& operator=(BotDungeonMgr const&) = delete;
 
-    /// What role this bot should be playing right now.
+    /**
+     * Give up on a dungeon run that has gone on too long or stopped progressing.
+     *
+     * Nothing used to measure a run at all: a Scarlet Monastery group of six bots stood motionless for
+     * more than forty-five minutes after its last pull, and would have stood there until the realm
+     * restarted. Returns true if this bot was taken out of the instance.
+     */
+    bool CheckRunLimits(Player* bot, uint32 now);
+
+    struct Run
+    {
+        uint32 mapId{0};
+        uint32 instanceId{0};
+        uint32 enteredMs{0};
+        uint32 lastProgressMs{0};
+    };
+
+    std::unordered_map<ObjectGuid, Run> _runs;
+    uint32 _runsAbandonedTimeout{0};
+    uint32 _runsAbandonedStalled{0};
+
+        /// What role this bot should be playing right now.
     enum class Mode : uint8
     {
         Off,        ///< Not in an instance, or a human is leading. Normal behaviour.

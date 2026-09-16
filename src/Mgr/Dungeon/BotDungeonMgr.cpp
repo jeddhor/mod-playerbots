@@ -8,6 +8,7 @@
 
 #include "Formations.h"
 #include "Group.h"
+#include "LFGMgr.h"
 #include "Map.h"
 #include "Timer.h"
 #include "ObjectAccessor.h"
@@ -15,6 +16,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "RandomPlayerbotMgr.h"
 
 namespace
 {
@@ -22,6 +24,99 @@ namespace
     // leader, but its name promises melee range to anyone reading a `.formation ?`, and a healer
     // told it is in a melee formation is a confusing thing to explain later.
     constexpr char const* DUNGEON_FORMATION = "dungeon";
+}
+
+bool BotDungeonMgr::CheckRunLimits(Player* bot, uint32 now)
+{
+    ObjectGuid const guid = bot->GetGUID();
+    Map* map = bot->FindMap();
+
+    // Dungeons and raids only. A battleground ends on its own terms.
+    if (!map || !map->IsDungeon() || bot->InBattleground())
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        _runs.erase(guid);
+        return false;
+    }
+
+    Group* group = bot->GetGroup();
+
+    // Never on a group a person is in. A human, their alts and their self bot are playing the dungeon
+    // at whatever pace they like; pulling their party out from under them because it took a while is
+    // the opposite of what anyone wants. Only an all-random-bot run is abandoned.
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+        return false;
+
+    if (group)
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (!GET_PLAYERBOT_AI(member) || IsSelfBot(member) || !sRandomPlayerbotMgr.IsRandomBot(member))
+                    return false;
+
+    // Progress is fighting. Anyone in the group in combat means the run is still doing something; a
+    // run where nobody has fought for a while has stalled, whatever the clock says.
+    bool fighting = bot->IsInCombat();
+    if (group && !fighting)
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource(); member && member->IsInCombat())
+            {
+                fighting = true;
+                break;
+            }
+
+    Run run;
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        Run& stored = _runs[guid];
+        if (stored.mapId != map->GetId() || stored.instanceId != map->GetInstanceId())
+        {
+            stored.mapId = map->GetId();
+            stored.instanceId = map->GetInstanceId();
+            stored.enteredMs = now;
+            stored.lastProgressMs = now;
+        }
+
+        if (fighting)
+            stored.lastProgressMs = now;
+
+        run = stored;
+    }
+
+    uint32 const inside = getMSTimeDiff(run.enteredMs, now);
+    uint32 const idle = getMSTimeDiff(run.lastProgressMs, now);
+    bool const timedOut = inside > sPlayerbotAIConfig.dungeonMaxMinutes * MINUTE * IN_MILLISECONDS;
+    bool const stalled = idle > sPlayerbotAIConfig.dungeonStallMinutes * MINUTE * IN_MILLISECONDS;
+
+    if (!timedOut && !stalled)
+        return false;
+
+    LOG_INFO("playerbots", "[Dungeon] {} gives up on map {} after {} min inside ({} min without a fight): {}",
+             bot->GetName(), map->GetId(), inside / MINUTE / IN_MILLISECONDS, idle / MINUTE / IN_MILLISECONDS,
+             timedOut ? "run took too long" : "run stalled");
+
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        _runs.erase(guid);
+        if (timedOut)
+            ++_runsAbandonedTimeout;
+        else
+            ++_runsAbandonedStalled;
+    }
+
+    // Out the way the dungeon finder brought them in if it did, so the queue's own bookkeeping ends
+    // cleanly; otherwise back into the world at a level-appropriate spot.
+    bool const viaLfg = sLFGMgr->inLfgDungeonMap(guid, map->GetId(), map->GetDifficulty());
+
+    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+        if (bot->GetGroup())
+            botAI->LeaveOrDisbandGroup();
+
+    if (viaLfg)
+        sLFGMgr->TeleportPlayer(bot, true);
+    else
+        sRandomPlayerbotMgr.RandomTeleportForLevel(bot);
+
+    return true;
 }
 
 void BotDungeonMgr::Update(Player* bot, uint32 diff)
@@ -50,6 +145,9 @@ void BotDungeonMgr::Update(Player* bot, uint32 diff)
         std::unique_lock<std::shared_mutex> lock(_mutex);
         _nextCheckMs[guid] = now + sPlayerbotAIConfig.dungeonAutopilotIntervalMs;
     }
+
+    if (CheckRunLimits(bot, now))
+        return;
 
     // Polled rather than driven by group and map events. Entering an instance, a leadership
     // handover, a disband and a wipe-and-release all change the answer, and catching each of them
@@ -223,6 +321,7 @@ std::string BotDungeonMgr::DescribeStats() const
     std::ostringstream out;
     out << "Dungeon autopilot: " << leading << " leading, " << following << " following now; "
         << _engaged << " engaged, " << _disengaged << " disengaged, "
-        << _leaders << " lead handovers, " << _followers << " follower switches";
+        << _leaders << " lead handovers, " << _followers << " follower switches; runs abandoned: "
+        << _runsAbandonedTimeout << " too long, " << _runsAbandonedStalled << " stalled";
     return out.str();
 }
