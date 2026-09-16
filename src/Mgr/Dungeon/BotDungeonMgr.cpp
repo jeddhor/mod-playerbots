@@ -26,6 +26,25 @@ namespace
     constexpr char const* DUNGEON_FORMATION = "dungeon";
 }
 
+bool BotDungeonMgr::RepairStaleLfgGroup(Player* player)
+{
+    Group* group = player ? player->GetGroup() : nullptr;
+    if (!group || !group->isLFGGroup())
+        return false;
+
+    // Only the unambiguous case: no dungeon and no state at all. A group queued, in a role check, in a
+    // proposal, in its dungeon or finished with it always has one or the other.
+    ObjectGuid const gguid = group->GetGUID();
+    if (sLFGMgr->GetDungeon(gguid) || sLFGMgr->GetState(gguid) != lfg::LFG_STATE_NONE)
+        return false;
+
+    LOG_INFO("playerbots", "[Dungeon] Group {} led by {} was a dungeon finder group with no dungeon; made it an ordinary group",
+             gguid.GetCounter(), player->GetName());
+
+    group->ConvertFromLFG();
+    return true;
+}
+
 bool BotDungeonMgr::CheckRunLimits(Player* bot, uint32 now)
 {
     ObjectGuid const guid = bot->GetGUID();
@@ -145,6 +164,8 @@ void BotDungeonMgr::Update(Player* bot, uint32 diff)
         std::unique_lock<std::shared_mutex> lock(_mutex);
         _nextCheckMs[guid] = now + sPlayerbotAIConfig.dungeonAutopilotIntervalMs;
     }
+
+    RepairStaleLfgGroup(bot);
 
     if (CheckRunLimits(bot, now))
         return;

@@ -225,6 +225,10 @@ public:
         // of a random bot. Login is the one moment we are certain the log is loaded and idle.
         QuestIntegrityMgr::RepairStoredCompletions(player);
 
+        // A person's group too, and at login in particular: that is when a group reloaded from the
+        // database is first used, and a player's own session is not polled by the dungeon manager.
+        BotDungeonMgr::RepairStaleLfgGroup(player);
+
         if (!player->GetSession()->IsBot())
         {
             PlayerbotsMgr::instance().AddPlayerbotData(player, false);

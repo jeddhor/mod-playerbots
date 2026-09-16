@@ -73,6 +73,20 @@ private:
      */
     bool CheckRunLimits(Player* bot, uint32 now);
 
+public:
+    /**
+     * Clear the dungeon finder flag from a group that no longer has a dungeon finder dungeon.
+     *
+     * A group formed by the dungeon finder keeps its flag in the characters database, but its dungeon
+     * and state are separate and did not survive: an operator's group came back from a restart
+     * flagged, with no dungeon and no state. Every dungeon finder join was then refused as "a party
+     * member does not meet the requirements", every instance portal refused entry, and relogging --
+     * which breaks the group up -- was the only way out. Returns true if it repaired anything.
+     */
+    static bool RepairStaleLfgGroup(Player* player);
+
+private:
+
     struct Run
     {
         uint32 mapId{0};
