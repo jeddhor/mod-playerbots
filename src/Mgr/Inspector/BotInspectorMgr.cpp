@@ -508,35 +508,6 @@ void BotInspectorMgr::HandleDetail(Player* to, ObjectGuid::LowType botGuid, std:
 
 namespace
 {
-/**
- * The strategies that make a bot actually play a role.
- *
- * Generous on purpose: Engine::addStrategy silently ignores a name its class never registered, so
- * one string per role can name both the generic strategies ("tank assist") and the class ones
- * ("tank", "heal") without knowing which class it is being applied to. A rogue told to tank simply
- * gets the parts that exist for a rogue -- which is to say, almost nothing, correctly.
- *
- * Removals matter as much as additions. Without "-dps assist" a tank keeps choosing targets like a
- * damage dealer and the role change is cosmetic.
- */
-struct RoleStrategies
-{
-    char const* combat;
-    char const* nonCombat;
-};
-
-RoleStrategies const ROLE_TANK{
-    "+tank,+tank assist,+tank face,+pull,-dps assist,-heal,-healer dps",
-    "-save mana"};
-
-RoleStrategies const ROLE_HEAL{
-    "+heal,+healer dps,-tank,-tank assist,-tank face,-dps assist,-pull",
-    "+save mana"};
-
-RoleStrategies const ROLE_DPS{
-    "+dps assist,+dps,+aoe,-tank,-tank assist,-tank face,-heal,-healer dps,-pull",
-    "-save mana"};
-
 /// What role a bot's current strategies amount to. Read from the engine, never guessed from spec.
 char const* DescribeRole(PlayerbotAI* ai)
 {
@@ -547,7 +518,9 @@ char const* DescribeRole(PlayerbotAI* ai)
         ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
         return "tank";
 
-    if (ai->HasStrategy("heal", BotState::BOT_STATE_COMBAT))
+    // Any healing strategy, not the one literally named "heal": a Holy priest's default is
+    // "holy heal", and the panel called every reset healer a damage dealer because of it.
+    if (ai->HasStrategy("heal", BotState::BOT_STATE_COMBAT) || ai->HasStrategy("holy heal", BotState::BOT_STATE_COMBAT))
         return "heal";
 
     if (ai->HasStrategy("dps assist", BotState::BOT_STATE_COMBAT))
@@ -908,12 +881,9 @@ void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, Ob
             return;
         }
 
-        RoleStrategies const& wanted = action == "ROLE_TANK" ? ROLE_TANK
-                                     : action == "ROLE_HEAL" ? ROLE_HEAL
-                                                             : ROLE_DPS;
-
-        ai->ChangeStrategy(wanted.combat, BotState::BOT_STATE_COMBAT);
-        ai->ChangeStrategy(wanted.nonCombat, BotState::BOT_STATE_NON_COMBAT);
+        // Remembered and saved, not just applied: every strategy reset -- a death, a map change,
+        // switching a self bot on or off -- rebuilt the engines from talents and dropped it.
+        ai->AssignRole(action == "ROLE_TANK" ? "tank" : action == "ROLE_HEAL" ? "heal" : "dps");
 
         // And the talents follow the role, which is the whole point of the button.
         //

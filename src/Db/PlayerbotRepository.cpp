@@ -6,6 +6,7 @@
 
 #include "PlayerbotRepository.h"
 #include "AiObjectContext.h"
+#include "PlayerbotAI.h"
 
 void PlayerbotRepository::Load(PlayerbotAI* botAI)
 {
@@ -38,11 +39,16 @@ void PlayerbotRepository::Load(PlayerbotAI* botAI)
             }
             else if (key == "dead")
                 botAI->ChangeStrategy(value, BOT_STATE_DEAD);
+            else if (key == "role")
+                botAI->SetAssignedRole(value);
         } while (result->NextRow());
 
         botAI->GetAiObjectContext()->GetUntypedValue("outfit list");
 
         botAI->GetAiObjectContext()->Load(values);
+
+        // After the strategy rows, which were saved before a later reset may have dropped the role.
+        botAI->ApplyAssignedRole();
     }
 }
 
@@ -66,6 +72,8 @@ void PlayerbotRepository::Save(PlayerbotAI* botAI)
     SaveValue(guid, "co", FormatStrategies("co", botAI->GetStrategies(BOT_STATE_COMBAT)));
     SaveValue(guid, "nc", FormatStrategies("nc", botAI->GetStrategies(BOT_STATE_NON_COMBAT)));
     SaveValue(guid, "dead", FormatStrategies("dead", botAI->GetStrategies(BOT_STATE_DEAD)));
+    if (!botAI->GetAssignedRole().empty())
+        SaveValue(guid, "role", botAI->GetAssignedRole());
 }
 
 std::string const PlayerbotRepository::FormatStrategies(std::string const /*type*/, std::vector<std::string> strategies)

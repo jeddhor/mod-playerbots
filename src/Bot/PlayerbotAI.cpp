@@ -4,6 +4,7 @@
  */
 
 #include "PlayerbotAI.h"
+#include "PlayerbotRepository.h"
 #include "AiFactory.h"
 #include "BudgetValues.h"
 #include "ChannelMgr.h"
@@ -1909,8 +1910,70 @@ void PlayerbotAI::ResetStrategies(bool /*load*/)
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
         engines[i]->Init();
 
+    // Defaults come from talents; a role a person chose outranks them.
+    ApplyAssignedRole();
+
     // if (load)
     //     PlayerbotRepository::instance().Load(this);
+}
+
+namespace
+{
+struct RoleStrategies
+{
+    char const* combat;
+    char const* nonCombat;
+};
+
+// The strategies that make a bot actually play a role.
+//
+// Generous on purpose: Engine::addStrategy silently ignores a name its class never registered, so
+// one string per role can name both the generic strategies ("tank assist") and the class ones
+// ("tank", "heal") without knowing which class it is being applied to. A rogue told to tank simply
+// gets the parts that exist for a rogue -- which is to say, almost nothing, correctly.
+//
+// Removals matter as much as additions. Without "-dps assist" a tank keeps choosing targets like a
+// damage dealer and the role change is cosmetic.
+//
+// A role is a set of strategy edits on top of whatever the class defaults are, rather than a
+// replacement for them, so a class's own rotation strategies survive being given a role.
+//
+// "holy heal" goes with the rest: it is the Holy priest default, and leaving it beside "heal" meant
+// a healer carried two healing strategies after every reset.
+RoleStrategies const* FindRole(std::string const& role)
+{
+    static RoleStrategies const TANK{
+        "+tank,+tank assist,+tank face,+pull,-dps assist,-heal,-holy heal,-healer dps", "-save mana"};
+    static RoleStrategies const HEAL{
+        "+heal,+healer dps,-holy heal,-tank,-tank assist,-tank face,-dps assist,-pull", "+save mana"};
+    static RoleStrategies const DPS{
+        "+dps assist,+dps,+aoe,-tank,-tank assist,-tank face,-heal,-holy heal,-healer dps,-pull", "-save mana"};
+
+    if (role == "tank")
+        return &TANK;
+    if (role == "heal")
+        return &HEAL;
+    if (role == "dps")
+        return &DPS;
+    return nullptr;
+}
+}  // namespace
+
+void PlayerbotAI::ApplyAssignedRole()
+{
+    RoleStrategies const* const strategies = FindRole(_assignedRole);
+    if (!strategies)
+        return;
+
+    ChangeStrategy(strategies->combat, BOT_STATE_COMBAT);
+    ChangeStrategy(strategies->nonCombat, BOT_STATE_NON_COMBAT);
+}
+
+void PlayerbotAI::AssignRole(std::string const& role)
+{
+    _assignedRole = FindRole(role) ? role : std::string();
+    ApplyAssignedRole();
+    PlayerbotRepository::instance().Save(this);
 }
 
 bool PlayerbotAI::IsRanged(Player* player, bool bySpec)

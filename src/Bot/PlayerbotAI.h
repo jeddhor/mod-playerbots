@@ -420,6 +420,24 @@ public:
     bool HasStrategy(std::string const name, BotState type);
     BotState GetState() { return currentState; };
     void ResetStrategies(bool load = false);
+
+    /**
+     * The role a person gave this bot -- "tank", "heal" or "dps" -- or empty for none.
+     *
+     * Remembered because ResetStrategies() rebuilds every engine from talents and class alone, and a
+     * death, a map change, a group change and switching a self bot on or off all call it. A healer
+     * set to Heal from the Inspector came back from each of those as DPS.
+     */
+    std::string const& GetAssignedRole() const { return _assignedRole; }
+
+    /// Remember a role, apply its strategies and persist it. Empty clears it.
+    void AssignRole(std::string const& role);
+
+    /// Re-apply the remembered role's strategies, if there is one. Does not persist.
+    void ApplyAssignedRole();
+
+    /// Set the remembered role without applying or saving it; for loading it back.
+    void SetAssignedRole(std::string const& role) { _assignedRole = role; }
     void ReInitCurrentEngine();
     void Reset(bool full = false);
     void LeaveOrDisbandGroup();
@@ -674,6 +692,8 @@ protected:
     // Set from the packet hook when a real client sends a movement key. `_humanHoldingKey` tracks
     // the key being down; `_humanInputMs` is when it was last seen either way, which is what the
     // grace period is measured from.
+    std::string _assignedRole;
+
     bool _humanHoldingKey{false};
     uint32 _humanInputMs{0};
 
