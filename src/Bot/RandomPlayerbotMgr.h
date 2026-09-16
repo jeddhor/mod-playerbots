@@ -98,6 +98,11 @@ public:
         return instance;
     }
 
+    /// Drop a guid the module should stop bookkeeping for -- a retired bot whose character is about
+    /// to be deleted. Without it the roster keeps writing events for a guid that has no character,
+    /// and the rows reappear moments after they are cleaned up.
+    void ForgetRetiredBot(uint32 guid);
+
     void LogPlayerLocation();
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 

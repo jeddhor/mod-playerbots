@@ -517,6 +517,11 @@ public:
     uint32 economyClearUntilFreeSlots;
     bool craftGoalEnabled;
     uint32 craftGoalDurationSeconds;
+    bool retireEnabled;
+    uint32 retireMinLevel;
+    uint32 retireMinTimePlayed;
+    uint32 retireIntervalSeconds;
+    uint32 retirePerInterval;
     bool scrollTradeEnabled;
     float scrollBuyWillingness;
     bool deliberateDropEnabled;

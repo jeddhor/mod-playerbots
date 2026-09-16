@@ -19,6 +19,7 @@
 #include "PlayerbotWorldThreadProcessor.h"
 #include "GatherRouteMgr.h"
 #include "ReagentSourceMgr.h"
+#include "BotLifecycleMgr.h"
 #include "CraftGoalMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
@@ -753,6 +754,7 @@ public:
         sBotAgendaMgr.Update(diff);          // round-robin, fixed budget per tick
         sBotHelpMgr.Update(diff);            // expire stale help requests
         sBotLfgMgr.Update(diff);             // put bots into queues real players are waiting in
+        sBotLifecycleMgr.Update(diff);       // retire a bot now and then; world thread only
     }
 };
 

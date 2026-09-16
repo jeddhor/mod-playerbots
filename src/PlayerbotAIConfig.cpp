@@ -925,6 +925,15 @@ bool PlayerbotAIConfig::Initialize()
     // which cannot actually be worked is retired rather than held forever.
     craftGoalDurationSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.CraftGoal.DurationSeconds", 7200);
 
+    // P12.2/P12.3. Retirement deletes a character, so it is off unless an operator asks for it, and it
+    // is a trickle beside recycling: identity is most of what makes a realm feel inhabited.
+    retireEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Lifecycle.Retire.Enabled", false);
+    retireMinLevel = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.MinLevel", 80);
+    // Played time, not wall-clock age: a bot that has actually lived a fortnight at the cap.
+    retireMinTimePlayed = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.MinTimePlayed", 1209600);
+    retireIntervalSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.IntervalSeconds", 3600);
+    retirePerInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.PerInterval", 1);
+
     // R16. Scribes mill herbs and supply vellum; enchanters write scrolls onto it and list them.
     scrollTradeEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Enchanting.ScrollTrade", true);
     // How far above the index price a bot will pay for a scroll it can put on its own gear. Above 1 on

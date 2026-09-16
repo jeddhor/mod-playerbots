@@ -2995,6 +2995,45 @@ AiPlayerbot.CraftGoal.DurationSeconds = 7200
 AiPlayerbot.Enchanting.ScrollTrade = 1
 AiPlayerbot.Enchanting.ScrollBuyWillingness = 1.5
 
+#
+#    AiPlayerbot.Lifecycle.Retire.Enabled
+#        Description: P12.2 -- a bot's second ending. Where recycling resets a max-level bot to level
+#                     one and keeps its name, race and class, retirement deletes the character and
+#                     creates a fresh one on the same account: a player quit, another signed up. It is
+#                     the only mechanism that refreshes the variety of the population rather than its
+#                     levels.
+#
+#                     Before deleting, the bot's auction listings are cancelled and any live bids
+#                     refunded to the bidders through the core's own mail, because nothing in
+#                     Player::DeleteFromDB knows about auctions. Mail, items, guild and arena
+#                     membership are the core's business and it handles them.
+#
+#                     Off by default: it deletes characters, and an operator should ask for that.
+#        Default:     0 - off
+#
+#    AiPlayerbot.Lifecycle.Retire.MinLevel
+#        Description: Only bots at this level or above are candidates.
+#        Default:     80
+#
+#    AiPlayerbot.Lifecycle.Retire.MinTimePlayed
+#        Description: Played time, in seconds, a candidate must have accumulated -- time actually
+#                     lived, not wall-clock age. 1209600 is a fortnight played.
+#        Default:     1209600
+#
+#    AiPlayerbot.Lifecycle.Retire.IntervalSeconds / .PerInterval
+#        Description: How often retirement runs and how many bots it may retire each time. P12.3: a
+#                     slow trickle beside recycling. One an hour turns over a 500-bot realm in about
+#                     three weeks, which is churn you notice in the names without the realm losing
+#                     its regulars.
+#        Default:     3600, 1
+#
+
+AiPlayerbot.Lifecycle.Retire.Enabled = 0
+AiPlayerbot.Lifecycle.Retire.MinLevel = 80
+AiPlayerbot.Lifecycle.Retire.MinTimePlayed = 1209600
+AiPlayerbot.Lifecycle.Retire.IntervalSeconds = 3600
+AiPlayerbot.Lifecycle.Retire.PerInterval = 1
+
 
 
 #

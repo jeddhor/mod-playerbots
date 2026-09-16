@@ -12,6 +12,7 @@
 #include "BotLfgMgr.h"
 #include "RandomBotLevelMgr.h"
 #include "BotCraftMgr.h"
+#include "BotLifecycleMgr.h"
 #include "ReagentSourceMgr.h"
 #include "BotSafetyMgr.h"
 #include "BotEconomyMgr.h"
@@ -1416,6 +1417,12 @@ void RandomPlayerbotMgr::ScheduleChangeStrategy(uint32 bot, uint32 time)
     SetEventValue(bot, "change_strategy", 1, time);
 }
 
+void RandomPlayerbotMgr::ForgetRetiredBot(uint32 guid)
+{
+    currentBots.erase(guid);
+    eventCache.erase(guid);
+}
+
 bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
 {
     ObjectGuid botGUID = ObjectGuid::Create<HighGuid::Player>(bot);
@@ -2529,6 +2536,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "craft")
     {
         LOG_INFO("playerbots", "{}", sBotCraftMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd == "lifecycle")
+    {
+        LOG_INFO("playerbots", "{}", sBotLifecycleMgr.DescribeStats());
         return true;
     }
 
