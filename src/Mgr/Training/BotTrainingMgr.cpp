@@ -209,10 +209,54 @@ bool BotTrainingMgr::Qualifies(Player* bot, TrainableSpell const& entry)
 
     // Only what this class or race can actually use. Without this a bot would learn every trainable
     // spell in the game, which is both nonsense and a way to make one bot capable of everything.
-    if (!bot->IsSpellFitByClassAndRace(entry.spellId))
+    //
+    // Tested on the spell actually taught as well as the trainer's wrapper. A wrapper carries no skill
+    // line, so the core's test passes it for everyone -- that is how a warrior reaching level 20 bought
+    // the warlock's Felsteed, and how 367 characters of every class ended up holding it.
+    if (!bot->IsSpellFitByClassAndRace(entry.spellId) ||
+        !bot->IsSpellFitByClassAndRace(TaughtSpell(entry.spellId)))
         return false;
 
     return sSpellMgr->GetSpellInfo(entry.spellId) != nullptr;
+}
+
+void BotTrainingMgr::EnforceClassSpells(Player* bot)
+{
+    // Undo what the missing class check above let through: 1,554 spell rows across the realm, all of
+    // them another class's trainer-taught mount or form -- Felsteed, Dreadsteed, both Warhorses, the
+    // Thalassian Charger, Flight Form -- held by warriors, mages, rogues and everyone else.
+    //
+    // Only a *class* mismatch is removed. Race is deliberately left alone: a bot may hold another
+    // race's mount legitimately (a reputation vendor sells them), and the core's own race test
+    // would strip those too.
+    std::vector<uint32> wrong;
+    for (auto const& [spellId, playerSpell] : bot->GetSpellMap())
+    {
+        if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED)
+            continue;
+
+        bool classRestricted = false;
+        bool fitsClass = false;
+        SkillLineAbilityMapBounds bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            if (!itr->second || !itr->second->ClassMask)
+                continue;
+
+            classRestricted = true;
+            if (itr->second->ClassMask & bot->getClassMask())
+                fitsClass = true;
+        }
+
+        if (classRestricted && !fitsClass)
+            wrong.push_back(spellId);
+    }
+
+    for (uint32 spellId : wrong)
+    {
+        bot->removeSpell(spellId, SPEC_MASK_ALL, false);
+        LOG_INFO("playerbots", "[Train] {} lost spell {}: it belongs to another class", bot->GetName(), spellId);
+    }
 }
 
 void BotTrainingMgr::EnforceProfessions(Player* bot)
@@ -444,6 +488,7 @@ void BotTrainingMgr::Update(Player* bot, uint32 diff)
     // Before training, not after: a bot carrying a profession it should not have would otherwise
     // spend the pass buying recipes for it.
     EnforceProfessions(bot);
+    EnforceClassSpells(bot);
     TrainNow(bot);
 }
 

@@ -59,6 +59,9 @@ public:
      */
     void EnforceProfessions(Player* bot);
 
+    /// Remove spells whose skill line restricts them to a class this bot is not.
+    void EnforceClassSpells(Player* bot);
+
     /// Train immediately, ignoring the interval. Returns how many spells were learned.
     uint32 TrainNow(Player* bot);
 
