@@ -215,7 +215,13 @@ protected:
     // cone fallback wandering) doesn't spin for 5 minutes before
     // the teleport fires, but long enough that a genuine long
     // walk that is slowly making progress never triggers it.
-    const uint32 stuckTime = 90 * 1000;
+    //
+    // A floor under the five attempts, not a second requirement on top of them. At 90 seconds it was
+    // the binding one: attempts land roughly every ten seconds, so a self bot walking in and out of the
+    // Lakeshire inn reached 5/5 at 45 seconds and carried on to 8/5 before recovery fired, which reads
+    // on the Inspector as the threshold simply being ignored. The floor only matters when legs are
+    // very short and attempts pile up in a few seconds.
+    const uint32 stuckTime = 45 * 1000;
 
     /* FOR QUEST POI SELECTION */
     // How many standable points to offer per POI polygon. More candidates means a better chance
