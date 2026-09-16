@@ -284,6 +284,11 @@ bool PlayerbotAIConfig::Initialize()
     // Nothing measured a run before, and a stalled group would stand in its instance until restart.
     dungeonMaxMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Dungeon.MaxMinutes", 60);
     dungeonStallMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Dungeon.StallMinutes", 10);
+    // A dungeon leader holds the next pull until healers have drunk back to this much mana and
+    // everyone has this much health. A leader that moved on straight after each kill left its healer
+    // permanently behind and permanently empty.
+    dungeonReadyHealerManaPct = sConfigMgr->GetOption<float>("AiPlayerbot.Dungeon.ReadyHealerManaPct", 90.0f);
+    dungeonReadyHealthPct = sConfigMgr->GetOption<float>("AiPlayerbot.Dungeon.ReadyHealthPct", 70.0f);
 
     // Let alt bots use the dungeon finder alongside random bots. They only exist while their owner
     // is logged in, so this cannot run without a person present. Off means alt bots follow their

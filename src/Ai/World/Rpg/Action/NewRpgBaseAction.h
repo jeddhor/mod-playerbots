@@ -148,6 +148,11 @@ protected:
     /// Nearest reachable, unengaged hostile anywhere in the instance -- where a leader goes when the
     /// pull search finds nothing close by.
     WorldPosition SelectDungeonAdvancePos();
+
+    /// Whether everyone in the run is fit to take the next pull: alive, out of combat, healthy, and
+    /// the healers topped up on mana.
+    bool DungeonGroupReady();
+    uint32 _lastReadyLogMs{0};
     /// Talk to a nearby progression NPC when a dungeon group has nothing left to pull.
     bool TryDungeonGossip();
 

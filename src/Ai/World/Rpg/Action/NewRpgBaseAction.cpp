@@ -2338,6 +2338,52 @@ WorldPosition NewRpgBaseAction::SelectDungeonPullPos()
     return WorldPosition();
 }
 
+bool NewRpgBaseAction::DungeonGroupReady()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return true;
+
+    // Only the people actually in the run. A member left in town, or a zone away, is not someone
+    // the leader can wait for.
+    constexpr float NEARBY = 100.0f;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+            member->GetInstanceId() != bot->GetInstanceId() || bot->GetExactDist(member) > NEARBY)
+            continue;
+
+        char const* reason = nullptr;
+        if (!member->IsAlive())
+            reason = "is dead";
+        else if (member->IsInCombat())
+            reason = "is still fighting";
+        else if (member->GetHealthPct() < sPlayerbotAIConfig.dungeonReadyHealthPct)
+            reason = "is low on health";
+        else if (member->getPowerType() == POWER_MANA && PlayerbotAI::IsHeal(member) &&
+                 member->GetPowerPct(POWER_MANA) < sPlayerbotAIConfig.dungeonReadyHealerManaPct)
+            reason = "is drinking";
+
+        if (reason)
+        {
+            // Throttled to one line a minute per leader: this is asked every status update while
+            // the group rests, and the reason rarely changes between asks.
+            if (getMSTimeDiff(_lastReadyLogMs, getMSTime()) > 60 * IN_MILLISECONDS || !_lastReadyLogMs)
+            {
+                _lastReadyLogMs = getMSTime();
+                LOG_DEBUG("playerbots", "[Dungeon] {} waits before the next pull: {} {} ({:.0f}% health, {:.0f}% mana)",
+                          bot->GetName(), member->GetName(), reason, member->GetHealthPct(),
+                          member->getPowerType() == POWER_MANA ? member->GetPowerPct(POWER_MANA) : 100.0f);
+            }
+            return false;
+        }
+    }
+
+    return true;
+}
+
 WorldPosition NewRpgBaseAction::SelectDungeonAdvancePos()
 {
     Map* map = bot->FindMap();
@@ -2505,6 +2551,13 @@ bool NewRpgBaseAction::RandomChangeStatus(std::vector<NewRpgStatus> candidateSta
     {
         Group* group = bot->GetGroup();
         bool const leads = !group || group->GetLeaderGUID() == bot->GetGUID();
+
+        if (leads && !DungeonGroupReady())
+        {
+            // Resting is what lets the healer drink; pulling now leaves them behind.
+            botAI->rpgInfo.ChangeToRest();
+            return true;
+        }
 
         if (leads)
         {

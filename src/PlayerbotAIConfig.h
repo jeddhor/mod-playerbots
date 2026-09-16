@@ -197,6 +197,8 @@ public:
     float dungeonPullSearchRange;
     uint32 dungeonMaxMinutes;
     uint32 dungeonStallMinutes;
+    float dungeonReadyHealerManaPct;
+    float dungeonReadyHealthPct;
     bool altBotsJoinLfg;
 
     // Professions

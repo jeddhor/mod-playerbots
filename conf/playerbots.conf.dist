@@ -3466,6 +3466,17 @@ AiPlayerbot.DungeonPullSearchRange = 120
 AiPlayerbot.Dungeon.MaxMinutes = 60
 AiPlayerbot.Dungeon.StallMinutes = 10
 
+#
+#    AiPlayerbot.Dungeon.ReadyHealerManaPct / AiPlayerbot.Dungeon.ReadyHealthPct
+#        Description: A bot leading a dungeon run waits before its next pull or advance until every
+#                     group member nearby is alive, out of combat, at or above ReadyHealthPct health,
+#                     and every healer is at or above ReadyHealerManaPct mana.
+#        Default:     90, 70
+#
+
+AiPlayerbot.Dungeon.ReadyHealerManaPct = 90
+AiPlayerbot.Dungeon.ReadyHealthPct = 70
+
 # Let alt bots queue for dungeons alongside random bots. They only exist while their owner is
 # logged in. Set to 0 to keep them following you instead of queueing.
 AiPlayerbot.AltBotsJoinLfg = 1
