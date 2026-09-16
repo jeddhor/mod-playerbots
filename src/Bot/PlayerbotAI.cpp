@@ -6186,6 +6186,14 @@ void PlayerbotAI::ReleaseMovementToHuman()
     // the character back to wherever the AI had been heading before the person intervened.
     if (AiObjectContext* ctx = GetAiObjectContext())
         ctx->GetValue<LastMovement&>("last movement")->Get().Set(nullptr);
+
+    // And the activity behind that destination goes too, which is the other half of the complaint:
+    // "she just turns around and walks away from where I want her to go". Clearing the spline alone
+    // only buys the grace period -- the RPG activity still holds its own target, so the moment the
+    // grace lapses the bot sets off for it again from wherever the person walked it to. Going idle
+    // makes it choose afresh from where it now stands, which is what a person who just took the
+    // character somewhere means by taking it there.
+    rpgInfo.ChangeToIdle();
 }
 
 bool PlayerbotAI::CanMove()

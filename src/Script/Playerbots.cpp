@@ -20,6 +20,7 @@
 #include "GatherRouteMgr.h"
 #include "ReagentSourceMgr.h"
 #include "BotLifecycleMgr.h"
+#include "BotLogisticsMgr.h"
 #include "CraftGoalMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
@@ -312,6 +313,10 @@ public:
             sBotRepairMgr.Update(player, diff);
             sBotToolMgr.Update(player, diff);
             sBotCraftMgr.Update(player, diff);
+            // Bag keeping on a timer for the same reason training is: the actions that vendor junk
+            // and work the auction house sit on random triggers in the loot strategy, and a self bot
+            // being played barely gives its non-combat engine a turn to roll them.
+            sBotLogisticsMgr.Update(player, diff);
             sBotFollowMgr.Update(player, diff);
 
             // Mail is collected on a timer, not as an activity: it needs no travel and takes no
@@ -616,21 +621,31 @@ private:
                 kind = Kind::Up;
                 break;
 
-            // Turning is deliberately not steering.
+            // Turning counts as steering only while the *server* is driving the character.
             //
-            // The client sends turn packets for things that are not a person driving: the camera
-            // auto-adjusting behind a running character, and the character turning to follow a
-            // spline the server issued. Counting those started a hold nobody asked for, and the
-            // heartbeats that flow while the character moves then kept it alive -- so the AI
-            // believed somebody had their hand on the key for as long as it was moving, refused to
-            // steer, and the character pottered about in a small circle reporting that its owner
-            // was driving it. Which they were not.
+            // Two different situations send the same opcodes. While the client owns the character,
+            // turn packets come from things nobody asked for -- the camera auto-adjusting behind a
+            // running character, the character turning to follow a spline -- and counting those
+            // started a hold that the heartbeats then kept alive, so the AI believed a hand was on
+            // the key for as long as the character moved and pottered about in a small circle.
             //
-            // Only translation counts. Going somewhere is the thing the AI has to get out of the
-            // way of; facing a different direction is not.
+            // While a server-issued spline is playing, none of that applies: the camera is not
+            // adjusting to a walk the person started, and the client sends no MSG_MOVE_START_FORWARD
+            // for a key pressed during a spline -- which is the whole reason taking control mid-walk
+            // did not work. A turn arriving then is a person trying to steer out of a walk they did
+            // not ask for, and it is the only packet they can produce short of pressing stop.
+            // The turn *keys* only. MSG_MOVE_SET_FACING is mouse-look, which a person does idly while
+            // watching their character walk; taking the walk away every time they glanced around
+            // would be its own kind of not-listening.
             case MSG_MOVE_START_TURN_LEFT:
             case MSG_MOVE_START_TURN_RIGHT:
             case MSG_MOVE_STOP_TURN:
+                if (player->GetMotionMaster() &&
+                    player->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+                {
+                    kind = Kind::Momentary;
+                    break;
+                }
                 return;
 
             // Jump only. The landing is deliberately not counted: a self bot walking off a step
