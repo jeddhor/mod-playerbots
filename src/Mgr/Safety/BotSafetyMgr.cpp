@@ -302,6 +302,9 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
         // Restore to the last place the bot was demonstrably standing on something. That is a far
         // better destination than a graveyard: it is where the bot was working, so whatever it was
         // doing survives the recovery.
+        // Where the bot is about to be, which is the only height its next landing may be judged from.
+        float landingZ = bot->GetPositionZ();
+
         if (trustAnchor)
         {
             // Enough detail to find the cause next time. "fell at z=-1012" says only that it
@@ -321,6 +324,7 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
 
             bot->TeleportTo(anchor.mapId, anchor.pos.GetPositionX(), anchor.pos.GetPositionY(),
                             anchor.pos.GetPositionZ(), anchor.pos.GetOrientation());
+            landingZ = anchor.pos.GetPositionZ();
             ++_recoveries;
         }
         else
@@ -336,6 +340,7 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
                          bot->GetName());
 
                 bot->TeleportTo(graveyard->Map, graveyard->x, graveyard->y, graveyard->z, bot->GetOrientation());
+                landingZ = graveyard->z;
                 ++_recoveriesNoAnchor;
             }
         }
@@ -363,12 +368,26 @@ void BotSafetyMgr::Update(Player* bot, uint32 diff)
 
         // Cancel the fall so the core does not apply falling damage on arrival. Recovering a bot and
         // then killing it for the fall it was rescued from would defeat the entire point.
-        bot->SetFallInformation(GameTime::GetGameTime().count(), bot->GetPositionZ());
+        //
+        // From the landing height, not the current one: a player's teleport completes later, when the
+        // client acknowledges it, so the current position is still wherever it was rescued from.
+        bot->SetFallInformation(0, landingZ);
         return;
     }
 
     if (IsOnSafeGround(bot))
     {
+        // Keep a self bot's fall height current while the server walks it.
+        //
+        // The core measures a fall from the last height it recorded, and records heights from the
+        // client's movement packets. A client being walked by a server spline sends almost none, so
+        // the recorded height stays wherever the walk began. Lucillai walked seventy yards down a
+        // Redridge hillside under AI control, hopped off a ledge a few feet high, and the landing
+        // was scored as a seventy-yard fall: dead from full health. Standing on solid ground and not
+        // falling, the current height is the right baseline.
+        if (IsSelfBot(bot))
+            bot->SetFallInformation(0, bot->GetPositionZ());
+
         std::unique_lock<std::shared_mutex> lock(_mutex);
         Anchor& anchor = _anchors[guid];
         anchor.mapId = bot->GetMapId();
