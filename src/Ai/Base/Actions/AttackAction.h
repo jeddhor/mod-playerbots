@@ -20,6 +20,11 @@ public:
 
 protected:
     bool Attack(Unit* target, bool with_pet = true);
+
+private:
+    // When a self bot last started an attack it could not land, and on whom. See Attack().
+    ObjectGuid _outOfReachAttackTarget;
+    uint32 _outOfReachAttackMs{0};
 };
 
 class AttackMyTargetAction : public AttackAction

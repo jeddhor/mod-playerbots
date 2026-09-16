@@ -32,6 +32,7 @@
 #include "BotCraftMgr.h"
 #include "BotFollowMgr.h"
 #include "BotMailMgr.h"
+#include "MoveSpline.h"
 #include "Opcodes.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
@@ -591,6 +592,25 @@ public:
 
         NoteHumanSteering(player, packet.GetOpcode());
 
+        // Trace what a self bot's client says about attacking, standing and sheathing. An operator
+        // saw their self bot sit, stand and draw and sheathe her weapon over and over, and none of
+        // the AI's own actions sit anyone down; the client is the other party that can.
+        switch (packet.GetOpcode())
+        {
+            case CMSG_ATTACKSTOP:
+            case CMSG_ATTACKSWING:
+            case CMSG_STANDSTATECHANGE:
+            case CMSG_SET_SHEATHED:
+                if (IsSelfBot(player))
+                    LOG_DEBUG("playerbots", "[ClientState] {} opcode 0x{:X} victim={} stand={}",
+                              player->GetName(), packet.GetOpcode(),
+                              player->GetVictim() ? player->GetVictim()->GetName() : "none",
+                              uint32(player->getStandState()));
+                break;
+            default:
+                break;
+        }
+
         if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
             playerbotMgr->HandleMasterIncomingPacket(packet);
     }
@@ -693,9 +713,35 @@ private:
         // key-down, and the person pressing a key to *stop* sends a stop. Left in place because
         // genType is what distinguishes the AI driving from a person driving, and the next
         // movement-control question will want the same trace. One character's key presses.
-        LOG_DEBUG("playerbots", "[HumanInput] {} opcode 0x{:X} moving={} genType={}",
-                  player->GetName(), opcode, player->isMoving() ? 1 : 0,
-                  uint32(player->GetMotionMaster()->GetCurrentMovementGeneratorType()));
+        MovementGeneratorType const genType = player->GetMotionMaster()->GetCurrentMovementGeneratorType();
+
+        // How far the AI's walk still had to go when this arrived. A stop at the very end of it is
+        // the client finishing the walk, not a person stopping it.
+        float left = -1.0f;
+        if (genType == POINT_MOTION_TYPE && player->movespline && player->movespline->Initialized())
+        {
+            G3D::Vector3 const dest = player->movespline->FinalDestination();
+            left = player->movespline->Finalized() ? 0.0f : player->GetExactDist(dest.x, dest.y, dest.z);
+        }
+
+        LOG_DEBUG("playerbots", "[HumanInput] {} opcode 0x{:X} moving={} genType={} left={:.1f}",
+                  player->GetName(), opcode, player->isMoving() ? 1 : 0, uint32(genType), left);
+
+        // The client sends MSG_MOVE_STOP when a walk the AI issued reaches its end, and that packet
+        // is indistinguishable by opcode from a person pressing stop. Counted as one, every combat
+        // approach was an "intervention": Lucillai, leading Wailing Caverns, logged a stop one to
+        // two seconds after each of her own `reach melee` moves, two of those inside thirty seconds
+        // asserted a sixty-second hold, and for that minute every movement action failed. She stood
+        // out of reach of the mob she was fighting, re-issuing an attack her client kept cancelling.
+        //
+        // A person stopping a walk does it somewhere along the walk. Within a few yards of the end,
+        // the walk was over anyway and there is nothing to take control of.
+        constexpr float ARRIVAL_SLACK = 4.0f;
+        if (kind == Kind::Up && left >= 0.0f && left <= ARRIVAL_SLACK)
+            kind = Kind::Ignore;
+        if (kind == Kind::Up && genType == POINT_MOTION_TYPE && player->GetVictim() &&
+            player->IsWithinMeleeRange(player->GetVictim()))
+            kind = Kind::Ignore;
 
         switch (kind)
         {

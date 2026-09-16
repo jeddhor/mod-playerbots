@@ -179,7 +179,12 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
 
     LastMovement& lastMovement = AI_VALUE(LastMovement&, "last movement");
     bool moveControlled = bot->GetMotionMaster()->GetMotionSlotType(MOTION_SLOT_CONTROLLED) != NULL_MOTION_TYPE;
-    if (lastMovement.priority < MovementPriority::MOVEMENT_COMBAT && bot->isMoving() && !moveControlled)
+    // Not for a self bot. Stopping a spline puts the character at the server's interpolated point on
+    // it, and a real client takes that literally: in Wailing Caverns that point was just beneath the
+    // floor, and Lucillai fell straight through it on the tick an attack started. The approach move
+    // that follows replaces the walk anyway, from wherever the client really is.
+    if (lastMovement.priority < MovementPriority::MOVEMENT_COMBAT && bot->isMoving() && !moveControlled &&
+        !IsSelfBot(bot))
     {
         AI_VALUE(LastMovement&, "last movement").clear();
         bot->GetMotionMaster()->Clear(false);
@@ -190,6 +195,21 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
         ServerFacade::instance().SetFacingTo(bot, target);
 
     botAI->ChangeEngine(BOT_STATE_COMBAT);
+
+    // A self bot's client answers an attack started out of melee reach by cancelling it, and the
+    // AI restarted it on the next tick: several times a second, each one drawing and sheathing the
+    // weapon on the operator's screen. Once per couple of seconds is plenty to resume the swing as
+    // soon as the bot is in reach again.
+    if (IsSelfBot(bot) && shouldMelee && !bot->IsWithinMeleeRange(target))
+    {
+        constexpr uint32 OUT_OF_REACH_ATTACK_INTERVAL_MS = 2000;
+        if (_outOfReachAttackTarget == target->GetGUID() &&
+            getMSTimeDiff(_outOfReachAttackMs, getMSTime()) < OUT_OF_REACH_ATTACK_INTERVAL_MS)
+            return false;
+
+        _outOfReachAttackTarget = target->GetGUID();
+        _outOfReachAttackMs = getMSTime();
+    }
 
     if (!WaitForAttackStrategy::ShouldWait(botAI))
         bot->Attack(target, shouldMelee);
