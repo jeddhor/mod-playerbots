@@ -13,6 +13,7 @@
 #include "RandomBotLevelMgr.h"
 #include "BotCraftMgr.h"
 #include "BotLifecycleMgr.h"
+#include "BotConsumableMgr.h"
 #include "BotLogisticsMgr.h"
 #include "ReagentSourceMgr.h"
 #include "BotSafetyMgr.h"
@@ -2549,6 +2550,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     if (cmd == "logistics")
     {
         LOG_INFO("playerbots", "{}", sBotLogisticsMgr.DescribeStats());
+        return true;
+    }
+
+    if (cmd == "consumables")
+    {
+        LOG_INFO("playerbots", "{}", sBotConsumableMgr.DescribeStats());
         return true;
     }
 

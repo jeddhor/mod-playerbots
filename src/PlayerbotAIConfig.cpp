@@ -938,6 +938,13 @@ bool PlayerbotAIConfig::Initialize()
     retireIntervalSeconds = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.IntervalSeconds", 3600);
     retirePerInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.Lifecycle.Retire.PerInterval", 1);
 
+    // Bots drink their own stat buffs. The expensive ones are kept for content that warrants them:
+    // a flask costs a raid's worth of materials and is wasted questing in Elwynn.
+    consumablesEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Consumables.Enabled", true);
+    consumablePremiumInSeriousContentOnly =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.Consumables.PremiumInInstancesOnly", true);
+    consumablePremiumValue = sConfigMgr->GetOption<uint32>("AiPlayerbot.Consumables.PremiumValue", 50000);
+
     // R16. Scribes mill herbs and supply vellum; enchanters write scrolls onto it and list them.
     scrollTradeEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Enchanting.ScrollTrade", true);
     // How far above the index price a bot will pay for a scroll it can put on its own gear. Above 1 on

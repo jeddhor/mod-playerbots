@@ -2996,6 +2996,34 @@ AiPlayerbot.Enchanting.ScrollTrade = 1
 AiPlayerbot.Enchanting.ScrollBuyWillingness = 1.5
 
 #
+#    AiPlayerbot.Consumables.Enabled
+#        Description: Bots use the stat buffs they carry -- scrolls, elixirs, flasks and buff
+#                     potions -- out of combat, one a minute. A buff is skipped when the bot already
+#                     has it, or when the core's own spell-group stack rules say the new one would be
+#                     refused or would knock off something better: a flask is not replaced by an
+#                     elixir, and a battle elixir does not displace a guardian one.
+#
+#                     Healing and mana potions are not affected; those belong to the potion strategy
+#                     and are decided by health, not by buff slots.
+#        Default:     1 - enabled
+#
+#    AiPlayerbot.Consumables.PremiumInInstancesOnly
+#        Description: Keep the expensive consumables for dungeons, raids, battlegrounds and arenas.
+#                     Flasks always count as expensive; everything else counts when its market price
+#                     is above PremiumValue.
+#        Default:     1 - hold them back
+#
+#    AiPlayerbot.Consumables.PremiumValue
+#        Description: Market price, in copper, above which a consumable is treated as expensive.
+#                     50000 is 5 gold.
+#        Default:     50000
+#
+
+AiPlayerbot.Consumables.Enabled = 1
+AiPlayerbot.Consumables.PremiumInInstancesOnly = 1
+AiPlayerbot.Consumables.PremiumValue = 50000
+
+#
 #    AiPlayerbot.Lifecycle.Retire.Enabled
 #        Description: P12.2 -- a bot's second ending. Where recycling resets a max-level bot to level
 #                     one and keeps its name, race and class, retirement deletes the character and

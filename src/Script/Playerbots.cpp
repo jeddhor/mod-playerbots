@@ -20,6 +20,7 @@
 #include "GatherRouteMgr.h"
 #include "ReagentSourceMgr.h"
 #include "BotLifecycleMgr.h"
+#include "BotConsumableMgr.h"
 #include "BotLogisticsMgr.h"
 #include "CraftGoalMgr.h"
 #include "BotAgendaMgr.h"
@@ -317,6 +318,10 @@ public:
             // and work the auction house sit on random triggers in the loot strategy, and a self bot
             // being played barely gives its non-combat engine a turn to roll them.
             sBotLogisticsMgr.Update(player, diff);
+
+            // Stat buffs before the fight rather than during it, and never the expensive ones
+            // outside instanced content.
+            sBotConsumableMgr.Update(player, diff);
             sBotFollowMgr.Update(player, diff);
 
             // Mail is collected on a timer, not as an activity: it needs no travel and takes no

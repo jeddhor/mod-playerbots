@@ -523,6 +523,9 @@ public:
     uint32 retireMinTimePlayed;
     uint32 retireIntervalSeconds;
     uint32 retirePerInterval;
+    bool consumablesEnabled;
+    bool consumablePremiumInSeriousContentOnly;
+    uint32 consumablePremiumValue;
     bool scrollTradeEnabled;
     float scrollBuyWillingness;
     bool deliberateDropEnabled;
