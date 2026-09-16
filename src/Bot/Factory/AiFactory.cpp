@@ -716,6 +716,12 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     if (sPlayerbotAIConfig.autoSaveMana && PlayerbotAI::IsHeal(player, true))
         nonCombatEngine->addStrategy("save mana", false);
 
+    // Out of combat too. Only the combat engine carried this, so a bot resting or following with no
+    // enemy about stood in a campfire and burned for as long as it was left there -- Alee did, until
+    // a pull put her back in the combat engine and she finally stepped out.
+    if (sPlayerbotAIConfig.autoAvoidAoe && facade->HasGameClientMaster())
+        nonCombatEngine->addStrategy("avoid aoe", false);
+
     // Autonomy is decided by SITUATION, not by how the bot came to exist.
     //
     // This used to read `IsRandomBot(player)`, so only random bots were given the `grind` and
