@@ -186,7 +186,9 @@ local function gmButton(text, x, command, permission)
             UI:SetStatus("no bot selected")
             return
         end
-        SendChatMessage("." .. command .. " " .. core.name, "SAY")
+        -- Addon channel, not chat: the client slurs a drunk character's chat, so ".summon" left as
+        -- ".shummon". The server runs the command for us as though it had been typed.
+        BI:Send("CMD", string.upper(command), core.name)
         UI:SetStatus("sent .%s %s", command, core.name)
     end)
     b.permission = permission

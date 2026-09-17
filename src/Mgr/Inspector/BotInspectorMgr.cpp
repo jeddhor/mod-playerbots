@@ -33,6 +33,7 @@
 #include "Timer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 #include <set>
 #include <sstream>
@@ -802,6 +803,50 @@ bool BotInspectorMgr::JoinMasterParty(Player* master, Player* bot)
     return group->AddMember(bot);
 }
 
+void BotInspectorMgr::HandleCommand(Player* to, std::string const& key, std::string const& name)
+{
+    // The panel's command buttons, run for the sender as if typed.
+    //
+    // They used to be sent as ordinary chat -- ".summon Cedric" said aloud and caught by the command
+    // parser -- and the 3.3.5 client slurs a drunk character's outgoing chat before it leaves the
+    // machine. An operator with a drink in them got "shummon not found" from every button. Addon
+    // messages are never slurred, so the command now travels as one and is parsed here.
+    //
+    // A fixed set, not a pass-through: the panel has three buttons, and a protocol that ran any text
+    // it was handed would be a console reachable from an addon message. ParseCommands still applies
+    // the account's own RBAC, so this grants nothing the person could not already type.
+    std::string command;
+    if (key == "SUMMON")
+        command = ".summon ";
+    else if (key == "APPEAR")
+        command = ".appear ";
+    else if (key == "SELFBOT")
+        command = ".playerbots bot self";
+    else
+    {
+        SendError(to, 400, "unknown command");
+        return;
+    }
+
+    if (key != "SELFBOT")
+    {
+        // A character name and nothing else, so no second argument can ride along with it.
+        if (name.empty() || name.size() > 12 ||
+            !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalpha(c); }))
+        {
+            SendError(to, 400, "bad character name");
+            return;
+        }
+
+        command += name;
+    }
+
+    ChatHandler handler(to->GetSession());
+    handler.ParseCommands(command);
+
+    LOG_DEBUG("playerbots", "[Inspector] {} ran {}", to->GetName(), command);
+}
+
 void BotInspectorMgr::HandleAltControl(Player* to, std::string const& action, ObjectGuid::LowType altGuid)
 {
     if (!to || !to->GetSession())
@@ -1056,6 +1101,8 @@ bool BotInspectorMgr::HandleMessage(Player* sender, std::string const& msg)
         HandleSelfLog(sender, parts.size() >= 4
                                   ? static_cast<uint32>(std::strtoul(parts[3].c_str(), nullptr, 10))
                                   : 0u);
+    else if (verb == "CMD" && parts.size() >= 4)
+        HandleCommand(sender, parts[3], parts.size() >= 5 ? parts[4] : std::string());
     else if (verb == "ALTCTL" && parts.size() >= 5)
         HandleAltControl(sender, parts[3],
                          static_cast<ObjectGuid::LowType>(std::strtoul(parts[4].c_str(), nullptr, 10)));

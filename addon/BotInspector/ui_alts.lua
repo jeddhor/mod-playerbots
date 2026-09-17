@@ -81,11 +81,11 @@ local function inWorld(alt)
     return alt.state == "bot" or alt.state == "party"
 end
 
---- Drive the real .summon, exactly as the Stats page's GM controls do, rather than reimplementing a
--- teleport. The command already does the permission checks, and doing it here would mean a second
--- implementation to keep honest.
+--- Drive the real .summon rather than reimplementing a teleport; the command does the permission checks.
+-- Sent over the addon channel, not as chat: the client slurs a drunk character's outgoing chat, and
+-- ".summon" arrived as ".shummon". The server runs it as though it had been typed.
 local function summon(name)
-    SendChatMessage(".summon " .. name, "SAY")
+    BI:Send("CMD", "SUMMON", name)
 end
 
 --- How many of the account's alts are already bots in the party.
@@ -316,7 +316,8 @@ selfState:SetJustifyH("LEFT")
 -- the permission checks and the repository load; duplicating that server-side would be a second
 -- implementation of something that works.
 local function toggleSelfBot()
-    SendChatMessage(".playerbots bot self", "SAY")
+    -- Addon channel, not chat: see summon() -- drunk slurring mangled the command in transit.
+    BI:Send("CMD", "SELFBOT")
 end
 
 local selfToggle = W.Create("Button", nil, selfPanel, "UIPanelButtonTemplate")

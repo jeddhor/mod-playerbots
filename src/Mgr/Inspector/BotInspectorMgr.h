@@ -82,6 +82,9 @@ private:
     void HandleAlts(Player* to);
 
     /// ADD / REMOVE / INVITE for one of the requesting account's own characters.
+    /// Run one of the panel's command buttons for the sender, as if they had typed it.
+    void HandleCommand(Player* to, std::string const& key, std::string const& name);
+
     void HandleAltControl(Player* to, std::string const& action, ObjectGuid::LowType altGuid);
 
     /**
