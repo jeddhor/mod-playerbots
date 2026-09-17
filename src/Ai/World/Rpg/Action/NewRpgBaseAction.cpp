@@ -250,6 +250,25 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
         if (TryDeliberateDrop(dest))
             return true;
 
+        // Never for a character somebody is playing, and never away from a party.
+        //
+        // Teleporting a stuck bot is a fair recovery for a random bot alone in the world: nobody sees
+        // it and nobody is left behind. It is the wrong answer for a self bot or a bot with company. An
+        // operator leading their alts through Redridge watched their character fail to path out of the
+        // Lakeshire inn towards a grind spot in Duskwood, run back and forth, and then vanish into
+        // Duskwood -- two thousand yards and a zone away, with the whole party left standing in the inn.
+        //
+        // So those give the activity up instead and choose again from where they stand. The walk that
+        // could not be made is abandoned; the character stays where its owner and its group are.
+        Group const* group = bot->GetGroup();
+        if (IsSelfBot(bot) || (group && group->GetMembersCount() > 1))
+        {
+            LOG_DEBUG("playerbots", "[New RPG] {} gives up an unwalkable route instead of teleporting: {}", bot->GetName(),
+                      IsSelfBot(bot) ? "a person is playing it" : "it has a party");
+            botAI->rpgInfo.ChangeToIdle();
+            return false;
+        }
+
         const AreaTableEntry* entry = sAreaTableStore.LookupEntry(bot->GetZoneId());
         std::string zone_name = PlayerbotAI::GetLocalizedAreaName(entry);
         LOG_DEBUG(
@@ -1790,6 +1809,29 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
             lo_prepared_locs.push_back(loc);
         }
     }
+    // A character somebody is playing, or one leading or following a party, keeps to its own zone
+    // when the zone has anywhere suitable. Crossing a zone line for a grind spot is fine for a random
+    // bot on its own; for a party it is how a group standing in Redridge found its leader setting off
+    // for Duskwood. Only a preference: if the zone has nothing at this level, the wider pick stands.
+    Group const* group = bot->GetGroup();
+    if (IsSelfBot(bot) || (group && group->GetMembersCount() > 1))
+    {
+        uint32 const zone = bot->GetZoneId();
+        auto const sameZone = [bot, zone](std::vector<WorldLocation>& pool)
+        {
+            std::vector<WorldLocation> kept;
+            for (WorldLocation const& loc : pool)
+                if (sMapMgr->GetZoneId(bot->GetPhaseMask(), loc) == zone)
+                    kept.push_back(loc);
+
+            if (!kept.empty())
+                pool.swap(kept);
+        };
+
+        sameZone(hi_prepared_locs);
+        sameZone(lo_prepared_locs);
+    }
+
     WorldPosition dest{};
     if (urand(1, 100) <= 50 && !hi_prepared_locs.empty())
         dest = *RandomElement(hi_prepared_locs);
