@@ -539,6 +539,17 @@ bool PlayerbotAIConfig::Initialize()
     // on default randomise timings means weeks.
     eraCappedBotSeedPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.SeedPerPass", 3);
     eraCappedBotSeedIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.SeedIntervalMs", 30000);
+
+    // Bot-run raids. Off by default: it takes twenty-five or forty bots out of the world at once, and
+    // an operator should be the one who decides a realm has bodies to spare for that.
+    raidEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.Raid.Enabled", false);
+    raidIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Raid.IntervalMs", 60000);
+    raidMaxConcurrent = sConfigMgr->GetOption<uint32>("AiPlayerbot.Raid.MaxConcurrent", 1);
+    // A raid that has not finished by now is not going to. The group is taken out of the instance and
+    // disbanded so the bots go back to the world instead of standing in a corridor all night.
+    raidMaxMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Raid.MaxMinutes", 120);
+    // Empty means every raid the module has boss strategies for; a list restricts it to those maps.
+    LoadList<std::vector<uint32>>(sConfigMgr->GetOption<std::string>("AiPlayerbot.Raid.Maps", ""), raidMaps);
     openGoSpell = sConfigMgr->GetOption<int32>("AiPlayerbot.OpenGoSpell", 6477);
 
     // Zones for NewRpgStrategy teleportation brackets

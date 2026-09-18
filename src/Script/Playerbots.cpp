@@ -24,6 +24,7 @@
 #include "BotLogisticsMgr.h"
 #include "CraftGoalMgr.h"
 #include "BotAgendaMgr.h"
+#include "BotRaidMgr.h"
 #include "BotHelpMgr.h"
 #include "BotInspectorMgr.h"
 #include "BotRollMgr.h"
@@ -837,6 +838,9 @@ public:
 
         BotAgendaMgr::instance().Load();
 
+        // Raid entry points, read from the same area triggers a player walks through.
+        BotRaidMgr::instance().Load();
+
         LOG_INFO("server.loading", "Playerbots World Thread Processor initialized");
     }
 
@@ -848,6 +852,7 @@ public:
         sBotAgendaMgr.Update(diff);          // round-robin, fixed budget per tick
         sBotHelpMgr.Update(diff);            // expire stale help requests
         sBotLfgMgr.Update(diff);             // put bots into queues real players are waiting in
+        sBotRaidMgr.Update(diff);            // assemble bot raids and retire finished ones
         sBotLifecycleMgr.Update(diff);       // retire a bot now and then; world thread only
     }
 };

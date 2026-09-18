@@ -338,6 +338,12 @@ public:
 
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.
     uint32 eraCappedBotPctAt60, eraCappedBotPctAt70, eraCappedBotPctAt80;
+    // Bot-run raids (BotRaidMgr).
+    bool raidEnabled;
+    uint32 raidIntervalMs;
+    uint32 raidMaxConcurrent;
+    uint32 raidMaxMinutes;
+    std::vector<uint32> raidMaps;
     bool eraCappedBotPromoteBelowCap;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;
     std::map<uint32, std::pair<uint32, uint32>> zoneBrackets;

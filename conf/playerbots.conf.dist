@@ -3482,6 +3482,68 @@ AiPlayerbot.EraCappedBots.PctAt80 = 0
 # grind their way into their era.
 AiPlayerbot.EraCappedBots.PromoteBelowCap = 1
 
+###############################################################################
+# BOT-RUN RAIDS
+#
+#   The module has boss strategies for nineteen raids and attaches the right one
+#   from the map a bot is standing in. What never existed was anything that put
+#   a raid together: bots group in fives at most, the Dungeon Finder forms
+#   fives, and converting a group to a raid was reachable only by chat command.
+#   These options turn on the missing half -- assembling twenty-five or forty
+#   bots at one level, placing them inside, and letting the dungeon autopilot
+#   drive the pulls.
+#
+#   Eligible bots are era-capped ones (see EraCappedBots above): a raid needs a
+#   roster that is all at one level and is going to stay there.
+###############################################################################
+
+#    AiPlayerbot.Raid.Enabled
+#        Whether bots run raids by themselves.
+#        Off by default: a single raid takes 25 or 40 bots out of the
+#        world at once, so whether the realm has bodies to spare is
+#        the operator's call. Raising MinRandomBots first is wise.
+#        Default: 0
+#
+AiPlayerbot.Raid.Enabled = 0
+
+#    AiPlayerbot.Raid.MaxConcurrent
+#        How many bot raids may run at the same time.
+#        Default: 1
+#
+AiPlayerbot.Raid.MaxConcurrent = 1
+
+#    AiPlayerbot.Raid.IntervalMs
+#        How often to look for a raid worth starting, and to retire
+#        ones that have finished.
+#        Default: 60000
+#
+AiPlayerbot.Raid.IntervalMs = 60000
+
+#    AiPlayerbot.Raid.MaxMinutes
+#        How long a raid may run before the group is taken out of the
+#        instance and disbanded. A raid that has not finished by now
+#        is stuck, and its bots are better off back in the world.
+#        Default: 120
+#
+AiPlayerbot.Raid.MaxMinutes = 120
+
+#    AiPlayerbot.Raid.Maps
+#        Which raids to run, as a comma-separated list of map ids.
+#        Empty means every raid the module can fight.
+#          Level 60: 509 Ruins of Ahn'Qiraj (20), 409 Molten Core (40),
+#                    469 Blackwing Lair (40)
+#          Level 70: 532 Karazhan (10), 568 Zul'Aman (10),
+#                    565 Gruul (25), 544 Magtheridon (25),
+#                    548 Serpentshrine (25), 550 Tempest Keep (25),
+#                    534 Hyjal (25), 564 Black Temple (25)
+#          Level 80: 533 Naxxramas (25), 615 Obsidian Sanctum (25),
+#                    616 Eye of Eternity (25), 624 Vault of Archavon (25),
+#                    249 Onyxia (25), 603 Ulduar (25),
+#                    631 Icecrown Citadel (25), 724 Ruby Sanctum (25)
+#        Default: (empty)
+#
+AiPlayerbot.Raid.Maps =
+
 # How quickly bots that are already above their ceiling are brought down onto it. Each one is a
 # full re-gear through the normal factory path, so this is bounded per pass rather than swept in
 # one go. It is self-limiting: once the population has converged, nothing sits above its ceiling
