@@ -936,6 +936,9 @@ bool PlayerbotAIConfig::Initialize()
     inspectorMinIntervalMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.Inspector.MinIntervalMs", 100);
     gatheringMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Gathering.MinFreeBagSlots", 4);
     fishingMinFreeBagSlots = sConfigMgr->GetOption<uint32>("AiPlayerbot.Fishing.MinFreeBagSlots", 4);
+    // A bot that is catching things happily would otherwise fish until its bags filled, which on a
+    // character a person plays reads as the bot being stuck at a lake.
+    fishingMaxMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Fishing.MaxMinutes", 10);
     economySupervisedBotsSell =
         sConfigMgr->GetOption<bool>("AiPlayerbot.Economy.SupervisedBotsSell", true);
     craftGoalEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.CraftGoal.Enabled", true);

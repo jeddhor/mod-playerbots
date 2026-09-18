@@ -1463,6 +1463,16 @@ AiPlayerbot.Gathering.MinFreeBagSlots = 4
 
 AiPlayerbot.Fishing.MinFreeBagSlots = 4
 
+#    AiPlayerbot.Fishing.MaxMinutes
+#        How long a bot may stay in the fishing activity before it
+#        moves on, even while it is still catching things. Without
+#        a cap the activity ends only when the bags are nearly
+#        full, which on a character a person is playing looks like
+#        the bot is stuck at the water.
+#        Default: 10
+#
+AiPlayerbot.Fishing.MaxMinutes = 10
+
 #
 #    AiPlayerbot.Quest.MaxDropsPerPass
 #        Description: How many quests a bot may drop in a single quest-log tidy-up when its log is

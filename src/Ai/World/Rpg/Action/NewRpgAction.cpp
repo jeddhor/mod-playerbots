@@ -1239,6 +1239,16 @@ bool NewRpgCraftGoalAction::Execute(Event /*event*/)
     return MoveRandomNear();
 }
 
+namespace
+{
+/// How long a bot found swimming is given to walk back to its bank before the activity is abandoned.
+constexpr uint32 FISH_SWIM_RECOVER_MS = 15 * IN_MILLISECONDS;
+
+/// How long the activity may go without a cast or a catch before it is abandoned. A cast that hooks
+/// nothing still counts as progress, so this only expires when the bot genuinely cannot fish here.
+constexpr uint32 FISH_NO_PROGRESS_MS = 2 * MINUTE * IN_MILLISECONDS;
+}  // namespace
+
 bool NewRpgFishAction::Execute(Event event)
 {
     NewRpgInfo& info = botAI->rpgInfo;
@@ -1259,10 +1269,43 @@ bool NewRpgFishAction::Execute(Event event)
         return true;
     }
 
+    // Fishing wants both feet on dry ground: "can fish" is false while swimming, and both casting and
+    // walking to the water are gated on it, so a bot that has drifted off a shoreline into the water
+    // can neither fish nor reposition. That is a bot standing in a lake doing nothing until something
+    // else happens to move it -- which, in this activity, nothing does. Head back to the spot the
+    // activity picked, and give the activity up if the bot is still swimming a little later.
+    if (bot->isSwimming())
+    {
+        if (!data.swimSince)
+            data.swimSince = getMSTime();
+
+        WorldPosition landSpot = AI_VALUE(WorldPosition, "fishing spot");
+        bool const waitedLongEnough =
+            getMSTimeDiff(data.swimSince, getMSTime()) > FISH_SWIM_RECOVER_MS;
+
+        if (landSpot.IsValid() && !waitedLongEnough)
+        {
+            MoveTo(landSpot.GetMapId(), landSpot.GetPositionX(), landSpot.GetPositionY(),
+                   landSpot.GetPositionZ());
+            return true;
+        }
+
+        LOG_DEBUG("playerbots", "[Fish] {} gave up: in the water, not on a bank it can fish from",
+                  bot->GetName());
+        botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
+        info.ChangeToIdle();
+        return true;
+    }
+
+    data.swimSince = 0;
+
     // A bob on the water outranks everything else: the catch is waiting and it expires.
     UseBobberAction bobber(botAI);
     if (bobber.isUseful())
+    {
+        data.lastProgress = getMSTime();
         return bobber.Execute(event);
+    }
 
     // Still walking to the shoreline, or the spot went stale and a new one is needed.
     MoveNearWaterAction moveNearWater(botAI);
@@ -1283,15 +1326,34 @@ bool NewRpgFishAction::Execute(Event event)
             return false;
 
         data.casts++;
+        data.lastProgress = getMSTime();
         return true;
     }
 
-    // Nothing to loot, nowhere to move to, and not in a position to cast. A bot that has been here
-    // a while without ever casting has picked a spot it cannot actually fish from -- water it can
-    // see across a cliff, most often -- so give the activity up rather than stare at it.
-    if (!data.casts && info.HasStatusPersisted(2 * MINUTE * IN_MILLISECONDS))
+    // Nothing to loot, nowhere to move to, and not in a position to cast. A bot that has picked a spot
+    // it cannot actually fish from -- water it can see across a cliff, most often -- should give the
+    // activity up rather than stare at it. Measured from the last cast or catch, not from the first:
+    // keyed on "never cast at all", a bot that managed one cast and then lost the spot stayed in this
+    // activity for good.
+    uint32 const idleFor = data.lastProgress ? getMSTimeDiff(data.lastProgress, getMSTime()) : 0;
+    if (idleFor > FISH_NO_PROGRESS_MS ||
+        (!data.lastProgress && info.HasStatusPersisted(FISH_NO_PROGRESS_MS)))
     {
-        LOG_DEBUG("playerbots", "[Fish] {} gave up: two minutes at the water without a cast", bot->GetName());
+        LOG_DEBUG("playerbots", "[Fish] {} gave up after {} cast(s): nothing to fish here", bot->GetName(),
+                  data.casts);
+        botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
+        info.ChangeToIdle();
+        return true;
+    }
+
+    // Even a bot that is catching things should not spend its afternoon on it. Without a cap the
+    // activity ends only when the bags fill, which for a character a person is playing reads as the
+    // bot being stuck at a lake.
+    if (info.HasStatusPersisted(sPlayerbotAIConfig.fishingMaxMinutes * MINUTE * IN_MILLISECONDS))
+    {
+        LOG_DEBUG("playerbots", "[Fish] {} stopping after {} minute(s) and {} cast(s)", bot->GetName(),
+                  sPlayerbotAIConfig.fishingMaxMinutes, data.casts);
+        botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
         info.ChangeToIdle();
         return true;
     }

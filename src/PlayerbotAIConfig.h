@@ -520,6 +520,7 @@ public:
     uint32 inspectorMinIntervalMs;
     uint32 gatheringMinFreeBagSlots;
     uint32 fishingMinFreeBagSlots;
+    uint32 fishingMaxMinutes;
     bool economySupervisedBotsSell;
     uint32 economyClearUntilFreeSlots;
     bool craftGoalEnabled;

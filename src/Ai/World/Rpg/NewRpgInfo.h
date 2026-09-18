@@ -111,6 +111,8 @@ struct NewRpgInfo
     struct Fish
     {
         uint32 casts{0};
+        uint32 lastProgress{0};  // last cast or catch; 0 until the first one
+        uint32 swimSince{0};     // when the bot was first found swimming, 0 while it is on land
     };
     // RPG_CRAFT_GOAL
     struct CraftGoal
