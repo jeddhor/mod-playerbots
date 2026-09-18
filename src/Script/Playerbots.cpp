@@ -523,10 +523,28 @@ public:
      */
     bool CanPacketSend(WorldSession* session, WorldPacket const& packet) override
     {
+        uint16 const opcode = packet.GetOpcode();
+
+        // A quest offered to a self bot is the AI's decision, not its owner's. Pushing a quest to the
+        // party sets the recipient's divider and sends it the offer, so an owner whose bot was offered
+        // a quest by another bot in the party got a dialog on screen -- for a decision the AI makes
+        // for itself, and one the AI answers as the offer arrives.
+        //
+        // The divider is what marks an offer, so a questgiver the person clicked themselves still
+        // opens normally, and a person steering their own character keeps every dialog.
+        if (opcode == SMSG_QUESTGIVER_QUEST_DETAILS)
+        {
+            Player* const recipient = session ? session->GetPlayer() : nullptr;
+            if (recipient && IsSelfBot(recipient) && !recipient->GetDivider().IsEmpty())
+            {
+                PlayerbotAI* const recipientAI = GET_PLAYERBOT_AI(recipient);
+                if (recipientAI && !recipientAI->HumanIsDriving())
+                    return false;
+            }
+        }
+
         if (!sPlayerbotAIConfig.suppressSelfBotSpellErrors)
             return true;
-
-        uint16 const opcode = packet.GetOpcode();
 
         // Melee swing complaints are the same problem as the cast failures below, on a different
         // opcode. A bot closing on a target swings before it is in reach, every swing produces "You

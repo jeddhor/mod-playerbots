@@ -6,6 +6,7 @@
 
 #include "ShareQuestAction.h"
 #include "Event.h"
+#include "ObjectAccessor.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "QuestPackets.h"
@@ -45,11 +46,63 @@ bool ShareQuestAction::Execute(Event event)
     return false;
 }
 
+void AutoShareQuestAction::AcceptForBot(Player* recipient, Quest const* quest)
+{
+    if (!recipient || !quest)
+        return;
+
+    // Only for a bot the AI is actually driving. A person steering their own character answers their
+    // own dialogs.
+    PlayerbotAI* recipientAI = GET_PLAYERBOT_AI(recipient);
+    if (!recipientAI || recipientAI->HumanIsDriving())
+        return;
+
+    // Only while this bot is the one being answered. Anything else means the offer was already dealt
+    // with, or belongs to a different sharer.
+    if (recipient->GetDivider() != bot->GetGUID())
+        return;
+
+    uint32 const questId = quest->GetQuestId();
+
+    if (recipient->HasQuest(questId) || !recipient->CanAddQuest(quest, false))
+    {
+        // Nothing to accept, but the offer must still be closed or the recipient stays "busy" and is
+        // refused every later share.
+        recipient->SetDivider(ObjectGuid::Empty);
+        return;
+    }
+
+    bot->SendPushToPartyResponse(recipient, QUEST_PARTY_MSG_ACCEPT_QUEST);
+    recipient->SetDivider(ObjectGuid::Empty);
+    recipient->AddQuestAndCheckCompletion(quest, bot);
+
+    LOG_DEBUG("playerbots", "[Quest] {} accepted quest {} shared by {}", recipient->GetName(), questId,
+              bot->GetName());
+}
+
 bool AutoShareQuestAction::Execute(Event /*event*/)
 {
     Group* group = bot->GetGroup();
     if (!group)
         return false;
+
+    // An offer made to this bot that nobody ever answered leaves its divider set, and the core then
+    // refuses every further share to it as busy. Offers to a bot the AI drives are answered as they
+    // arrive, so a divider still standing here is one that went unanswered -- a share from a player
+    // whose dialog this bot never saw, most often -- and it is better lost than left blocking.
+    if (!bot->GetDivider().IsEmpty())
+    {
+        if (!_dividerSeenMs)
+            _dividerSeenMs = getMSTime();
+        else if (getMSTimeDiff(_dividerSeenMs, getMSTime()) > 30 * IN_MILLISECONDS)
+        {
+            LOG_DEBUG("playerbots", "[Quest] {} clearing a quest offer nobody answered", bot->GetName());
+            bot->SetDivider(ObjectGuid::Empty);
+            _dividerSeenMs = 0;
+        }
+    }
+    else
+        _dividerSeenMs = 0;
 
     bool shared = false;
 
@@ -130,7 +183,15 @@ bool AutoShareQuestAction::Execute(Event /*event*/)
         // Recorded whether or not they accept. Acceptance is visible next pass through the
         // eligibility checks; refusal is not visible at all, which is the case this exists for.
         for (ObjectGuid const& guid : newRecipients)
+        {
             _offered.insert({logQuest, guid});
+
+            // The push only opens the offer. Until this, a quest one bot shared with another was
+            // never accepted by anyone: the only thing that answered an offer was a packet from a
+            // human master's client, so bot-to-bot shares left the offer open and the recipient
+            // marked busy for every share after it.
+            AcceptForBot(ObjectAccessor::FindPlayer(guid), quest);
+        }
 
         botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault(
             "quest_shared", "Quest shared", {}));

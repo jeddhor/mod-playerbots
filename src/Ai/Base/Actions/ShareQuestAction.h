@@ -13,7 +13,9 @@
 #include <set>
 #include <utility>
 
+class Player;
 class PlayerbotAI;
+class Quest;
 
 class ShareQuestAction : public Action
 {
@@ -43,6 +45,20 @@ private:
      * is naturally per-bot and never shared across map threads.
      */
     std::set<std::pair<uint32, ObjectGuid>> _offered;
+
+    /**
+     * Accept a quest this bot has just pushed, on behalf of a recipient the AI is driving.
+     *
+     * A push sets the recipient's divider and sends it the offer; answering that offer is the
+     * recipient client's job. A clientless bot has no client to answer with, and a self bot's owner
+     * should not be handed a dialog for a decision their AI is making -- so the decision is made
+     * here, while the divider still names this bot as the sharer, which is also what the core needs
+     * to copy the right deadline onto a timed quest.
+     */
+    void AcceptForBot(Player* recipient, Quest const* quest);
+
+    /// When this bot's own divider was first seen set, so an offer nobody answered can be cleared.
+    uint32 _dividerSeenMs{0};
 };
 
 #endif
