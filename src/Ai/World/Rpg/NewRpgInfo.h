@@ -139,6 +139,10 @@ struct NewRpgInfo
     // line to the destination, but only one of them actually goes anywhere.
     WorldPosition stuckCheckPos;
     bool stuckCheckPosValid{false};
+    // A way out of the building the bot is standing in, found once and then walked to. Cached because
+    // finding it costs terrain and path queries that are far too expensive to repeat every tick.
+    WorldPosition exitPos;
+    uint32 exitPosTs{0};
     // END MOVE_FAR
 
     using RpgData = std::variant<

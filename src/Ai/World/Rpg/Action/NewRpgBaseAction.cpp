@@ -57,6 +57,23 @@
 #include <mutex>
 #include <tuple>
 
+namespace
+{
+/// How far a leg may end up *further* from the destination and still count as route progress. Wide
+/// enough for a building's doorway or the far end of a bridge, far too small to walk off across a zone.
+constexpr float ROUTE_DETOUR_YARDS = 80.0f;
+
+/// How long a way out of a building stays worth walking to once found.
+constexpr uint32 EXIT_CACHE_MS = 30 * IN_MILLISECONDS;
+
+/// Bearings tried per ring when looking for open sky, alternating either side of the destination.
+constexpr uint32 EXIT_ANGLE_STEPS = 8;
+
+/// Most paths one search for a way out may compute. Terrain sampling is cheap next to pathfinding, so
+/// the budget is spent on candidates that are already known to be outdoors.
+constexpr uint32 EXIT_PATH_BUDGET = 3;
+}  // namespace
+
 QuestStatusData const* NewRpgBaseAction::GetQuestStatusData(uint32 questId) const
 {
     QuestStatusMap const& statusMap = bot->getQuestStatusMap();
@@ -237,6 +254,13 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
     }
     else if (++botAI->rpgInfo.stuckAttempts >= 5 && GetMSTimeDiffToNow(botAI->rpgInfo.stuckTs) >= stuckTime)
     {
+        LOG_DEBUG("playerbots",
+                  "[Path] {} out of attempts for ({:.0f},{:.0f},{:.0f}) on map {}: {:.0f} yd away, best {:.0f}, "
+                  "{}, {} s in this attempt",
+                  bot->GetName(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), dest.GetMapId(),
+                  disToDest, botAI->rpgInfo.nearestMoveFarDis, bot->IsOutdoors() ? "outdoors" : "indoors",
+                  GetMSTimeDiffToNow(botAI->rpgInfo.stuckTs) / 1000);
+
         // No meaningful progress toward dest for `stuckTime`: fall
         // back to teleporting directly so the bot can get on with
         // its RPG objective instead of oscillating indefinitely.
@@ -325,28 +349,72 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
             // INCOMPLETE) the endpoint can land right under the bot;
             // fall through to cone sampling in that case.
             float endDistToDest = dest.GetExactDist(endPos.x, endPos.y, endPos.z);
-            if (endDistToDest + 5.0f < disToDest)
+            float const legLength = bot->GetExactDist(endPos.x, endPos.y, endPos.z);
+
+            // Closing the straight line is one kind of progress, and walking a real route is another.
+            //
+            // Judging a leg only by whether its endpoint ends up nearer the destination throws away
+            // every route whose first leg goes the other way -- out of a doorway, back along a ledge,
+            // around the end of a wall -- which is the whole of what is hard about a building or a
+            // bridge. The navmesh already said this leg is walkable; a leg that goes somewhere is
+            // therefore worth walking, as long as it does not amount to setting off in the wrong
+            // direction entirely.
+            //
+            // Oscillation is not the risk it looks like: the stuck counter above judges attempts by
+            // ground covered since progress was last accepted, so a bot bouncing between two ends of
+            // a room still runs out of attempts, while a bot working its way out of one does not.
+            bool const closesTheGap = endDistToDest + 5.0f < disToDest;
+            bool const realRoute = legLength > 15.0f && endDistToDest < disToDest + ROUTE_DETOUR_YARDS;
+
+            if (closesTheGap || realRoute)
             {
+                if (!closesTheGap)
+                {
+                    LOG_DEBUG("playerbots",
+                              "[Path] {} takes a {:.0f} yd leg that ends {:.0f} yd further out, {} -- a route, not a "
+                              "straight line",
+                              bot->GetName(), legLength, endDistToDest - disToDest,
+                              bot->IsOutdoors() ? "outdoors" : "indoors");
+                }
+
                 return MoveTo(bot->GetMapId(), endPos.x, endPos.y, endPos.z, false, false, false, true);
             }
         }
     }
+
+    // Nothing routable toward the destination. If the bot is standing in a building, the way on is the
+    // way out, and that is a different destination from the one it was asked for.
+    if (MoveOutOfBuilding(dest))
+        return true;
 
     // Fallback: mmap couldn't route to the destination. Sample the
     // forward cone for a reachable stepping stone so the bot keeps
     // moving and can try again from a new vantage point. Cap at 2
     // samples — we already spent one PathGenerator call above and at
     // 3000 bots every extra CalculatePath matters.
-    float minDelta = M_PI;
+    float minDelta = static_cast<float>(M_PI) * 2.0f;
     const float x = bot->GetPositionX();
     const float y = bot->GetPositionY();
     const float z = bot->GetPositionZ();
     const float baseAngle = bot->GetAngle(&dest);
     float rx, ry, rz;
     bool found = false;
-    for (int attempt = 0; attempt < 2; ++attempt)
+
+    // Indoors the cone opens all the way round, and gets more samples.
+    //
+    // A forward cone is the right shape in open country: the destination is that way, and so is the
+    // ground worth stepping onto. Inside a building it is the wrong shape for the same reason the
+    // straight-line test is -- the door is wherever the door is, frequently behind the bot, and a
+    // sample toward the destination is a sample into a wall. Sampling is also much cheaper to justify
+    // here, because a bot that has reached this point indoors has already failed to find a route and
+    // is otherwise about to stand still.
+    bool const indoors = !bot->IsOutdoors();
+    int const samples = indoors ? 4 : 2;
+    float const spread = indoors ? static_cast<float>(M_PI) * 2.0f : static_cast<float>(M_PI);
+
+    for (int attempt = 0; attempt < samples; ++attempt)
     {
-        float delta = (rand_norm() - 0.5f) * static_cast<float>(M_PI);  // ±π/2, forward cone
+        float delta = (rand_norm() - 0.5f) * spread;
         float sampleDis = (0.5f + rand_norm() * 0.5f) * pathFinderDis;
         float angle = baseAngle + delta;
         float dx = x + cos(angle) * sampleDis;
@@ -371,6 +439,92 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
     {
         return MoveTo(bot->GetMapId(), rx, ry, rz, false, false, false, true);
     }
+    return false;
+}
+
+bool NewRpgBaseAction::MoveOutOfBuilding(WorldPosition const& dest)
+{
+    if (bot->IsOutdoors())
+        return false;
+
+    Map* map = bot->GetMap();
+    if (!map)
+        return false;
+
+    // Inside a dungeon everywhere is indoors, so there is no outdoor spot to aim for and this would
+    // send the bot hunting for one instead of walking the route it was given.
+    if (map->Instanceable())
+        return false;
+
+    NewRpgInfo& info = botAI->rpgInfo;
+
+    // Walk to a way out already found, until it is reached or goes stale. Finding one costs terrain and
+    // path queries, which is not something to repeat every tick for every bot indoors.
+    if (info.exitPos != WorldPosition() && info.exitPos.GetMapId() == bot->GetMapId() &&
+        GetMSTimeDiffToNow(info.exitPosTs) < EXIT_CACHE_MS)
+    {
+        if (bot->GetExactDist(info.exitPos.GetPositionX(), info.exitPos.GetPositionY(),
+                              info.exitPos.GetPositionZ()) > 5.0f)
+        {
+            return MoveTo(info.exitPos.GetMapId(), info.exitPos.GetPositionX(), info.exitPos.GetPositionY(),
+                          info.exitPos.GetPositionZ(), false, false, false, true);
+        }
+
+        // Standing on it and still indoors: it was not a way out after all.
+        info.exitPos = WorldPosition();
+        info.exitPosTs = 0;
+        return false;
+    }
+
+    // Look for open sky, nearest rings first, starting each ring in the direction of the destination so
+    // that of two doors the one on the way is preferred.
+    float const baseAngle = bot->GetAngle(&dest);
+    uint32 pathsTried = 0;
+
+    for (float radius : {15.0f, 30.0f, 50.0f})
+    {
+        for (uint32 step = 0; step < EXIT_ANGLE_STEPS; ++step)
+        {
+            // Alternate to either side of the destination's bearing: 0, +45, -45, +90, -90 ...
+            float const offset = static_cast<float>((step + 1) / 2) * (static_cast<float>(M_PI) / 4.0f);
+            float const angle = baseAngle + ((step % 2) ? offset : -offset);
+
+            float const cx = bot->GetPositionX() + cos(angle) * radius;
+            float const cy = bot->GetPositionY() + sin(angle) * radius;
+
+            // Ground first: a candidate hanging in the air is no use, and the height decides which
+            // floor of a building the terrain query is asked about.
+            float const cz = map->GetHeight(bot->GetPhaseMask(), cx, cy, bot->GetPositionZ() + 5.0f, true);
+            if (cz <= INVALID_HEIGHT)
+                continue;
+
+            PositionFullTerrainStatus terrain;
+            map->GetFullTerrainStatusForPosition(bot->GetPhaseMask(), cx, cy, cz, bot->GetCollisionHeight(), terrain);
+            if (!terrain.outdoors)
+                continue;
+
+            if (++pathsTried > EXIT_PATH_BUDGET)
+                return false;
+
+            // Only a complete route counts. A partial one may well end back inside, and the point of
+            // this is to be somewhere the ordinary pathing can work from.
+            PathGenerator path(bot);
+            path.CalculatePath(cx, cy, cz);
+            if (path.GetPathType() & (~PATHFIND_NORMAL))
+                continue;
+
+            info.exitPos = WorldPosition(bot->GetMapId(), cx, cy, cz);
+            info.exitPosTs = getMSTime();
+
+            LOG_DEBUG("playerbots",
+                      "[Path] {} is indoors with no route to ({:.0f},{:.0f},{:.0f}); heading outside first, "
+                      "{:.0f} yd away",
+                      bot->GetName(), dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), radius);
+
+            return MoveTo(bot->GetMapId(), cx, cy, cz, false, false, false, true);
+        }
+    }
+
     return false;
 }
 

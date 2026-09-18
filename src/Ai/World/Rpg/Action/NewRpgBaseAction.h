@@ -73,6 +73,22 @@ protected:
      */
     bool TryDeliberateDrop(WorldPosition const& dest);
 
+    /**
+     * 4k -- get out of the building first.
+     *
+     * A bot inside an inn has no notion of a door. Pathing is asked for a route to somewhere across
+     * the zone, and the only leg it can offer first walks *away* from that destination -- out through
+     * the doorway -- so the "is this endpoint closer to where I am going" test rejects it and the
+     * fallback samples the cone toward the destination, which is the wall. An operator watched their
+     * character walk in and out of the Lakeshire inn seven times doing exactly that.
+     *
+     * So when a bot indoors cannot get a route accepted, the destination becomes the nearest outdoor
+     * spot it can actually path to, and the real walk is attempted again from there. Only outside
+     * instances: in a dungeon every point is indoors, and hunting for an outdoor one would replace
+     * one wrong walk with another.
+     */
+    bool MoveOutOfBuilding(WorldPosition const& dest);
+
     /* QUEST RELATED CHECK */
     /// Safe replacement for `bot->getQuestStatusMap().at(questId)`, which throws std::out_of_range
     /// for a quest that is not in the bot's log. Returns nullptr instead so callers can bail out.
