@@ -825,6 +825,13 @@ bool PlayerbotAIConfig::Initialize()
     autoPickReward = sConfigMgr->GetOption<std::string>("AiPlayerbot.AutoPickReward", "yes");
     autoEquipUpgradeLoot = sConfigMgr->GetOption<bool>("AiPlayerbot.AutoEquipUpgradeLoot", true);
     equipUpgradeThreshold = sConfigMgr->GetOption<float>("AiPlayerbot.EquipUpgradeThreshold", 1.1f);
+    // Whether an item's score is multiplied by its item level and quality on top of the stats that
+    // item level already bought. Off: that double-count is what made bots trade a stat they want for
+    // a higher number. On restores the old scoring.
+    itemScoreLevelBlend = sConfigMgr->GetOption<bool>("AiPlayerbot.ItemScore.LevelBlend", false);
+    // Gear of this quality or better is never auto-vendored by a bot somebody owns, even once it has
+    // been replaced. ITEM_QUALITY_UNCOMMON is 2, RARE 3, EPIC 4; 0 turns the protection off.
+    protectOwnedGearQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.ProtectOwnedGearQuality", 3);
     twoRoundsGearInit = sConfigMgr->GetOption<bool>("AiPlayerbot.TwoRoundsGearInit", false);
     syncQuestWithPlayer = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncQuestWithPlayer", true);
     syncQuestForPlayer = sConfigMgr->GetOption<bool>("AiPlayerbot.SyncQuestForPlayer", false);

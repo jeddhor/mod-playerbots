@@ -10,6 +10,7 @@
 #include "ItemTemplate.h"
 #include "ObjectMgr.h"
 #include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
 #include "PlayerbotFactory.h"
 #include "RandomItemMgr.h"
 #include "SharedDefines.h"
@@ -46,6 +47,10 @@ constexpr float ARMOR_PENALTY_STRONG = 0.70f;    // plate tanks: armour is most 
 constexpr float ARMOR_PENALTY_NOTABLE = 0.82f;   // armour scales into attack power, or bear form
 constexpr float ARMOR_PENALTY_MODERATE = 0.90f;  // melee generally: armour helps, stats matter more
 constexpr float ARMOR_PENALTY_MILD = 0.96f;      // healers and casters: stats dominate outright
+
+// Item level's whole contribution to a comparison score: enough to separate two items the stat
+// weights rate identically, far too small to outweigh a stat the class actually wants.
+constexpr float ITEM_LEVEL_TIEBREAK = 0.01f;
 }
 
 template <size_t Size>
@@ -88,7 +93,9 @@ StatsWeightCalculator::StatsWeightCalculator(Player* player) : player_(player)
 
     enable_overflow_penalty_ = true;
     enable_item_set_bonus_ = true;
-    enable_quality_blend_ = true;
+    // Off by default: see the comment where it is applied. AiPlayerbot.ItemScore.LevelBlend restores
+    // the old scoring for an operator who wants it back.
+    enable_quality_blend_ = sPlayerbotAIConfig.itemScoreLevelBlend;
 }
 
 void StatsWeightCalculator::Reset()
@@ -140,6 +147,25 @@ float StatsWeightCalculator::CalculateItem(uint32 itemId, int32 randomPropertyId
             weight_ *= PlayerbotFactory::CalcMixedGearScore(lvl, ITEM_QUALITY_EPIC);
         else
             weight_ *= PlayerbotFactory::CalcMixedGearScore(proto->ItemLevel, proto->Quality);
+    }
+    else if (weight_ > 0.0f)
+    {
+        // Item level counts once, not twice.
+        //
+        // The multiplier above scales a score that is already made of the item's stats, and an item's
+        // stats are what its item level buys. Counting it again squares its influence, and an item
+        // whose stats the class does not want then wins on level alone. An operator watched exactly
+        // that: their warrior sold a Subterranean Cape (4 strength, 4 agility, item level 18) to wear
+        // a Lambent Scale Cloak (4 strength, 2 spirit, item level 24). On stats the cape is strictly
+        // better -- same strength, and agility instead of a stat a warrior has no use for -- but
+        // 4.8 x 23 lost to 4.0 x 29.
+        //
+        // So the comparison is by what the item does for this character, and item level only breaks a
+        // tie between two items the weights cannot separate. Added rather than multiplied, and only
+        // to an item that scored something, so that a piece with no stats worth having still scores
+        // zero: every caller reads a zero score as "not worth equipping", and a tiebreak that lifted
+        // junk above zero would have bots equipping and rolling on it.
+        weight_ += proto->ItemLevel * ITEM_LEVEL_TIEBREAK;
     }
 
     // Apply weapon speed governance if slot is provided and this is a weapon

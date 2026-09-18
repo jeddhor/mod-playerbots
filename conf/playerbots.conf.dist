@@ -288,6 +288,29 @@ AiPlayerbot.AutoEquipUpgradeLoot = 1
 # Default: 1.1 (Equip when the equipment score of the new item is 1.1 times higher than the currently equipped item)
 AiPlayerbot.EquipUpgradeThreshold = 1.1
 
+#    AiPlayerbot.ItemScore.LevelBlend
+#        Multiply an item's score by its item level and quality,
+#        on top of the stats that item level already bought.
+#        Counting item level twice makes the higher-level item win
+#        even when its stats are ones the class has no use for --
+#        a warrior trading 4 agility for 2 spirit because the
+#        cloak was six levels higher. Off, items are compared on
+#        what they do for the character and item level only breaks
+#        a tie. Set to 1 for the old scoring.
+#        Default: 0
+#
+AiPlayerbot.ItemScore.LevelBlend = 0
+
+#    AiPlayerbot.ProtectOwnedGearQuality
+#        Gear of this quality or better is never auto-vendored by
+#        a bot somebody owns -- a self bot or one of their alts --
+#        even after it has been replaced. A random bot still sells
+#        its cast-offs. 2 = uncommon (green), 3 = rare (blue),
+#        4 = epic; 0 turns the protection off.
+#        Default: 3
+#
+AiPlayerbot.ProtectOwnedGearQuality = 3
+
 # Two rounds of equipment initialization to create more suitable gear
 AiPlayerbot.TwoRoundsGearInit = 0
 

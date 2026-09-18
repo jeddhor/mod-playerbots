@@ -118,6 +118,19 @@ bool VendorJunkAction::IsOutleveledGear(Item* item, ItemTemplate const* proto, I
     if (proto->Quality > sPlayerbotAIConfig.vendorOutleveledGearMaxQuality)
         return false;
 
+    // A person's own characters do not sell their good gear behind their back.
+    //
+    // For a random bot this is housekeeping nobody watches. For a character somebody plays, or one of
+    // their alts, a blue that has just been replaced is theirs to decide about -- it is the off-set
+    // piece, the one to pass to an alt, the one they wanted to keep for the look of it. An operator
+    // watched their warrior vendor a Subterranean Cape moments after replacing it, and the replacement
+    // was a downgrade besides. Selling it made that mistake permanent.
+    if (sPlayerbotAIConfig.protectOwnedGearQuality &&
+        proto->Quality >= sPlayerbotAIConfig.protectOwnedGearQuality && !sRandomPlayerbotMgr.IsRandomBot(bot))
+    {
+        return false;
+    }
+
     // The load-bearing guard. QueryItemUsageForEquip returns ITEM_USAGE_NONE both for gear the bot
     // has outgrown and for gear it has not grown into yet -- BotCanUseItem fails the level check and
     // the reason is gone by the time we see the answer. Without this, a level 13 character would
