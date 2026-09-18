@@ -514,6 +514,14 @@ bool PlayerbotAIConfig::Initialize()
     // currently below each ceiling, so the two numbers mean what an operator expects them to.
     eraCappedBotPctAt60 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt60", 15);
     eraCappedBotPctAt70 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt70", 15);
+    // The level 80 share exists for the same reason as the other two, and matters more: a 25 man raid
+    // has to be filled from bots that are at the level cap and stay there. A bot parked here is
+    // exempt from the played-time recycle, which would otherwise take it apart again.
+    eraCappedBotPctAt80 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.PctAt80", 0);
+    // Whether a bot assigned to an era is moved up onto its ceiling, or left to reach it by playing.
+    // Left to play, a level 12 bot assigned to the level 60 era joins that population in months, so
+    // the raid-sized populations an operator asked for never arrive.
+    eraCappedBotPromoteBelowCap = sConfigMgr->GetOption<bool>("AiPlayerbot.EraCappedBots.PromoteBelowCap", true);
 
     // Two shares of one roster cannot exceed it. Clamping the second rather than refusing to start,
     // because a realm running with slightly fewer TBC bots than asked for is a far better outcome
@@ -522,6 +530,8 @@ bool PlayerbotAIConfig::Initialize()
         eraCappedBotPctAt60 = 100;
     if (eraCappedBotPctAt60 + eraCappedBotPctAt70 > 100)
         eraCappedBotPctAt70 = 100 - eraCappedBotPctAt60;
+    if (eraCappedBotPctAt60 + eraCappedBotPctAt70 + eraCappedBotPctAt80 > 100)
+        eraCappedBotPctAt80 = 100 - eraCappedBotPctAt60 - eraCappedBotPctAt70;
 
     // How quickly bots already above their ceiling are brought down onto it. Bounded per pass
     // because each one is a full re-gear, and this shares the world thread. Set PerPass to 0 to

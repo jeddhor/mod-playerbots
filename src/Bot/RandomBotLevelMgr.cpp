@@ -118,9 +118,10 @@ std::vector<LevelBracketConfig>& RandomBotLevelMgr::GetFactionRanges(TeamId team
 // working copies at runtime, so PlayerbotAIConfig's own vectors are never touched after this point.
 namespace
 {
-    /// The two expansion ceilings. Not configurable: they are facts about the game, not policy.
+    /// The three expansion ceilings. Not configurable: they are facts about the game, not policy.
     constexpr uint8 ERA_CAP_CLASSIC = 60;
     constexpr uint8 ERA_CAP_TBC = 70;
+    constexpr uint8 ERA_CAP_WOTLK = 80;
 }
 
 uint8 RandomBotLevelMgr::EraCapFor(Player* bot)
@@ -130,7 +131,8 @@ uint8 RandomBotLevelMgr::EraCapFor(Player* bot)
 
     uint32 const pct60 = sPlayerbotAIConfig.eraCappedBotPctAt60;
     uint32 const pct70 = sPlayerbotAIConfig.eraCappedBotPctAt70;
-    if (!pct60 && !pct70)
+    uint32 const pct80 = sPlayerbotAIConfig.eraCappedBotPctAt80;
+    if (!pct60 && !pct70 && !pct80)
         return 0;
 
     // The GUID counter is dense and sequential, so taking it modulo 100 spreads bots evenly across
@@ -141,6 +143,8 @@ uint8 RandomBotLevelMgr::EraCapFor(Player* bot)
         return ERA_CAP_CLASSIC;
     if (slot < pct60 + pct70)
         return ERA_CAP_TBC;
+    if (slot < pct60 + pct70 + pct80)
+        return ERA_CAP_WOTLK;
 
     return 0;
 }
@@ -163,8 +167,9 @@ void RandomBotLevelMgr::ApplyXpGainPolicy(Player* bot)
 
     uint8 const cap = EraCapFor(bot);
 
-    // Exactly at its ceiling: stop here, and stay here. The played-time reset only considers bots
-    // at RandomBotMaxLevel, so a bot parked at 60 is never recycled and the population holds.
+    // Exactly at its ceiling: stop here, and stay here. The played-time reset skips a bot sitting on
+    // its ceiling, so a parked bot is never recycled and the population holds -- which is what a raid
+    // roster needs, and it is why the level 80 era can sit on the level cap at all.
     //
     // Deliberately not ">= cap". A bot already past its ceiling is left alone rather than frozen
     // wherever it happens to be: freezing a level 75 bot with a 70 cap would strand it in a level
@@ -185,7 +190,8 @@ void RandomBotLevelMgr::ApplyXpGainPolicy(Player* bot)
 
 std::string RandomBotLevelMgr::DescribeEraPopulation()
 {
-    uint32 assigned60 = 0, assigned70 = 0, parked60 = 0, parked70 = 0, uncapped = 0, belowCap = 0;
+    uint32 assigned60 = 0, assigned70 = 0, assigned80 = 0, parked60 = 0, parked70 = 0, parked80 = 0;
+    uint32 uncapped = 0, belowCap = 0;
 
     for (auto const& itr : ObjectAccessor::GetPlayers())
     {
@@ -200,24 +206,27 @@ std::string RandomBotLevelMgr::DescribeEraPopulation()
             continue;
         }
 
-        (cap == 60 ? assigned60 : assigned70) += 1;
+        uint32& assigned = cap == 60 ? assigned60 : (cap == 70 ? assigned70 : assigned80);
+        uint32& parked = cap == 60 ? parked60 : (cap == 70 ? parked70 : parked80);
+        ++assigned;
 
         if (bot->GetLevel() == cap)
-            (cap == 60 ? parked60 : parked70) += 1;
+            ++parked;
         else if (bot->GetLevel() < cap)
             ++belowCap;
     }
 
     return Acore::StringFormat(
-        "eras: configured {}% at 60 and {}% at 70.\n"
-        "  online and assigned: {} to 60 ({} there now), {} to 70 ({} there now), {} uncapped.\n"
-        "  {} assigned bots are still below their ceiling and on their way to it, {} have been "
-        "re-rolled down onto one.\n"
-        "Assigned counts follow the config immediately; the 'there now' counts fill in as bots "
-        "level or are recycled, then should stop moving. A 'there now' figure that keeps falling "
-        "means something is still pulling capped bots out of their era.",
-        sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70, assigned60, parked60,
-        assigned70, parked70, uncapped, belowCap, instance()._eraSeeded);
+        "eras: configured {}% at 60, {}% at 70 and {}% at 80.\n"
+        "  online and assigned: {} to 60 ({} there now), {} to 70 ({} there now), {} to 80 ({} there "
+        "now), {} uncapped.\n"
+        "  {} assigned bots are not on their ceiling yet, {} have been moved onto one.\n"
+        "Assigned counts follow the config immediately; the 'there now' counts fill in as the seeding "
+        "pass moves bots onto their ceiling, then should stop moving. A 'there now' figure that keeps "
+        "falling means something is still pulling capped bots out of their era.",
+        sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70,
+        sPlayerbotAIConfig.eraCappedBotPctAt80, assigned60, parked60, assigned70, parked70, assigned80, parked80,
+        uncapped, belowCap, instance()._eraSeeded);
 }
 
 void RandomBotLevelMgr::LoadConfig()
@@ -249,12 +258,16 @@ void RandomBotLevelMgr::LogStartupSummary() const
                 _hordeRanges[i].lower, _hordeRanges[i].upper, _hordeRanges[i].pct);
     }
 
-    if (!sPlayerbotAIConfig.eraCappedBotPctAt60 && !sPlayerbotAIConfig.eraCappedBotPctAt70)
+    if (!sPlayerbotAIConfig.eraCappedBotPctAt60 && !sPlayerbotAIConfig.eraCappedBotPctAt70 &&
+        !sPlayerbotAIConfig.eraCappedBotPctAt80)
         LOG_INFO("playerbots", "[RandomBotLevelMgr] Era caps disabled: every bot levels to the cap.");
     else
         LOG_INFO("playerbots",
-            "[RandomBotLevelMgr] Era caps: {}% of random bots stop at level 60, {}% at level 70.",
-            sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70);
+            "[RandomBotLevelMgr] Era caps: {}% of random bots stop at level 60, {}% at 70, {}% at 80. Bots below "
+            "their ceiling are {}.",
+            sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70,
+            sPlayerbotAIConfig.eraCappedBotPctAt80,
+            sPlayerbotAIConfig.eraCappedBotPromoteBelowCap ? "moved up onto it" : "left to level into it");
 
     if (!sPlayerbotAIConfig.resetBotLevelEnabled)
         LOG_INFO("playerbots", "[RandomBotLevelMgr] Level reset sub-feature disabled via configuration.");
@@ -1002,6 +1015,17 @@ void RandomBotLevelMgr::RunResetPlayedTimeCheck()
         if (currentLevel < sPlayerbotAIConfig.resetBotLevelMaxLevel)
             continue;
 
+        // A bot parked on its era ceiling stays there.
+        //
+        // This check recycles bots that have sat at the level cap long enough, which is how the roster
+        // keeps a spread of levels instead of collecting at the top. A bot assigned to an era is the
+        // opposite case: sitting at its ceiling is its whole purpose, and it is the population a raid
+        // is filled from. A ceiling below the level cap was already safe here by accident -- the test
+        // above skips it -- but the level 80 era sits exactly on the cap, so without this the 80
+        // population would be recycled away as fast as it was built.
+        if (uint8 const cap = EraCapFor(candidate); cap && currentLevel == cap)
+            continue;
+
         // Only reset if the bot has played at least MinTimePlayed seconds at this level.
         if (candidate->GetLevelPlayedTime() < sPlayerbotAIConfig.resetBotLevelMinTimePlayed)
         {
@@ -1076,7 +1100,22 @@ void RandomBotLevelMgr::RunEraSeedingPass()
             continue;
 
         uint8 const cap = EraCapFor(bot);
-        if (!cap || bot->GetLevel() <= cap)
+        if (!cap || bot->GetLevel() == cap)
+            continue;
+
+        // Below its ceiling, not above it.
+        //
+        // This pass was written to bring bots down onto a ceiling they had already climbed past, which
+        // is the only direction that matters on a realm whose bots are already at level. It is the
+        // wrong direction for the population an operator actually wants: a bot assigned to the level
+        // 60 era and currently level 12 has to earn forty-eight levels before it joins that
+        // population, and at ordinary XP rates that is months. Measured on this realm with 15% of the
+        // roster assigned to each of 60 and 70: 83 characters in the whole 60-69 bracket and 533 still
+        // below level 20, so a forty-man raid could not be filled from bots that belong to that era.
+        //
+        // Promotion is the same operation as the demotion below and as a bot's first roll: a level is
+        // assigned and the factory re-gears to match. Nothing here is earned, in either direction.
+        if (bot->GetLevel() < cap && !sPlayerbotAIConfig.eraCappedBotPromoteBelowCap)
             continue;
 
         // A death knight cannot exist below its starting level, so one assigned a ceiling beneath
@@ -1087,8 +1126,8 @@ void RandomBotLevelMgr::RunEraSeedingPass()
         if (bot->IsInCombat() || bot->isDead() || bot->InBattleground() || bot->GetMap()->Instanceable())
             continue;
 
-        LOG_INFO("playerbots", "[Era] {} is level {} but belongs to the level {} population, re-rolling it there",
-                 bot->GetName(), bot->GetLevel(), cap);
+        LOG_INFO("playerbots", "[Era] {} is level {} but belongs to the level {} population, {} it there",
+                 bot->GetName(), bot->GetLevel(), cap, bot->GetLevel() < cap ? "bringing" : "re-rolling");
 
         PlayerbotFactory factory(bot, cap);
         factory.Randomize(false);
@@ -1119,7 +1158,8 @@ void RandomBotLevelMgr::Update(uint32 diff)
         }
     }
 
-    if (sPlayerbotAIConfig.eraCappedBotPctAt60 || sPlayerbotAIConfig.eraCappedBotPctAt70)
+    if (sPlayerbotAIConfig.eraCappedBotPctAt60 || sPlayerbotAIConfig.eraCappedBotPctAt70 ||
+        sPlayerbotAIConfig.eraCappedBotPctAt80)
     {
         _eraSeedTimer += diff;
         if (_eraSeedTimer >= sPlayerbotAIConfig.eraCappedBotSeedIntervalMs)

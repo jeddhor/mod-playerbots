@@ -337,7 +337,8 @@ public:
     uint32 humanControlAssertedMs;
 
     // P13.2 -- percentage of random bots that stop levelling at each expansion's ceiling.
-    uint32 eraCappedBotPctAt60, eraCappedBotPctAt70;
+    uint32 eraCappedBotPctAt60, eraCappedBotPctAt70, eraCappedBotPctAt80;
+    bool eraCappedBotPromoteBelowCap;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;
     std::map<uint32, std::pair<uint32, uint32>> zoneBrackets;
     bool logInGroupOnly, logValuesPerTick;

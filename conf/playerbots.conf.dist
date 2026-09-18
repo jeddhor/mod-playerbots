@@ -3469,6 +3469,19 @@ AiPlayerbot.EnemyTerritoryChance = 10
 AiPlayerbot.EraCappedBots.PctAt60 = 15
 AiPlayerbot.EraCappedBots.PctAt70 = 15
 
+# The level 80 share of the roster. Same mechanism as the two above, and the one a 25 man raid is
+# filled from: a bot parked at 80 is exempt from the played-time recycle that otherwise takes bots
+# apart once they have sat at the level cap for a while, so this population holds instead of
+# dissolving. 0 leaves every uncapped bot to the ordinary recycle.
+AiPlayerbot.EraCappedBots.PctAt80 = 0
+
+# Whether a bot assigned to an era is moved up onto its ceiling, or left to reach it by playing.
+# Levels here are assigned, not earned, in both directions -- the same thing happens on a bot's
+# first roll. Left to play, a level 12 bot assigned to the level 60 era joins that population in
+# months, which is why the raid-sized populations never seemed to arrive. Set to 0 for bots that
+# grind their way into their era.
+AiPlayerbot.EraCappedBots.PromoteBelowCap = 1
+
 # How quickly bots that are already above their ceiling are brought down onto it. Each one is a
 # full re-gear through the normal factory path, so this is bounded per pass rather than swept in
 # one go. It is self-limiting: once the population has converged, nothing sits above its ceiling
