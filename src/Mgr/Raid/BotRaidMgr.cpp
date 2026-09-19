@@ -326,17 +326,29 @@ void BotRaidMgr::PruneRuns()
 
     for (ObjectGuid const& groupGuid : finished)
     {
+        std::string name;
+        uint32 mapId = 0;
+        uint32 minutes = 0;
+        bool early = false;
+
+        {
+            std::shared_lock<std::shared_mutex> lock(_mutex);
+            if (auto const itr = _runs.find(groupGuid); itr != _runs.end())
+            {
+                name = itr->second.name;
+                mapId = itr->second.mapId;
+                minutes = GetMSTimeDiffToNow(itr->second.startedMs) / (MINUTE * IN_MILLISECONDS);
+                early = GetMSTimeDiffToNow(itr->second.startedMs) < EARLY_EXIT_MS;
+            }
+        }
+
         // Logged, because the end of a raid is the interesting half. A run that started leaves a line
         // and a run that was sent home leaves a line; without this one a raid that emptied out looked
         // exactly like a raid still quietly in progress, and the only way to tell was to count group
         // members by hand.
-        {
-            std::shared_lock<std::shared_mutex> lock(_mutex);
-            if (auto const itr = _runs.find(groupGuid); itr != _runs.end())
-                LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s); the group has left the instance",
-                         itr->second.name,
-                         GetMSTimeDiffToNow(itr->second.startedMs) / (MINUTE * IN_MILLISECONDS));
-        }
+        if (!name.empty())
+            LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s); the group has left the instance", name,
+                     minutes);
 
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
             group->Disband(true);
@@ -344,6 +356,15 @@ void BotRaidMgr::PruneRuns()
         std::unique_lock<std::shared_mutex> lock(_mutex);
         _runs.erase(groupGuid);
         ++_finished;
+
+        // Hold a raid back before trying it again, and hold it back much longer when the group did not
+        // last. Every run so far has ended the same way -- a wipe, with the ghosts appearing outside --
+        // and with one raid at a time and a pass every minute that means another twenty-five bots
+        // killed and re-geared every few minutes. A raid the bots cannot survive should be attempted
+        // occasionally, not continuously, and the wait lets the idle bots go to a different one.
+        if (mapId)
+            _retryAfterMs[mapId] =
+                getMSTime() + (early ? sPlayerbotAIConfig.raidRetryMinutes : 1) * MINUTE * IN_MILLISECONDS;
     }
 }
 
@@ -361,15 +382,21 @@ bool BotRaidMgr::TryStartRaid()
     // the second would be a separate instance of the same fights, which is not what more raiding
     // means.
     std::unordered_set<uint32> running;
+    std::unordered_set<uint32> waiting;
     {
+        uint32 const now = getMSTime();
         std::shared_lock<std::shared_mutex> lock(_mutex);
         for (auto const& [groupGuid, run] : _runs)
             running.insert(run.mapId);
+
+        for (auto const& [mapId, retryAt] : _retryAfterMs)
+            if (now < retryAt)
+                waiting.insert(mapId);
     }
 
     for (RaidDef const& def : candidates)
     {
-        if (running.count(def.mapId))
+        if (running.count(def.mapId) || waiting.count(def.mapId))
             continue;
 
         for (TeamId team : {TEAM_ALLIANCE, TEAM_HORDE})

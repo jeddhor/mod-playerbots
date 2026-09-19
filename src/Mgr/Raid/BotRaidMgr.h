@@ -108,6 +108,9 @@ private:
     mutable std::shared_mutex _mutex;
     uint32 _nextCheckMs{0};
     std::unordered_map<ObjectGuid, Run> _runs;
+    /// When each raid may be attempted again, by map id. A raid the bots cannot survive would otherwise
+    /// be retried every minute, killing another twenty-five of them each time.
+    std::unordered_map<uint32, uint32> _retryAfterMs;
     std::unordered_map<uint32, EntryPoint> _entryPoints;
 
     uint32 _started{0};

@@ -548,6 +548,9 @@ bool PlayerbotAIConfig::Initialize()
     // A raid that has not finished by now is not going to. The group is taken out of the instance and
     // disbanded so the bots go back to the world instead of standing in a corridor all night.
     raidMaxMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Raid.MaxMinutes", 120);
+    // How long a raid is left alone after a run that ended early. Every run so far has ended in a wipe,
+    // and without a wait the same raid is attempted again a minute later with another twenty-five bots.
+    raidRetryMinutes = sConfigMgr->GetOption<uint32>("AiPlayerbot.Raid.RetryMinutes", 30);
     // Empty means every raid the module has boss strategies for; a list restricts it to those maps.
     LoadList<std::vector<uint32>>(sConfigMgr->GetOption<std::string>("AiPlayerbot.Raid.Maps", ""), raidMaps);
     openGoSpell = sConfigMgr->GetOption<int32>("AiPlayerbot.OpenGoSpell", 6477);

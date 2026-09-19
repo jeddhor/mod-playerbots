@@ -3527,6 +3527,17 @@ AiPlayerbot.Raid.IntervalMs = 60000
 #
 AiPlayerbot.Raid.MaxMinutes = 120
 
+#    AiPlayerbot.Raid.RetryMinutes
+#        How long a raid is left alone after a run that ended
+#        within five minutes. Such a run wiped, and without a wait
+#        the same raid is attempted again on the next pass with
+#        another twenty-five bots -- killed, re-geared and sent
+#        back every few minutes. The wait also lets the manager
+#        spend the realm's idle bots on a different raid.
+#        Default: 30
+#
+AiPlayerbot.Raid.RetryMinutes = 30
+
 #    AiPlayerbot.Raid.Maps
 #        Which raids to run, as a comma-separated list of map ids.
 #        Empty means every raid the module can fight.

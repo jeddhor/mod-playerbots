@@ -343,6 +343,7 @@ public:
     uint32 raidIntervalMs;
     uint32 raidMaxConcurrent;
     uint32 raidMaxMinutes;
+    uint32 raidRetryMinutes;
     std::vector<uint32> raidMaps;
     bool eraCappedBotPromoteBelowCap;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;
