@@ -12,6 +12,8 @@
 #include "LFGMgr.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "InstanceScript.h"
+#include "ObjectMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -211,6 +213,7 @@ void BotRaidMgr::Update(uint32 diff)
         _nextCheckMs = now + sPlayerbotAIConfig.raidIntervalMs;
     }
 
+    SampleEncounters();
     PruneRuns();
 
     size_t active = 0;
@@ -225,6 +228,89 @@ void BotRaidMgr::Update(uint32 diff)
     TryStartRaid();
 
     (void)diff;
+}
+
+/**
+ * What the raid has actually killed.
+ *
+ * Until this, a run was judged by how long it lasted, which says nothing: the log read the same for a
+ * raid that cleared two bosses and one that wiped on the first pull and stood around as ghosts. The
+ * instance already keeps the answer -- InstanceScript holds the completed-encounter mask it reports to
+ * the client, with one bit per DungeonEncounter.dbc boss -- so this reads it rather than trying to
+ * infer kills from creature deaths, which would need a list of every boss in nineteen raids and would
+ * be wrong the moment a script named one differently.
+ */
+void BotRaidMgr::SampleEncounters()
+{
+    struct Observation
+    {
+        ObjectGuid groupGuid;
+        uint32 mask;
+        uint32 total;
+        std::string name;
+    };
+
+    std::vector<Observation> seen;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        for (auto const& [groupGuid, run] : _runs)
+        {
+            Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter());
+            if (!group)
+                continue;
+
+            // Any member who is actually inside will do: they share the instance.
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (!member || !member->IsInWorld() || member->GetMapId() != run.mapId)
+                    continue;
+
+                Map* map = member->FindMap();
+                InstanceMap* instanceMap = map ? map->ToInstanceMap() : nullptr;
+                InstanceScript* script = instanceMap ? instanceMap->GetInstanceScript() : nullptr;
+                if (!script)
+                    break;
+
+                uint32 total = 0;
+                if (DungeonEncounterList const* encounters =
+                        sObjectMgr->GetDungeonEncounterList(run.mapId, map->GetDifficulty()))
+                    total = uint32(encounters->size());
+
+                seen.push_back({groupGuid, script->GetCompletedEncounterMask(), total, run.name});
+                break;
+            }
+        }
+    }
+
+    for (Observation const& observation : seen)
+    {
+        std::unique_lock<std::shared_mutex> lock(_mutex);
+        auto const itr = _runs.find(observation.groupGuid);
+        if (itr == _runs.end())
+            continue;
+
+        Run& run = itr->second;
+        run.encounterTotal = observation.total;
+
+        if (observation.mask == run.encounterMask)
+            continue;
+
+        // Newly set bits are kills since the last look. Counted rather than assumed to be one, because
+        // a pass is a minute apart and a raid can finish two fights in that time.
+        uint32 const added = observation.mask & ~run.encounterMask;
+        uint32 killed = 0;
+        for (uint32 bit = 0; bit < 32; ++bit)
+            if (added & (1u << bit))
+                ++killed;
+
+        run.encounterMask = observation.mask;
+        run.bossKills += killed;
+
+        LOG_INFO("playerbots", "[Raid] {} has killed {} of {} boss encounter(s)", observation.name, run.bossKills,
+                 run.encounterTotal ? std::to_string(run.encounterTotal) : std::string("?"));
+    }
 }
 
 void BotRaidMgr::PruneRuns()
@@ -295,14 +381,20 @@ void BotRaidMgr::PruneRuns()
     for (ObjectGuid const& groupGuid : expired)
     {
         std::string name;
+        uint32 kills = 0;
         {
             std::shared_lock<std::shared_mutex> lock(_mutex);
             if (auto const itr = _runs.find(groupGuid); itr != _runs.end())
+            {
                 name = itr->second.name;
+                kills = itr->second.bossKills;
+            }
         }
 
-        LOG_INFO("playerbots", "[Raid] {} has run for {} minutes without finishing; sending the raid home", name,
-                 sPlayerbotAIConfig.raidMaxMinutes);
+        LOG_INFO("playerbots",
+                 "[Raid] {} has run for {} minutes without finishing ({} boss encounter(s) killed); sending the raid "
+                 "home",
+                 name, sPlayerbotAIConfig.raidMaxMinutes, kills);
 
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
         {
@@ -329,6 +421,8 @@ void BotRaidMgr::PruneRuns()
         std::string name;
         uint32 mapId = 0;
         uint32 minutes = 0;
+        uint32 kills = 0;
+        uint32 total = 0;
         bool early = false;
 
         {
@@ -338,6 +432,8 @@ void BotRaidMgr::PruneRuns()
                 name = itr->second.name;
                 mapId = itr->second.mapId;
                 minutes = GetMSTimeDiffToNow(itr->second.startedMs) / (MINUTE * IN_MILLISECONDS);
+                kills = itr->second.bossKills;
+                total = itr->second.encounterTotal;
                 early = GetMSTimeDiffToNow(itr->second.startedMs) < EARLY_EXIT_MS;
             }
         }
@@ -347,8 +443,14 @@ void BotRaidMgr::PruneRuns()
         // exactly like a raid still quietly in progress, and the only way to tell was to count group
         // members by hand.
         if (!name.empty())
-            LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s); the group has left the instance", name,
-                     minutes);
+        {
+            // Said in terms of what was killed, not how long it took. A cleared raid and a wipe both end
+            // with an empty instance, and only this number tells them apart.
+            bool const cleared = total && kills >= total;
+            LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s): {} of {} boss encounter(s) killed -- {}",
+                     name, minutes, kills, total ? std::to_string(total) : std::string("?"),
+                     cleared ? "cleared" : (kills ? "gave up part way" : "killed nothing"));
+        }
 
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
             group->Disband(true);
@@ -579,8 +681,10 @@ std::string BotRaidMgr::DescribeStats() const
     std::string detail;
     for (auto const& [groupGuid, run] : _runs)
     {
-        detail += Acore::StringFormat("\n  {} ({} man, level {}), running for {} minute(s)", run.name, run.size,
-                                      run.level, GetMSTimeDiffToNow(run.startedMs) / (MINUTE * IN_MILLISECONDS));
+        detail += Acore::StringFormat("\n  {} ({} man, level {}), running for {} minute(s), {} of {} boss(es) down",
+                                      run.name, run.size, run.level,
+                                      GetMSTimeDiffToNow(run.startedMs) / (MINUTE * IN_MILLISECONDS), run.bossKills,
+                                      run.encounterTotal ? std::to_string(run.encounterTotal) : std::string("?"));
     }
 
     if (detail.empty())

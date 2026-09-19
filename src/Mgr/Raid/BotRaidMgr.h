@@ -88,7 +88,17 @@ private:
         uint32 size{0};
         uint32 startedMs{0};
         std::string name;
+        /// The instance's own completed-encounter mask, as last seen. Bit indexes are
+        /// DungeonEncounter.dbc boss numbers, which is what the client is told too.
+        uint32 encounterMask{0};
+        /// How many encounters this raid has killed, and how many the instance has to offer.
+        uint32 bossKills{0};
+        uint32 encounterTotal{0};
     };
+
+    /// Read each running raid's encounter mask out of its instance, so a kill is noticed and a run can
+    /// be judged on what it actually killed rather than on how long it lasted.
+    void SampleEncounters();
 
     /// Retire raids that have finished, emptied out, or run out of time.
     void PruneRuns();
