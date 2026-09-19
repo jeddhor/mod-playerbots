@@ -14,6 +14,7 @@
 #include "HunterAiObjectContext.h"
 #include "Item.h"
 #include "MageAiObjectContext.h"
+#include "Map.h"
 #include "PaladinAiObjectContext.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -389,6 +390,33 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
     return specName;
 }
 
+namespace
+{
+/**
+ * Whether this bot should be dodging area damage.
+ *
+ * The test used to be "does a person own this bot", which meant random bots never moved out of anything.
+ * Harmless while they were grinding boars; fatal now that twenty-five of them walk into Karazhan, where
+ * a charge, a garrote, flame wreaths and a blizzard are most of the fight. Measured: Gruul's Lair, which
+ * is largely tank-and-spank, was cleared, while Karazhan went nought for eleven across fifteen minutes.
+ *
+ * So ownership still counts -- a person's own bots dodge everywhere, which is what they expect to see --
+ * and inside an instance every bot dodges, owned or not. That is also where the cost is worth paying:
+ * the scan is per bot per tick, and an instance holds a few dozen bots rather than five hundred.
+ */
+bool ShouldAvoidAoe(Player* player, PlayerbotAI* const facade)
+{
+    if (!sPlayerbotAIConfig.autoAvoidAoe)
+        return false;
+
+    if (facade->HasGameClientMaster())
+        return true;
+
+    Map const* map = player->FindMap();
+    return map && map->IsDungeon();
+}
+}  // namespace
+
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* engine)
 {
     uint8 tab = GetPlayerSpecTab(player);
@@ -396,7 +424,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     if (!player->InBattleground())
         engine->addStrategiesNoInit("racials", "chat", "default", "cast time", "potions", "duel", "boost", nullptr);
 
-    if (sPlayerbotAIConfig.autoAvoidAoe && facade->HasGameClientMaster())
+    if (ShouldAvoidAoe(player, facade))
         engine->addStrategy("avoid aoe", false);
 
     engine->addStrategy("formation", false);
@@ -719,7 +747,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     // Out of combat too. Only the combat engine carried this, so a bot resting or following with no
     // enemy about stood in a campfire and burned for as long as it was left there -- Alee did, until
     // a pull put her back in the combat engine and she finally stepped out.
-    if (sPlayerbotAIConfig.autoAvoidAoe && facade->HasGameClientMaster())
+    if (ShouldAvoidAoe(player, facade))
         nonCombatEngine->addStrategy("avoid aoe", false);
 
     // Autonomy is decided by SITUATION, not by how the bot came to exist.

@@ -13,6 +13,7 @@
 #include "LFGMgr.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
+#include "Item.h"
 #include "Player.h"
 #include "PlayerbotFactory.h"
 #include "Playerbots.h"
@@ -1144,6 +1145,7 @@ void RandomBotLevelMgr::RunEraSeedingPass()
         // what it is given, so the default of rare is a ceiling and not a starting point.
         PlayerbotFactory factory(bot, cap, quality, PlayerbotFactory::CalcMixedGearScore(ilvl, quality));
         factory.Randomize(false);
+        StockEraFlasks(bot, cap);
         ApplyXpGainPolicy(bot);
 
         // Finish the job the way an ordinary re-roll does.
@@ -1170,6 +1172,70 @@ void RandomBotLevelMgr::RunEraSeedingPass()
         ++moved;
         ++_eraSeeded;
     }
+}
+
+/**
+ * Give a raider something worth drinking.
+ *
+ * BotConsumableMgr is already careful about this: it drinks one buff a minute out of combat, skips a buff
+ * the bot already has, and keeps the expensive ones for instances and battlegrounds. What it never had was
+ * stock. Across roughly two hundred and ninety era-capped bots, exactly one held a flask or an elixir, so
+ * what raids actually drank was Scroll of Protection and Scroll of Spirit -- twelve stamina at level
+ * eighty.
+ *
+ * Chosen by what the bot's talents make it rather than by class, so a shadow priest is handed spell power
+ * and a holy one is handed mana regeneration, and kept to the era's own flasks so a level sixty raider is
+ * not carrying Wrath consumables.
+ */
+void RandomBotLevelMgr::StockEraFlasks(Player* bot, uint8 cap)
+{
+    if (!bot)
+        return;
+
+    // Classic, Burning Crusade, Wrath: physical, caster, healer.
+    static constexpr uint32 FLASK_TITANS = 13510;          // stamina, for anyone being hit
+    static constexpr uint32 FLASK_DISTILLED_WISDOM = 13511;
+    static constexpr uint32 FLASK_SUPREME_POWER = 13512;
+    static constexpr uint32 FLASK_RELENTLESS_ASSAULT = 22854;
+    static constexpr uint32 FLASK_PURE_DEATH = 22866;
+    static constexpr uint32 FLASK_MIGHTY_RESTORATION = 22853;
+    static constexpr uint32 FLASK_ENDLESS_RAGE = 46377;
+    static constexpr uint32 FLASK_FROST_WYRM = 46376;
+    static constexpr uint32 FLASK_PURE_MOJO = 46378;
+
+    bool const healer = PlayerbotAI::IsHeal(bot, true);
+    bool const caster = !healer && PlayerbotAI::IsCaster(bot, true);
+
+    uint32 flask = 0;
+    switch (cap)
+    {
+        case 60:
+            flask = healer ? FLASK_DISTILLED_WISDOM : (caster ? FLASK_SUPREME_POWER : FLASK_TITANS);
+            break;
+        case 70:
+            flask = healer ? FLASK_MIGHTY_RESTORATION : (caster ? FLASK_PURE_DEATH : FLASK_RELENTLESS_ASSAULT);
+            break;
+        default:
+            flask = healer ? FLASK_PURE_MOJO : (caster ? FLASK_FROST_WYRM : FLASK_ENDLESS_RAGE);
+            break;
+    }
+
+    if (!flask)
+        return;
+
+    // Five is a raid night's worth: a flask lasts two hours and survives death, and the consumable manager
+    // will not drink another while the first is still up.
+    constexpr uint32 FLASKS_TO_CARRY = 5;
+
+    uint32 const have = bot->GetItemCount(flask, false);
+    if (have >= FLASKS_TO_CARRY)
+        return;
+
+    ItemPosCountVec dest;
+    if (bot->CanStoreNewItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, flask, FLASKS_TO_CARRY - have) != EQUIP_ERR_OK)
+        return;
+
+    bot->StoreNewItem(dest, flask, true, Item::GenerateItemRandomPropertyId(flask));
 }
 
 void RandomBotLevelMgr::EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl)
@@ -1260,6 +1326,7 @@ void RandomBotLevelMgr::RunEraRegearPass()
         // the same thing the seeding pass does to a bot whose level was wrong, and these are random
         // bots -- nobody's own character is touched here.
         PlayerbotFactory::AutoGear(bot, quality, ilvl, false);
+        StockEraFlasks(bot, cap);
 
         ++regeared;
         ++_eraRegeared;

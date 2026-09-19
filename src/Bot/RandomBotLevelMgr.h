@@ -108,6 +108,10 @@ private:
     /// wearing when it arrived -- which is rare gear, because that is all the ordinary gear path hands out.
     void RunEraRegearPass();
 
+    /// Put a few era-appropriate flasks in a raider's bags. BotConsumableMgr already knows to save them
+    /// for instances and battlegrounds; what it lacked was anything to save.
+    static void StockEraFlasks(Player* bot, uint8 cap);
+
     /// The gear an era ceiling is dressed for: quality, and an item level ceiling.
     static void EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl);
 

@@ -65,7 +65,9 @@ constexpr BotRaidMgr::RaidDef RAID_TABLE[] = {
     {533, "Naxxramas", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
     {615, "The Obsidian Sanctum", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
     {616, "The Eye of Eternity", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
-    {624, "Vault of Archavon", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
+    // Vault of Archavon is deliberately absent. Entry is gated on which faction holds Wintergrasp, so the
+    // teleport is simply refused most of the time: a raid was assembled, reported as placed, and found a
+    // minute later with all twenty-five members alive and standing in Wintergrasp instead of inside.
     {249, "Onyxia's Lair", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
     {603, "Ulduar", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
     {631, "Icecrown Citadel", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
