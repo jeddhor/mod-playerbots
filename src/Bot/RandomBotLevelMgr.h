@@ -103,6 +103,14 @@ private:
     /// Bring bots that sit above their era ceiling down onto it, a few at a time.
     void RunEraSeedingPass();
 
+    /// Bring bots already parked on their ceiling up to the gear their era expects. The seeding pass only
+    /// touches bots whose level is wrong, so without this the standing population keeps whatever it was
+    /// wearing when it arrived -- which is rare gear, because that is all the ordinary gear path hands out.
+    void RunEraRegearPass();
+
+    /// The gear an era ceiling is dressed for: quality, and an item level ceiling.
+    static void EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl);
+
     // ---- Level reset sub-feature ----
     uint8 ComputeResetChance(uint8 level) const;
     void ResetBot(Player* player, uint8 currentLevel);
@@ -124,6 +132,7 @@ private:
     uint32 _resetTimer = 0;    // Level reset: played-time based reset checks
     uint32 _eraSeedTimer = 0;  // Era caps: bringing bots above their ceiling down onto it
     uint32 _eraSeeded = 0;
+    uint32 _eraRegeared = 0;
 };
 
 // Registers the random bot level brackets + level reset world/player scripts.

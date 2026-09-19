@@ -523,6 +523,25 @@ bool PlayerbotAIConfig::Initialize()
     // the raid-sized populations an operator asked for never arrive.
     eraCappedBotPromoteBelowCap = sConfigMgr->GetOption<bool>("AiPlayerbot.EraCappedBots.PromoteBelowCap", true);
 
+    // What an era-capped bot is dressed in. The ordinary gear path hands every random bot the same
+    // quality -- RandomGearQualityLimit, rare by default -- and InitEquipment requires an exact quality
+    // match, so no random bot has ever worn an epic. For a levelling bot that is right; for the standing
+    // population a raid is filled from it is the difference between a raid that progresses and twenty-five
+    // bots dying on the first pull.
+    eraCappedBotGearQuality = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.GearQuality", 4);
+    // Item level ceiling per era, roughly the raid tier that era's content expects: classic raid gear at
+    // 60, Black Temple at 70, Trial of the Crusader at 80. Bots gear up to it, not past it.
+    eraCappedBotGearIlvlAt60 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.GearIlvlAt60", 92);
+    eraCappedBotGearIlvlAt70 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.GearIlvlAt70", 146);
+    eraCappedBotGearIlvlAt80 = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.GearIlvlAt80", 232);
+    // Bots already parked on a ceiling keep whatever they were wearing when they got there, so they need
+    // a pass of their own. Bounded per pass: each one is a full re-gear on the world thread.
+    eraCappedBotRegearPerPass = sConfigMgr->GetOption<uint32>("AiPlayerbot.EraCappedBots.RegearPerPass", 2);
+    // How far below the era's target gear score a parked bot has to be before it is re-geared. Not 1.0:
+    // an exact match is unreachable and would re-gear everybody forever.
+    eraCappedBotRegearThreshold =
+        float(sConfigMgr->GetOption<float>("AiPlayerbot.EraCappedBots.RegearThreshold", 0.8f));
+
     // Two shares of one roster cannot exceed it. Clamping the second rather than refusing to start,
     // because a realm running with slightly fewer TBC bots than asked for is a far better outcome
     // than one that will not come up.

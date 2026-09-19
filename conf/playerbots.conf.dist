@@ -3482,6 +3482,28 @@ AiPlayerbot.EraCappedBots.PctAt80 = 0
 # grind their way into their era.
 AiPlayerbot.EraCappedBots.PromoteBelowCap = 1
 
+# What era-capped bots wear. The ordinary gear path hands every random bot the same quality --
+# RandomGearQualityLimit, rare by default -- and InitEquipment matches quality exactly, so no random bot
+# has ever equipped an epic. For a bot levelling through a zone that is correct. For the standing
+# population a raid is filled from it is the difference between a raid that progresses and twenty-five
+# bots dying on the first pull.
+#
+# GearQuality: 2 = uncommon, 3 = rare, 4 = epic. 0 turns era gearing off and leaves them on the realm
+# default. The item level ceilings are roughly the raid tier each era's content expects: classic raid
+# gear at 60, Black Temple at 70, Trial of the Crusader at 80.
+AiPlayerbot.EraCappedBots.GearQuality = 4
+AiPlayerbot.EraCappedBots.GearIlvlAt60 = 92
+AiPlayerbot.EraCappedBots.GearIlvlAt70 = 146
+AiPlayerbot.EraCappedBots.GearIlvlAt80 = 232
+
+# Bots already standing on a ceiling keep the gear they arrived in, so they get a pass of their own:
+# any whose average gear score is below RegearThreshold of what their era expects is re-geared, at most
+# RegearPerPass of them each time (each is a full re-gear on the world thread). The re-gear is
+# incremental, so anything better the bot already has is kept, and it never touches a bot that is in a
+# group, in an instance, in a battleground or in combat.
+AiPlayerbot.EraCappedBots.RegearPerPass = 2
+AiPlayerbot.EraCappedBots.RegearThreshold = 0.8
+
 ###############################################################################
 # BOT-RUN RAIDS
 #

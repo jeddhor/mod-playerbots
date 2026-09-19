@@ -346,6 +346,10 @@ public:
     uint32 raidRetryMinutes;
     std::vector<uint32> raidMaps;
     bool eraCappedBotPromoteBelowCap;
+    uint32 eraCappedBotGearQuality;
+    uint32 eraCappedBotGearIlvlAt60, eraCappedBotGearIlvlAt70, eraCappedBotGearIlvlAt80;
+    uint32 eraCappedBotRegearPerPass;
+    float eraCappedBotRegearThreshold;
     uint32 eraCappedBotSeedPerPass, eraCappedBotSeedIntervalMs;
     std::map<uint32, std::pair<uint32, uint32>> zoneBrackets;
     bool logInGroupOnly, logValuesPerTick;

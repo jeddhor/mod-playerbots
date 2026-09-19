@@ -220,13 +220,13 @@ std::string RandomBotLevelMgr::DescribeEraPopulation()
         "eras: configured {}% at 60, {}% at 70 and {}% at 80.\n"
         "  online and assigned: {} to 60 ({} there now), {} to 70 ({} there now), {} to 80 ({} there "
         "now), {} uncapped.\n"
-        "  {} assigned bots are not on their ceiling yet, {} have been moved onto one.\n"
+        "  {} assigned bots are not on their ceiling yet, {} have been moved onto one, {} re-geared for their era.\n"
         "Assigned counts follow the config immediately; the 'there now' counts fill in as the seeding "
         "pass moves bots onto their ceiling, then should stop moving. A 'there now' figure that keeps "
         "falling means something is still pulling capped bots out of their era.",
         sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70,
         sPlayerbotAIConfig.eraCappedBotPctAt80, assigned60, parked60, assigned70, parked70, assigned80, parked80,
-        uncapped, belowCap, instance()._eraSeeded);
+        uncapped, belowCap, instance()._eraSeeded, instance()._eraRegeared);
 }
 
 void RandomBotLevelMgr::LoadConfig()
@@ -268,6 +268,12 @@ void RandomBotLevelMgr::LogStartupSummary() const
             sPlayerbotAIConfig.eraCappedBotPctAt60, sPlayerbotAIConfig.eraCappedBotPctAt70,
             sPlayerbotAIConfig.eraCappedBotPctAt80,
             sPlayerbotAIConfig.eraCappedBotPromoteBelowCap ? "moved up onto it" : "left to level into it");
+
+    if (sPlayerbotAIConfig.eraCappedBotGearQuality)
+        LOG_INFO("playerbots",
+                 "[RandomBotLevelMgr] Era gear: quality {} up to item level {} at 60, {} at 70, {} at 80.",
+                 sPlayerbotAIConfig.eraCappedBotGearQuality, sPlayerbotAIConfig.eraCappedBotGearIlvlAt60,
+                 sPlayerbotAIConfig.eraCappedBotGearIlvlAt70, sPlayerbotAIConfig.eraCappedBotGearIlvlAt80);
 
     if (!sPlayerbotAIConfig.resetBotLevelEnabled)
         LOG_INFO("playerbots", "[RandomBotLevelMgr] Level reset sub-feature disabled via configuration.");
@@ -1129,7 +1135,14 @@ void RandomBotLevelMgr::RunEraSeedingPass()
         LOG_INFO("playerbots", "[Era] {} is level {} but belongs to the level {} population, {} it there",
                  bot->GetName(), bot->GetLevel(), cap, bot->GetLevel() < cap ? "bringing" : "re-rolling");
 
-        PlayerbotFactory factory(bot, cap);
+        uint32 quality = 0;
+        uint32 ilvl = 0;
+        EraGearTarget(cap, quality, ilvl);
+
+        // Dressed for the era, not to the realm's default quality. Passing a quality explicitly is what
+        // lets the factory consider epics at all: it matches quality exactly and only ever walks down from
+        // what it is given, so the default of rare is a ceiling and not a starting point.
+        PlayerbotFactory factory(bot, cap, quality, PlayerbotFactory::CalcMixedGearScore(ilvl, quality));
         factory.Randomize(false);
         ApplyXpGainPolicy(bot);
 
@@ -1156,6 +1169,90 @@ void RandomBotLevelMgr::RunEraSeedingPass()
 
         ++moved;
         ++_eraSeeded;
+    }
+}
+
+void RandomBotLevelMgr::EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl)
+{
+    quality = sPlayerbotAIConfig.eraCappedBotGearQuality;
+
+    switch (cap)
+    {
+        case 60:
+            ilvl = sPlayerbotAIConfig.eraCappedBotGearIlvlAt60;
+            break;
+        case 70:
+            ilvl = sPlayerbotAIConfig.eraCappedBotGearIlvlAt70;
+            break;
+        default:
+            ilvl = sPlayerbotAIConfig.eraCappedBotGearIlvlAt80;
+            break;
+    }
+}
+
+/**
+ * Dress the bots that are already standing on their ceiling.
+ *
+ * The seeding pass only looks at bots whose *level* is wrong, so a bot that arrived at its ceiling
+ * before this existed -- or was promoted there by an earlier build -- keeps the gear it had. That gear
+ * is rare at best: the ordinary path gives every random bot RandomGearQualityLimit and InitEquipment
+ * demands an exact quality match, so a random bot has never worn an epic. Twenty-five of them walked
+ * into Magtheridon's Lair and all twenty-five died in three minutes.
+ *
+ * Judged on the same number the factory is given, an average mixed gear score per slot, so "geared for
+ * this era" means the same thing in both directions. Incremental, so a bot that already has something
+ * better in a slot keeps it, and bounded per pass because each one is a full re-gear on the world thread.
+ */
+void RandomBotLevelMgr::RunEraRegearPass()
+{
+    uint32 const limit = sPlayerbotAIConfig.eraCappedBotRegearPerPass;
+    if (!limit || !sPlayerbotAIConfig.eraCappedBotGearQuality)
+        return;
+
+    uint32 regeared = 0;
+
+    for (auto const& itr : ObjectAccessor::GetPlayers())
+    {
+        if (regeared >= limit)
+            break;
+
+        Player* bot = itr.second;
+        if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() ||
+            bot->IsDuringRemoveFromWorld())
+            continue;
+
+        if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+            continue;
+
+        uint8 const cap = EraCapFor(bot);
+        if (!cap || bot->GetLevel() != cap)
+            continue;
+
+        // Never mid-content. A re-gear strips and replaces what the bot is wearing, which is not something
+        // to do to a raider halfway up Icecrown, and the raid it is in would lose the fight and the gear.
+        if (bot->IsInCombat() || bot->isDead() || bot->InBattleground() || bot->GetGroup())
+            continue;
+
+        if (Map* map = bot->FindMap(); map && map->Instanceable())
+            continue;
+
+        uint32 quality = 0;
+        uint32 ilvl = 0;
+        EraGearTarget(cap, quality, ilvl);
+
+        uint32 const target = PlayerbotFactory::CalcMixedGearScore(ilvl, quality);
+        uint32 const current = PlayerbotAI::GetMixedGearScore(bot, false, false, 0);
+
+        if (!target || current >= uint32(float(target) * sPlayerbotAIConfig.eraCappedBotRegearThreshold))
+            continue;
+
+        LOG_INFO("playerbots", "[Era] {} is level {} in gear worth {} and its era expects about {}; re-gearing",
+                 bot->GetName(), cap, current, target);
+
+        PlayerbotFactory::AutoGear(bot, quality, ilvl, true);
+
+        ++regeared;
+        ++_eraRegeared;
     }
 }
 
@@ -1187,6 +1284,7 @@ void RandomBotLevelMgr::Update(uint32 diff)
         {
             _eraSeedTimer = 0;
             RunEraSeedingPass();
+            RunEraRegearPass();
         }
     }
 
