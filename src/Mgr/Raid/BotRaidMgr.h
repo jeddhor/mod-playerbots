@@ -54,6 +54,10 @@ public:
 
     std::string DescribeStats() const;
 
+    /// Whether this group is a raid this manager put together. The random bot lifecycle asks, because
+    /// it otherwise pulls apart any bot group led by a bot.
+    bool IsManagedGroup(ObjectGuid groupGuid) const;
+
     /// One raid this manager knows how to run. Public because the table of them lives in the
     /// implementation file, where it is readable next to the reasoning about what belongs in it.
     struct RaidDef

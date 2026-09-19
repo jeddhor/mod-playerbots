@@ -70,6 +70,10 @@ constexpr BotRaidMgr::RaidDef RAID_TABLE[] = {
     {724, "The Ruby Sanctum", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
 };
 
+/// A run that ends this soon is reported in detail: it finished nothing, and where its members ended
+/// up is the only way to tell "nobody arrived" from "everybody died".
+constexpr uint32 EARLY_EXIT_MS = 5 * MINUTE * IN_MILLISECONDS;
+
 /// Tanks wanted for a raid of this size: one per ten bodies, never fewer than one.
 uint32 TanksFor(uint32 size)
 {
@@ -251,6 +255,34 @@ void BotRaidMgr::PruneRuns()
 
             if (!inside)
             {
+                // A run that empties out in its first minutes did not finish anything, and the two
+                // reasons look identical from here: nobody ever arrived, or everybody died and left.
+                // So say where the members actually are. Gruul's Lair was reported as started with
+                // twenty-five placed inside and was over forty-five seconds later, and there was no
+                // way to tell those apart from the log.
+                if (GetMSTimeDiffToNow(run.startedMs) < EARLY_EXIT_MS)
+                {
+                    std::string where;
+                    uint32 alive = 0;
+                    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                    {
+                        Player* member = ref->GetSource();
+                        if (!member)
+                            continue;
+
+                        if (member->IsAlive())
+                            ++alive;
+
+                        if (where.size() < 120)
+                            where += Acore::StringFormat("{}{}", where.empty() ? "" : ",", member->GetMapId());
+                    }
+
+                    LOG_INFO("playerbots",
+                             "[Raid] {} emptied after {} second(s): {} of {} members alive, maps {} -- expected map {}",
+                             run.name, GetMSTimeDiffToNow(run.startedMs) / IN_MILLISECONDS, alive,
+                             group->GetMembersCount(), where.empty() ? "none" : where, run.mapId);
+                }
+
                 finished.push_back(groupGuid);
                 continue;
             }
@@ -505,6 +537,12 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
              placed);
 
     return true;
+}
+
+bool BotRaidMgr::IsManagedGroup(ObjectGuid groupGuid) const
+{
+    std::shared_lock<std::shared_mutex> lock(_mutex);
+    return _runs.count(groupGuid) != 0;
 }
 
 std::string BotRaidMgr::DescribeStats() const

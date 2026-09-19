@@ -5,6 +5,7 @@
  */
 
 #include "RandomPlayerbotMgr.h"
+#include "BotRaidMgr.h"
 #include "BotAgendaMgr.h"
 #include "BotHelpMgr.h"
 #include "BotMailMgr.h"
@@ -1575,8 +1576,22 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
     Group* group = bot->GetGroup();
     if (group && !group->isLFGGroup() && IsRandomBot(group->GetLeader()))
     {
-        botAI->LeaveOrDisbandGroup();
-        LOG_INFO("playerbots", "Bot {} remove from group since leader is random bot.", bot->GetName().c_str());
+        // Bot parties in the open world are stale furniture and this breaks them up. A raid this
+        // module assembled is neither: it is a group of bots led by a bot, not in an LFG group, which
+        // is exactly the shape this test was written to destroy -- and it did, pulling members out of
+        // a twenty-five man one at a time while they were fighting. A bot inside an instance is left
+        // alone for the same reason: whatever it is doing in there, it needs its group to do it.
+        bool const inInstance = [bot]()
+        {
+            Map* map = bot->FindMap();
+            return map && map->Instanceable();
+        }();
+
+        if (!inInstance && !sBotRaidMgr.IsManagedGroup(group->GetGUID()))
+        {
+            botAI->LeaveOrDisbandGroup();
+            LOG_INFO("playerbots", "Bot {} remove from group since leader is random bot.", bot->GetName().c_str());
+        }
     }
 
     // only randomize and teleport idle bots
