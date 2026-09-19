@@ -294,6 +294,18 @@ void BotRaidMgr::PruneRuns()
 
     for (ObjectGuid const& groupGuid : finished)
     {
+        // Logged, because the end of a raid is the interesting half. A run that started leaves a line
+        // and a run that was sent home leaves a line; without this one a raid that emptied out looked
+        // exactly like a raid still quietly in progress, and the only way to tell was to count group
+        // members by hand.
+        {
+            std::shared_lock<std::shared_mutex> lock(_mutex);
+            if (auto const itr = _runs.find(groupGuid); itr != _runs.end())
+                LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s); the group has left the instance",
+                         itr->second.name,
+                         GetMSTimeDiffToNow(itr->second.startedMs) / (MINUTE * IN_MILLISECONDS));
+        }
+
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
             group->Disband(true);
 
@@ -361,9 +373,17 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
         if (!IsAvailable(bot, def, team))
             continue;
 
-        if (PlayerbotAI::IsTank(bot))
+        // By spec, not by the strategies the bot is carrying right now.
+        //
+        // Asked the default way, these two report what a bot is *doing*: whether its engine currently
+        // holds a tank or heal strategy. A bot out in the world questing alone is doing damage
+        // whatever it was built for, so no healer was ever found -- every pass reported zero of the
+        // five it needed, while tanks turned up because plate classes carry a tank strategy while
+        // soloing anyway. What matters for recruiting is what the bot's talents make it, which is
+        // what it will go back to being when the instance rebuilds its strategies on entry.
+        if (PlayerbotAI::IsTank(bot, true))
             tanks.push_back(bot);
-        else if (PlayerbotAI::IsHeal(bot))
+        else if (PlayerbotAI::IsHeal(bot, true))
             healers.push_back(bot);
         else
             damage.push_back(bot);
@@ -438,6 +458,17 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
         group->Disband(true);
         return false;
     }
+
+    // Drop any dungeon queue a member was in the middle of joining.
+    //
+    // Eligibility skips a bot the Dungeon Finder already knows about, but a bot whose join is still
+    // sitting unprocessed on its own session reads as unqueued -- the head-of-line gap BotLfgMgr keeps
+    // its own pending list for. A bot was seen asking for a dungeon twenty-one seconds before this
+    // manager recruited it into Karazhan, so the request has to be cancelled from here as well as
+    // avoided. allowgroup is false deliberately: only this bot's own queue entries go, never anything
+    // belonging to the raid group just built.
+    for (Player* member : roster)
+        sLFGMgr->LeaveAllLfgQueues(member->GetGUID(), false);
 
     uint32 placed = 0;
     for (Player* member : roster)

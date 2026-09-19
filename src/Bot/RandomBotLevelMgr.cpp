@@ -1133,6 +1133,27 @@ void RandomBotLevelMgr::RunEraSeedingPass()
         factory.Randomize(false);
         ApplyXpGainPolicy(bot);
 
+        // Finish the job the way an ordinary re-roll does.
+        //
+        // RandomizeFirst does three more things after the factory: it resets the AI, drops the bot's
+        // group, and teleports it somewhere suited to its new level. Re-gearing without them leaves a
+        // bot with a new level standing exactly where the old one was, and for a bot brought *down*
+        // onto its ceiling that is lethal -- a level 80 in Icecrown re-rolled to 60 dies on the spot,
+        // repeatedly, and it was doing so here in numbers once promotion made re-rolls common: sixty-
+        // five bots releasing their spirits over and over in five minutes. Upwards it is merely wrong:
+        // a freshly minted level 80 standing in a starter zone.
+        //
+        // The group has to go too. Its other members were chosen for the level this bot used to be.
+        if (PlayerbotAI* rerolled = GET_PLAYERBOT_AI(bot))
+        {
+            rerolled->Reset(true);
+
+            if (bot->GetGroup())
+                rerolled->LeaveOrDisbandGroup();
+        }
+
+        sRandomPlayerbotMgr.RandomTeleportForLevel(bot);
+
         ++moved;
         ++_eraSeeded;
     }
