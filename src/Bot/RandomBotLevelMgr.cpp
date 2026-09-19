@@ -1249,7 +1249,17 @@ void RandomBotLevelMgr::RunEraRegearPass()
         LOG_INFO("playerbots", "[Era] {} is level {} in gear worth {} and its era expects about {}; re-gearing",
                  bot->GetName(), cap, current, target);
 
-        PlayerbotFactory::AutoGear(bot, quality, ilvl, true);
+        // Not incremental, which is what the first attempt at this got wrong. Incremental gearing only
+        // replaces a slot when the new item scores 1.2x the old one, and since item level stopped being
+        // multiplied into the score an epic no longer clears that bar against a rare of similar level:
+        // the bots kept every piece they had. Measured, twice: seventeen rares at item level 198 before
+        // the pass and seventeen rares at item level 198 after it.
+        //
+        // A full re-gear picks each slot fresh from up to twenty-five candidates, starting at epic and
+        // walking down only if the pool is thin, so the bot ends up in the best the era offers. It is
+        // the same thing the seeding pass does to a bot whose level was wrong, and these are random
+        // bots -- nobody's own character is touched here.
+        PlayerbotFactory::AutoGear(bot, quality, ilvl, false);
 
         ++regeared;
         ++_eraRegeared;
