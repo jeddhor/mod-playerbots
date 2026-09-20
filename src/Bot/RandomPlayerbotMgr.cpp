@@ -1594,6 +1594,17 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
         }
     }
 
+    // A bot inside an instance is never idle, whatever its travel target says.
+    //
+    // "Idle" here means no travel target, which is true of every bot fighting its way through a raid: the
+    // dungeon autopilot moves it, not the travel system. So both events below fired on raiders, and
+    // RandomTeleportForLevel pulled them out of the instance one at a time. It explains what the death
+    // tally showed and what it did not: Zul'Aman ended after twenty-seven minutes with two bosses down and
+    // only ten deaths, all of them to trash. The raid was not wiping at all -- nineteen of its members had
+    // simply been teleported away, and a run ends when nobody is left inside.
+    if (Map const* map = bot->FindMap(); map && map->Instanceable())
+        return false;
+
     // only randomize and teleport idle bots
     bool idleBot = false;
     if (TravelTarget* target = botAI->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get())
