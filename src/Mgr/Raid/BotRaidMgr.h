@@ -11,6 +11,7 @@
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
 
+#include <map>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -54,6 +55,10 @@ public:
 
     std::string DescribeStats() const;
 
+    /// Record a raid member's death and what killed it. Called from the death hooks; a death outside any
+    /// tracked raid is ignored.
+    void NoteMemberDeath(Player* victim, std::string const& killer);
+
     /// Whether this group is a raid this manager put together. The random bot lifecycle asks, because
     /// it otherwise pulls apart any bot group led by a bot.
     bool IsManagedGroup(ObjectGuid groupGuid) const;
@@ -94,6 +99,10 @@ private:
         /// How many encounters this raid has killed, and how many the instance has to offer.
         uint32 bossKills{0};
         uint32 encounterTotal{0};
+        /// What has been killing the raid, by name, and how many died in total. A run that kills nothing
+        /// says nothing about why on its own; this is the why.
+        std::map<std::string, uint32> deaths;
+        uint32 deathCount{0};
     };
 
     /// Read each running raid's encounter mask out of its instance, so a kill is noticed and a run can
@@ -121,6 +130,9 @@ private:
     /// When each raid may be attempted again, by map id. A raid the bots cannot survive would otherwise
     /// be retried every minute, killing another twenty-five of them each time.
     std::unordered_map<uint32, uint32> _retryAfterMs;
+    /// When each member's death was last recorded. Both death hooks fire for one death -- the creature one
+    /// names the killer, the catch-all covers falls and drownings -- so the second is ignored.
+    std::unordered_map<ObjectGuid, uint32> _lastDeathMs;
     std::unordered_map<uint32, EntryPoint> _entryPoints;
 
     uint32 _started{0};

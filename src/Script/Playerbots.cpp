@@ -136,6 +136,15 @@ public:
                                Acore::StringFormat("{} in {}", what,
                                                    PlayerbotAI::GetLocalizedAreaName(
                                                        sAreaTableStore.LookupEntry(player->GetAreaId()))));
+
+        // The backstop for the raid tally as well. A fall, a drowning, a pool of something left behind by a
+        // caster that has already died: none of those reach OnPlayerKilledByCreature, and a raid that drowns
+        // in Serpentshrine should not be recorded as having died to nothing at all.
+        if (GET_PLAYERBOT_AI(player))
+        {
+            Unit* const killer = player->GetVictim();
+            sBotRaidMgr.NoteMemberDeath(player, killer ? killer->GetName() : std::string("the environment"));
+        }
     }
 
     void OnPlayerPVPKill(Player* killer, Player* killed) override
@@ -212,10 +221,17 @@ public:
         }
     }
 
-    void OnPlayerKilledByCreature(Creature* /*killer*/, Player* killed) override
+    void OnPlayerKilledByCreature(Creature* killer, Player* killed) override
     {
         if (killed && GET_PLAYERBOT_AI(killed))
+        {
             sBotHelpMgr.ReportDeath(killed);
+
+            // Named, for the raid tally. What a raid died to is the difference between "standing in fire",
+            // "out-damaged by the boss" and "never got past the trash at the door", and the killer's name
+            // separates all three.
+            sBotRaidMgr.NoteMemberDeath(killed, killer ? killer->GetName() : std::string());
+        }
     }
 
     void OnPlayerLogin(Player* player) override

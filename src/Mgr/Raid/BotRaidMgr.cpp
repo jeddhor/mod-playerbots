@@ -89,6 +89,29 @@ uint32 HealersFor(uint32 size)
 {
     return std::max<uint32>(2, size / 5);
 }
+
+/// The worst few things that killed a raid, most frequent first, as one readable clause.
+std::string DescribeDeaths(std::map<std::string, uint32> const& deaths, uint32 total)
+{
+    if (!total)
+        return "nobody died";
+
+    std::vector<std::pair<std::string, uint32>> ranked(deaths.begin(), deaths.end());
+    std::sort(ranked.begin(), ranked.end(),
+              [](auto const& a, auto const& b) { return a.second > b.second; });
+
+    std::string out = Acore::StringFormat("{} death(s)", total);
+    uint32 named = 0;
+    for (auto const& [who, count] : ranked)
+    {
+        if (named++ >= 4)
+            break;
+
+        out += Acore::StringFormat("{} {} x{}", named == 1 ? ":" : ",", who, count);
+    }
+
+    return out;
+}
 }  // namespace
 
 void BotRaidMgr::Load()
@@ -383,6 +406,7 @@ void BotRaidMgr::PruneRuns()
     for (ObjectGuid const& groupGuid : expired)
     {
         std::string name;
+        std::string deathReport;
         uint32 kills = 0;
         {
             std::shared_lock<std::shared_mutex> lock(_mutex);
@@ -390,13 +414,14 @@ void BotRaidMgr::PruneRuns()
             {
                 name = itr->second.name;
                 kills = itr->second.bossKills;
+                deathReport = DescribeDeaths(itr->second.deaths, itr->second.deathCount);
             }
         }
 
         LOG_INFO("playerbots",
-                 "[Raid] {} has run for {} minutes without finishing ({} boss encounter(s) killed); sending the raid "
-                 "home",
-                 name, sPlayerbotAIConfig.raidMaxMinutes, kills);
+                 "[Raid] {} has run for {} minutes without finishing ({} boss encounter(s) killed, {}); sending the "
+                 "raid home",
+                 name, sPlayerbotAIConfig.raidMaxMinutes, kills, deathReport);
 
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
         {
@@ -425,6 +450,7 @@ void BotRaidMgr::PruneRuns()
         uint32 minutes = 0;
         uint32 kills = 0;
         uint32 total = 0;
+        std::string deathReport;
         bool early = false;
 
         {
@@ -436,6 +462,7 @@ void BotRaidMgr::PruneRuns()
                 minutes = GetMSTimeDiffToNow(itr->second.startedMs) / (MINUTE * IN_MILLISECONDS);
                 kills = itr->second.bossKills;
                 total = itr->second.encounterTotal;
+                deathReport = DescribeDeaths(itr->second.deaths, itr->second.deathCount);
                 early = GetMSTimeDiffToNow(itr->second.startedMs) < EARLY_EXIT_MS;
             }
         }
@@ -449,9 +476,10 @@ void BotRaidMgr::PruneRuns()
             // Said in terms of what was killed, not how long it took. A cleared raid and a wipe both end
             // with an empty instance, and only this number tells them apart.
             bool const cleared = total && kills >= total;
-            LOG_INFO("playerbots", "[Raid] {} is over after {} minute(s): {} of {} boss encounter(s) killed -- {}",
-                     name, minutes, kills, total ? std::to_string(total) : std::string("?"),
-                     cleared ? "cleared" : (kills ? "gave up part way" : "killed nothing"));
+            LOG_INFO("playerbots",
+                     "[Raid] {} is over after {} minute(s): {} of {} boss encounter(s) killed -- {}. {}", name,
+                     minutes, kills, total ? std::to_string(total) : std::string("?"),
+                     cleared ? "cleared" : (kills ? "gave up part way" : "killed nothing"), deathReport);
         }
 
         if (Group* group = sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
@@ -668,6 +696,52 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
              placed);
 
     return true;
+}
+
+/**
+ * What killed a raider.
+ *
+ * A run that reports "nought of nine bosses" says nothing about why. It reads the same whether the raid
+ * wiped on the first trash pack at the door or reached the third boss and lost to one mechanic, and those
+ * want completely different fixes. The instance already tells us what was killed; this is the other half.
+ *
+ * Kept per run and named, because the name is the diagnosis: twenty-five deaths to "Coldflame" is a raid
+ * standing in fire, twenty-five to "Lord Marrowgar" is a raid being out-damaged, and a spread across trash
+ * names is a raid that never reached a boss at all.
+ */
+void BotRaidMgr::NoteMemberDeath(Player* victim, std::string const& killer)
+{
+    if (!victim)
+        return;
+
+    Group* group = victim->GetGroup();
+    if (!group)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(_mutex);
+
+    auto const itr = _runs.find(group->GetGUID());
+    if (itr == _runs.end())
+        return;
+
+    // Only deaths inside the raid itself. A member killed on the way somewhere else is not this run's story.
+    if (victim->GetMapId() != itr->second.mapId)
+        return;
+
+    // One death, not two. A creature kill fires both hooks, and whichever arrives first is the one kept:
+    // usually the named creature, occasionally the catch-all naming whatever the bot was fighting, which
+    // for a raid death is nearly always the same thing.
+    uint32 const now = getMSTime();
+    if (auto const seen = _lastDeathMs.find(victim->GetGUID()); seen != _lastDeathMs.end())
+    {
+        if (getMSTimeDiff(seen->second, now) < 3 * IN_MILLISECONDS)
+            return;
+    }
+
+    _lastDeathMs[victim->GetGUID()] = now;
+
+    ++itr->second.deathCount;
+    ++itr->second.deaths[killer.empty() ? "something unnamed" : killer];
 }
 
 bool BotRaidMgr::IsManagedGroup(ObjectGuid groupGuid) const
