@@ -19,6 +19,8 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PlayerbotFactory.h"
+#include "RandomBotLevelMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "StringFormat.h"
 #include "Timer.h"
@@ -73,6 +75,20 @@ constexpr BotRaidMgr::RaidDef RAID_TABLE[] = {
     {631, "Icecrown Citadel", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
     {724, "The Ruby Sanctum", 80, 25, RAID_DIFFICULTY_25MAN_NORMAL},
 };
+
+/// The Eye of Eternity, and the object that begins its one encounter.
+constexpr uint32 MAP_EYE_OF_ETERNITY = 616;
+constexpr uint32 GO_IRIS_NORMAL = 193958;
+constexpr uint32 GO_IRIS_HEROIC = 193960;
+
+/// How long a raid is given to arrive and gather before an encounter is started for it.
+constexpr uint32 ENCOUNTER_START_DELAY_MS = 90 * IN_MILLISECONDS;
+
+/// How long a remembered damage source still counts as the likely cause of a death.
+constexpr uint32 LAST_DAMAGER_MEMORY_MS = 15 * IN_MILLISECONDS;
+
+/// How far a member may be from the object it is about to use.
+constexpr float ENCOUNTER_START_RANGE = 100.0f;
 
 /// A run that ends this soon is reported in detail: it finished nothing, and where its members ended
 /// up is the only way to tell "nobody arrived" from "everybody died".
@@ -239,6 +255,7 @@ void BotRaidMgr::Update(uint32 diff)
     }
 
     SampleEncounters();
+    EnsureEncounterStarted();
     PruneRuns();
 
     size_t active = 0;
@@ -691,9 +708,30 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
         ++_started;
     }
 
-    LOG_INFO("playerbots", "[Raid] {} {} bots are running {} ({} man, level {}), led by {}; {} placed inside",
+    // Logged with the roster's shape and its gear, because "the raid failed" is not a finding. Karazhan is
+    // the easiest raid of its expansion and thirteen of its bots died to stable trash in two minutes; whether
+    // that is a raid of five healers or a raid still wearing rares is not something to guess at afterwards.
+    uint32 gearTotal = 0;
+    uint32 gearCounted = 0;
+    for (Player* member : roster)
+    {
+        if (uint32 const score = PlayerbotAI::GetMixedGearScore(member, false, false, 0))
+        {
+            gearTotal += score;
+            ++gearCounted;
+        }
+    }
+
+    uint32 quality = 0;
+    uint32 targetIlvl = 0;
+    RandomBotLevelMgr::EraGearTarget(def.level, quality, targetIlvl);
+
+    LOG_INFO("playerbots",
+             "[Raid] {} {} bots are running {} ({} man, level {}), led by {}; {} placed inside. {} tank(s), {} "
+             "healer(s), {} others; gear {} against {} expected",
              seated, team == TEAM_ALLIANCE ? "Alliance" : "Horde", def.name, def.size, def.level, leader->GetName(),
-             placed);
+             placed, wantTanks, wantHealers, seated > wantTanks + wantHealers ? seated - wantTanks - wantHealers : 0,
+             gearCounted ? gearTotal / gearCounted : 0, PlayerbotFactory::CalcMixedGearScore(targetIlvl, quality));
 
     return true;
 }
@@ -709,6 +747,104 @@ bool BotRaidMgr::StartRaid(RaidDef const& def, TeamId team)
  * standing in fire, twenty-five to "Lord Marrowgar" is a raid being out-damaged, and a spread across trash
  * names is a raid that never reached a boss at all.
  */
+void BotRaidMgr::NoteMemberDamaged(Player* victim, std::string const& attacker)
+{
+    if (!victim || attacker.empty())
+        return;
+
+    Group* group = victim->GetGroup();
+    if (!group)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(_mutex);
+
+    if (!_runs.count(group->GetGUID()))
+        return;
+
+    _lastDamager[victim->GetGUID()] = {attacker, getMSTime()};
+}
+
+/**
+ * Start the encounters that do not start themselves.
+ *
+ * The Eye of Eternity is the case that made this necessary. The bots know that fight -- the strategy has
+ * positioning, targeting, and both drake phases -- but nothing in it clicks the Focusing Iris, and Malygos
+ * does not appear until somebody does. Twenty-five bots stood in his chamber for eleven minutes: nothing
+ * killed, and, tellingly, nobody hurt.
+ *
+ * The iris is lock-gated, so the key is granted here too. Which key depends on the size the raid entered
+ * at, and both of this database's entries for each are handed over rather than guessing which one the lock
+ * wants -- they are keys, they weigh nothing, and being wrong costs a wasted raid.
+ */
+void BotRaidMgr::EnsureEncounterStarted()
+{
+    struct Pending
+    {
+        ObjectGuid groupGuid;
+        uint32 mapId;
+        Difficulty difficulty;
+        std::string name;
+    };
+
+    std::vector<Pending> pending;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        for (auto const& [groupGuid, run] : _runs)
+        {
+            // Only the maps that need it, and only once per run.
+            if (run.mapId != MAP_EYE_OF_ETERNITY || _encounterStarted.count(groupGuid))
+                continue;
+
+            // Give them a moment to arrive and walk in before reaching for the switch.
+            if (GetMSTimeDiffToNow(run.startedMs) < ENCOUNTER_START_DELAY_MS)
+                continue;
+
+            pending.push_back({groupGuid, run.mapId, RAID_DIFFICULTY_25MAN_NORMAL, run.name});
+        }
+    }
+
+    for (Pending const& entry : pending)
+    {
+        Group* group = sGroupMgr->GetGroupByGUID(entry.groupGuid.GetCounter());
+        if (!group)
+            continue;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsInWorld() || member->GetMapId() != entry.mapId || !member->IsAlive())
+                continue;
+
+            bool const heroicSize = member->GetMap() && member->GetMap()->Is25ManRaid();
+
+            // The keys, before the click.
+            for (uint32 keyId : heroicSize ? std::vector<uint32>{44577, 44581} : std::vector<uint32>{44569, 44582})
+            {
+                if (member->GetItemCount(keyId, false))
+                    continue;
+
+                ItemPosCountVec dest;
+                if (member->CanStoreNewItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, keyId, 1) == EQUIP_ERR_OK)
+                    member->StoreNewItem(dest, keyId, true, Item::GenerateItemRandomPropertyId(keyId));
+            }
+
+            GameObject* iris = member->FindNearestGameObject(heroicSize ? GO_IRIS_HEROIC : GO_IRIS_NORMAL,
+                                                            ENCOUNTER_START_RANGE);
+            if (!iris)
+                continue;
+
+            LOG_INFO("playerbots", "[Raid] {} starts {} by using the Focusing Iris", member->GetName(), entry.name);
+
+            iris->Use(member);
+
+            std::unique_lock<std::shared_mutex> lock(_mutex);
+            _encounterStarted[entry.groupGuid] = getMSTime();
+            break;
+        }
+    }
+}
+
 void BotRaidMgr::NoteMemberDeath(Player* victim, std::string const& killer)
 {
     if (!victim)
@@ -740,8 +876,22 @@ void BotRaidMgr::NoteMemberDeath(Player* victim, std::string const& killer)
 
     _lastDeathMs[victim->GetGUID()] = now;
 
+    // A name from the kill hook if there was one; otherwise whatever last hurt this bot, which is how a
+    // death to a ground effect, a fall or a caster that has since died gets a name instead of being filed
+    // under "the environment" -- seven of sixteen deaths in Gruul's Lair landed in that bucket, which told
+    // nobody anything.
+    std::string cause = killer;
+    if (cause.empty() || cause == "the environment")
+    {
+        if (auto const hurt = _lastDamager.find(victim->GetGUID()); hurt != _lastDamager.end())
+        {
+            if (getMSTimeDiff(hurt->second.second, now) < LAST_DAMAGER_MEMORY_MS)
+                cause = hurt->second.first;
+        }
+    }
+
     ++itr->second.deathCount;
-    ++itr->second.deaths[killer.empty() ? "something unnamed" : killer];
+    ++itr->second.deaths[cause.empty() ? "something unnamed" : cause];
 }
 
 bool BotRaidMgr::IsManagedGroup(ObjectGuid groupGuid) const

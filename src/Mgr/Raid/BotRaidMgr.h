@@ -55,6 +55,10 @@ public:
 
     std::string DescribeStats() const;
 
+    /// Remember what last hurt a raider, so a death that no kill hook explains still has a cause. Called
+    /// from the damage hook and deliberately cheap: it ignores everything outside a tracked raid.
+    void NoteMemberDamaged(Player* victim, std::string const& attacker);
+
     /// Record a raid member's death and what killed it. Called from the death hooks; a death outside any
     /// tracked raid is ignored.
     void NoteMemberDeath(Player* victim, std::string const& killer);
@@ -105,6 +109,10 @@ private:
         uint32 deathCount{0};
     };
 
+    /// Some encounters do not begin until somebody starts them. Nothing in the bots' own strategies clicks
+    /// the object that does it, so the raid stands in the room until its time runs out.
+    void EnsureEncounterStarted();
+
     /// Read each running raid's encounter mask out of its instance, so a kill is noticed and a run can
     /// be judged on what it actually killed rather than on how long it lasted.
     void SampleEncounters();
@@ -133,6 +141,10 @@ private:
     /// When each member's death was last recorded. Both death hooks fire for one death -- the creature one
     /// names the killer, the catch-all covers falls and drownings -- so the second is ignored.
     std::unordered_map<ObjectGuid, uint32> _lastDeathMs;
+    /// The last thing to damage each raider, and when. Used to name a death the kill hooks cannot.
+    std::unordered_map<ObjectGuid, std::pair<std::string, uint32>> _lastDamager;
+    /// Raids whose encounter has already been started by hand, so it is not clicked every pass.
+    std::unordered_map<ObjectGuid, uint32> _encounterStarted;
     std::unordered_map<uint32, EntryPoint> _entryPoints;
 
     uint32 _started{0};

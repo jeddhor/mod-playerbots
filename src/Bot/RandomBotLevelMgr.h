@@ -46,6 +46,10 @@ public:
      */
     static uint8 EraCapFor(Player* bot);
 
+    /// The gear an era ceiling is dressed for: quality, and an item level ceiling. Public because the raid
+    /// manager reports a roster's gear against what its era expects.
+    static void EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl);
+
     /**
      * Set or clear PLAYER_FLAGS_NO_XP_GAIN according to the bot's era cap.
      *
@@ -112,8 +116,7 @@ private:
     /// for instances and battlegrounds; what it lacked was anything to save.
     static void StockEraFlasks(Player* bot, uint8 cap);
 
-    /// The gear an era ceiling is dressed for: quality, and an item level ceiling.
-    static void EraGearTarget(uint8 cap, uint32& quality, uint32& ilvl);
+
 
     // ---- Level reset sub-feature ----
     uint8 ComputeResetChance(uint8 level) const;

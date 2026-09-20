@@ -803,6 +803,39 @@ private:
 public:
 };
 
+/**
+ * Remembers what is hurting bots inside instances.
+ *
+ * Only so that a death can be named. The kill hooks cover a creature landing the killing blow and nothing
+ * else: a ground effect, a fall, a poison from a caster that has already died all arrive with no culprit,
+ * and those were being filed as "the environment", which is not a diagnosis.
+ *
+ * Deliberately the cheapest possible handler. OnDamage fires for every point of damage dealt anywhere on the
+ * realm, including creature on creature, so the first two tests throw out almost all of it before anything
+ * is looked up.
+ */
+class PlayerbotsUnitScript : public UnitScript
+{
+public:
+    PlayerbotsUnitScript() : UnitScript("PlayerbotsUnitScript", true, { UNITHOOK_ON_DAMAGE }) {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& /*damage*/) override
+    {
+        if (!victim || !victim->IsPlayer() || !attacker)
+            return;
+
+        Map const* map = victim->GetMap();
+        if (!map || !map->Instanceable())
+            return;
+
+        Player* const player = victim->ToPlayer();
+        if (!GET_PLAYERBOT_AI(player))
+            return;
+
+        sBotRaidMgr.NoteMemberDamaged(player, attacker->GetName());
+    }
+};
+
 class PlayerbotsWorldScript : public WorldScript
 {
 public:
@@ -1032,6 +1065,7 @@ void AddPlayerbotsScripts()
     new PlayerbotsMiscScript();
     new PlayerbotsServerScript();
     new PlayerbotsWorldScript();
+    new PlayerbotsUnitScript();
     new PlayerbotsScript();
     new PlayerBotsBGScript();
     AddPlayerbotsSecureLoginScripts();
