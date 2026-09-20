@@ -1778,10 +1778,39 @@ void PlayerbotAI::ApplyInstanceStrategies(uint32 mapId, bool tellMaster)
     }
 
     if (strategyName.empty())
+    {
+        // Worth saying when a bot is standing in an instance nothing knows how to fight. A raid whose
+        // map has no strategy is twenty-five bots on generic combat AI, and from the outside that looks
+        // exactly like a raid that is geared wrong.
+        if (Map const* map = bot->FindMap(); map && map->IsDungeon())
+            LOG_DEBUG("playerbots", "[Instance] {} is on map {} and there is no strategy for it",
+                      bot->GetName(), mapId);
+
         return;
+    }
 
     engines[BOT_STATE_COMBAT]->addStrategy(strategyName);
     engines[BOT_STATE_NON_COMBAT]->addStrategy(strategyName);
+
+    // Said out loud, because the question "are the boss strategies actually on these bots" had no answer
+    // anywhere: nothing logged, and a random bot has no master to tell. Raids were killing nothing and
+    // the gear, the flasks and the area-damage dodging were all guesses at why. This one is checkable.
+    //
+    // Confirmed by asking the engine for the strategy object rather than for the name used to request it:
+    // addStrategy files a strategy under its own getName(), which is not always the key it was asked for --
+    // "wotlk-uk" is stored as "utgarde keep". Checking the request name reported four dungeon strategies as
+    // missing that were in fact loaded and running, which is a good way to spend an evening chasing a bug
+    // that was in the check.
+    // The engine files a strategy under its own getName(), which is not always the key it was asked for:
+    // "wotlk-uk" is stored as "utgarde keep". So resolve the key through the context the way addStrategy
+    // does, and then ask the engine about the name it will actually have used.
+    Strategy* const resolved = aiObjectContext->GetStrategy(strategyName);
+    std::string const loadedName = resolved ? resolved->getName() : std::string();
+
+    LOG_DEBUG("playerbots", "[Instance] {} entered map {} with the {} strategy as \"{}\" ({} in combat, {} out)",
+              bot->GetName(), mapId, strategyName, loadedName.empty() ? "unknown to the context" : loadedName,
+              !loadedName.empty() && engines[BOT_STATE_COMBAT]->HasStrategy(loadedName) ? "on" : "MISSING",
+              !loadedName.empty() && engines[BOT_STATE_NON_COMBAT]->HasStrategy(loadedName) ? "on" : "MISSING");
 
     if (tellMaster && !strategyName.empty())
     {
